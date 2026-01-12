@@ -1,0 +1,35 @@
+# --- Core Backend & API ---
+fastapi
+uvicorn[standard]
+pydantic-settings
+python-multipart
+email-validator
+requests>=2.31.0
+isodate==0.6.1  # Pinned to resolve dbt-common conflict
+
+# --- AI Orchestration (LangChain) ---
+langchain
+langchain-community
+langchain-groq
+langchain-huggingface
+langchain-pinecone
+
+# --- Vector Database ---
+pinecone-client
+
+# --- Machine Learning & Embeddings ---
+sentence-transformers
+tokenizers==0.20.3
+
+# --- Data Ingestion & Parsing ---
+gitpython
+tree-sitter
+tree-sitter-languages
+
+# --- Utilities ---
+python-dotenv
+tqdm
+
+
+networkx 
+scikit-learn
