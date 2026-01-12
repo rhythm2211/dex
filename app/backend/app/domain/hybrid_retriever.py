@@ -1,17 +1,18 @@
+import os
+import json
 import networkx as nx
 import logging
-from typing import List, Dict
+from typing import List, Dict, Set
 from langchain_core.documents import Document
 from langchain_pinecone import PineconeVectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-from langchain_core.prompts import PromptTemplate
 from backend.app.core.config import settings
 
 logger = logging.getLogger("dex-core")
 
 class HybridRetriever:
-    def __init__(self, vector_store: PineconeVectorStore, graph_path: str = "backend/data/repo_graph.json"):
+    def __init__(self, vector_store: PineconeVectorStore, graph_path: str = None):
         self.vector_store = vector_store
         self.llm = ChatGroq(
             model_name="llama-3.3-70b-versatile",
@@ -20,64 +21,112 @@ class HybridRetriever:
         )
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         
-        # Load Knowledge Graph
-        try:
-            with open(graph_path, 'r') as f:
-                import json
-                data = json.load(f)
-                self.graph = nx.node_link_graph(data)
-        except FileNotFoundError:
-            logger.warning("Knowledge Graph not found. Initializing empty graph.")
-            self.graph = nx.DiGraph()
-
-    def retrieve(self, query: str, k_vectors: int = 5, k_graph: int = 3) -> str:
-        """
-        Orchestrates the Dual-Path retrieval and fuses the context.
-        """
-        # Path A: Vector Search (Semantic)
-        logger.info(f"Executing Vector Search for: '{query}'")
-        vector_docs = self.vector_store.similarity_search(query, k=k_vectors)
-        vector_context = "\n".join([d.page_content for d in vector_docs])
-
-        # Path B: Graph Search (Structural)
-        logger.info(f"Executing Graph Search for: '{query}'")
-        graph_context = self._query_graph(query, max_hops=1, max_results=k_graph)
-
-        # Fusion
-        combined_context = (
-            f"--- VECTOR CONTEXT ---\n{vector_context}\n\n"
-            f"--- KNOWLEDGE GRAPH CONTEXT ---\n{graph_context}"
-        )
-        return combined_context
-
-    def _query_graph(self, query: str, max_hops: int, max_results: int) -> str:
-        """
-        Extracts entities from query -> Finds them in Graph -> Traverses edges.
-        """
-        entities = self._extract_entities(query)
-        context_triples = []
-
-        for entity in entities:
-            if entity in self.graph:
-                # Get neighbors (Concept expansion)
-                edges = list(self.graph.edges(entity, data=True))[:max_results]
-                for u, v, data in edges:
-                    relation = data.get('relation', 'related_to')
-                    context_triples.append(f"{u} -> [{relation}] -> {v}")
+        # Path Resolution
+        if graph_path is None:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            graph_path = os.path.join(base_dir, "backend", "data", "repo_graph.json")
         
-        if not context_triples:
-            return "No relevant graph connections found."
-            
-        return "\n".join(context_triples)
+        self.graph_path = graph_path
+        self.graph = nx.DiGraph()
+        
+        # Load Graph immediately on init
+        self._load_graph()
 
-    def _extract_entities(self, query: str) -> List[str]:
+    def reload_graph(self):
+        """Forces a reload of the graph from disk (called after ingestion)."""
+        logger.info("🔄 Reloading HybridRetriever Graph...")
+        self.graph = nx.DiGraph()
+        self._load_graph()
+
+    def _load_graph(self):
+        """Loads the JSON graph into a NetworkX object."""
+        try:
+            if not os.path.exists(self.graph_path):
+                logger.warning("Graph file not found. Retriever starting empty.")
+                return
+            
+            with open(self.graph_path, 'r') as f:
+                data = json.load(f)
+            
+            # Reconstruct Graph from Frontend-friendly JSON
+            # We treat the 'id' as the unique node identifier
+            for node in data.get("nodes", []):
+                self.graph.add_node(node['id'], **node)
+                
+            for link in data.get("links", []):
+                self.graph.add_edge(link['source'], link['target'], relation=link.get('relation', 'related'))
+                
+            logger.info(f"Graph loaded: {self.graph.number_of_nodes()} nodes")
+            
+        except Exception as e:
+            logger.error(f"Failed to load graph: {e}")
+
+    def retrieve(self, query: str, k_vectors: int = 5) -> str:
         """
-        Uses LLM to identify potential graph nodes from the natural language query.
+        SaaS Logic - Anchored Traversal:
+        1. Find the code (Vector Search)
+        2. Find the context (Graph Lookup of those files)
         """
-        prompt = PromptTemplate.from_template(
-            "Extract the key technical entities (functions, classes, modules, concepts) from this query: '{query}'. "
-            "Return a comma-separated list ONLY."
-        )
-        chain = prompt | self.llm
-        response = chain.invoke({"query": query})
-        return [e.strip() for e in response.content.split(",")]
+        # Step 1: Semantic Search
+        try:
+            docs = self.vector_store.similarity_search(query, k=k_vectors)
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            return "Error retrieving documents."
+
+        if not docs:
+            return "No relevant code found."
+
+        # Step 2: Extract Anchors (File Names)
+        anchors = set()
+        code_context = []
+        
+        for doc in docs:
+            # We assume IngestionService added 'file_name' to metadata
+            filename = doc.metadata.get('file_name')
+            if filename:
+                anchors.add(filename)
+            
+            code_context.append(f"--- SNIPPET ({filename}) ---\n{doc.page_content}")
+
+        # Step 3: Expand Anchors via Graph
+        # We look for nodes that START with the filename (e.g. "app/main.py::User")
+        graph_context = self._expand_anchors(list(anchors))
+
+        # Step 4: Fuse Contexts
+        return json.dumps({
+            "code_context": "\n\n".join(code_context),
+            "graph_context": graph_context
+        }, indent=2)
+
+    def _expand_anchors(self, file_anchors: List[str]) -> str:
+        """
+        Finds structural relationships for the specific files found in search.
+        """
+        relevant_triples = set()
+        
+        for filename in file_anchors:
+            # 1. Find nodes belonging to this file
+            # Our IDs are formatted as "filename::ClassName"
+            related_nodes = [
+                n for n in self.graph.nodes() 
+                if str(n) == filename or str(n).startswith(f"{filename}::")
+            ]
+            
+            for node in related_nodes:
+                # Get Incoming Edges (Who calls/imports this?)
+                in_edges = self.graph.in_edges(node, data=True)
+                for u, v, data in in_edges:
+                    rel = data.get('relation', 'related')
+                    relevant_triples.add(f"{u} --[{rel}]--> {v}")
+                
+                # Get Outgoing Edges (What does this inherit/define?)
+                out_edges = self.graph.out_edges(node, data=True)
+                for u, v, data in out_edges:
+                    rel = data.get('relation', 'related')
+                    relevant_triples.add(f"{u} --[{rel}]--> {v}")
+
+        if not relevant_triples:
+            return "No structural relationships found."
+            
+        return "\n".join(list(relevant_triples)[:15]) # Limit to avoid context overflow

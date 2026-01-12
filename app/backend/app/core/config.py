@@ -1,19 +1,48 @@
 import os
+import logging
 from typing import List, Union
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import AnyHttpUrl, field_validator
+from dotenv import load_dotenv
+
+# Setup Logging
+logger = logging.getLogger("uvicorn")
+
+# --- SMART PATH RESOLUTION ---
+# This file is located at: .../backend/app/core/config.py
+# We want to check:
+# 1. .../backend/.env (Standard)
+# 2. .../app/.env     (Your current location)
+
+CONFIG_DIR = Path(__file__).resolve().parent  # app/core
+BACKEND_DIR = CONFIG_DIR.parent.parent        # backend
+ROOT_DIR = BACKEND_DIR.parent                 # app (root)
+
+env_paths = [
+    BACKEND_DIR / ".env",
+    ROOT_DIR / ".env",
+    Path(os.getcwd()) / ".env"
+]
+
+loaded = False
+for path in env_paths:
+    if path.exists():
+        load_dotenv(path)
+        logger.info(f"✅ Loaded .env file from: {path}")
+        loaded = True
+        break
+
+if not loaded:
+    logger.warning(f"⚠️ Could not find .env file! Checked: {[str(p) for p in env_paths]}")
 
 class Settings(BaseSettings):
-    # Application Config
     PROJECT_NAME: str = "Dex Cognitive Engine"
     VERSION: str = "2.0.0"
     API_V1_STR: str = "/api/v1"
-    
-    # Environment
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     
-    # Security (CORS)
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
@@ -28,9 +57,9 @@ class Settings(BaseSettings):
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str
     GROQ_API_KEY: str
+    GITHUB_TOKEN: str = "" # Defaults to empty if not found
     OPENAI_API_KEY: str = "" 
 
-    # Database
     DATABASE_URL: str = "sqlite:///./dex.db" 
 
     model_config = SettingsConfigDict(

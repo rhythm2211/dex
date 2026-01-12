@@ -1,0 +1,646 @@
+{
+  "nodes": [
+    {
+      "id": "README.md",
+      "name": "README.md",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "app.py",
+      "name": "app.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "faiss_db_data",
+      "name": "faiss_db_data",
+      "type": "folder",
+      "val": 20
+    },
+    {
+      "id": "modules",
+      "name": "modules",
+      "type": "folder",
+      "val": 20
+    },
+    {
+      "id": "modules/__init__.py",
+      "name": "__init__.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/__pycache__",
+      "name": "__pycache__",
+      "type": "folder",
+      "val": 20
+    },
+    {
+      "id": "modules/agent_manager.py",
+      "name": "agent_manager.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/data_manager.py",
+      "name": "data_manager.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/dummy_db.py",
+      "name": "dummy_db.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/plot_generator.py",
+      "name": "plot_generator.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/plot_registry.py",
+      "name": "plot_registry.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/smart_sql_tool.py",
+      "name": "smart_sql_tool.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/streamlit_logger.py",
+      "name": "streamlit_logger.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/ui_components.py",
+      "name": "ui_components.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "modules/vector_store_manager.py",
+      "name": "vector_store_manager.py",
+      "type": "file",
+      "val": 15
+    },
+    {
+      "id": "app.py::log_ai_event",
+      "name": "log_ai_event",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "app.py::ensure_session_state_defaults",
+      "name": "ensure_session_state_defaults",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "app.py::main",
+      "name": "main",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/plot_generator.py::generate_plot",
+      "name": "generate_plot",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/smart_sql_tool.py::log_ai_event",
+      "name": "log_ai_event",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/smart_sql_tool.py::SmartSQLQueryTool",
+      "name": "SmartSQLQueryTool",
+      "type": "class",
+      "val": 10
+    },
+    {
+      "id": "modules/smart_sql_tool.py::SmartSQLQueryTool::_is_sql",
+      "name": "_is_sql",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/smart_sql_tool.py::SmartSQLQueryTool::_get_engine",
+      "name": "_get_engine",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/smart_sql_tool.py::SmartSQLQueryTool::_clean_sql",
+      "name": "_clean_sql",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/smart_sql_tool.py::SmartSQLQueryTool::_execute_sql",
+      "name": "_execute_sql",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/smart_sql_tool.py::SmartSQLQueryTool::_store_python_code",
+      "name": "_store_python_code",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/smart_sql_tool.py::SmartSQLQueryTool::_run",
+      "name": "_run",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/vector_store_manager.py::get_embeddings_model",
+      "name": "get_embeddings_model",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/vector_store_manager.py::create_vector_store_retriever",
+      "name": "create_vector_store_retriever",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/data_manager.py::handle_csv_uploads",
+      "name": "handle_csv_uploads",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/data_manager.py::handle_external_db_connection",
+      "name": "handle_external_db_connection",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/dummy_db.py::create_tables",
+      "name": "create_tables",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/dummy_db.py::populate_departments",
+      "name": "populate_departments",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/dummy_db.py::populate_employees",
+      "name": "populate_employees",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/dummy_db.py::populate_projects",
+      "name": "populate_projects",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/dummy_db.py::populate_sales",
+      "name": "populate_sales",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/dummy_db.py::main",
+      "name": "main",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/ui_components.py::_plot_template",
+      "name": "_plot_template",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/ui_components.py::render_plotly_from_marker",
+      "name": "render_plotly_from_marker",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/ui_components.py::display_automated_eda",
+      "name": "display_automated_eda",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/ui_components.py::display_quick_visualizer",
+      "name": "display_quick_visualizer",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/ui_components.py::display_chat_interface",
+      "name": "display_chat_interface",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/ui_components.py::display_settings",
+      "name": "display_settings",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/agent_manager.py::TableOnlyInput",
+      "name": "TableOnlyInput",
+      "type": "class",
+      "val": 10
+    },
+    {
+      "id": "modules/agent_manager.py::CountCategoricalInput",
+      "name": "CountCategoricalInput",
+      "type": "class",
+      "val": 10
+    },
+    {
+      "id": "modules/agent_manager.py::CreateInteractivePlotInput",
+      "name": "CreateInteractivePlotInput",
+      "type": "class",
+      "val": 10
+    },
+    {
+      "id": "modules/agent_manager.py::YearlyPlotInput",
+      "name": "YearlyPlotInput",
+      "type": "class",
+      "val": 10
+    },
+    {
+      "id": "modules/agent_manager.py::get_data_summary",
+      "name": "get_data_summary",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/agent_manager.py::count_categorical_variable",
+      "name": "count_categorical_variable",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/agent_manager.py::create_interactive_plot",
+      "name": "create_interactive_plot",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/agent_manager.py::create_yearly_summary_plot",
+      "name": "create_yearly_summary_plot",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/agent_manager.py::initialize_agent",
+      "name": "initialize_agent",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/agent_manager.py::parse_and_render_plotly_json",
+      "name": "parse_and_render_plotly_json",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/plot_registry.py::bar_plot",
+      "name": "bar_plot",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/plot_registry.py::scatter_plot",
+      "name": "scatter_plot",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/plot_registry.py::histogram_plot",
+      "name": "histogram_plot",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/plot_registry.py::get_plot_function",
+      "name": "get_plot_function",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/streamlit_logger.py::StreamlitLoggerHandler",
+      "name": "StreamlitLoggerHandler",
+      "type": "class",
+      "val": 10
+    },
+    {
+      "id": "modules/streamlit_logger.py::StreamlitLoggerHandler::emit",
+      "name": "emit",
+      "type": "function",
+      "val": 5
+    },
+    {
+      "id": "modules/streamlit_logger.py::setup_streamlit_logger",
+      "name": "setup_streamlit_logger",
+      "type": "function",
+      "val": 5
+    }
+  ],
+  "links": [
+    {
+      "source": "app.py",
+      "target": "app.py::log_ai_event",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "app.py",
+      "target": "app.py::ensure_session_state_defaults",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "app.py",
+      "target": "app.py::main",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/__init__.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/__pycache__",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/agent_manager.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/data_manager.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/dummy_db.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/plot_generator.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/plot_registry.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/smart_sql_tool.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/streamlit_logger.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/ui_components.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules",
+      "target": "modules/vector_store_manager.py",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::TableOnlyInput",
+      "relation": "DEFINES"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::CountCategoricalInput",
+      "relation": "DEFINES"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::CreateInteractivePlotInput",
+      "relation": "DEFINES"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::YearlyPlotInput",
+      "relation": "DEFINES"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::get_data_summary",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::count_categorical_variable",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::create_interactive_plot",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::create_yearly_summary_plot",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::initialize_agent",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/agent_manager.py",
+      "target": "modules/agent_manager.py::parse_and_render_plotly_json",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/data_manager.py",
+      "target": "modules/data_manager.py::handle_csv_uploads",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/data_manager.py",
+      "target": "modules/data_manager.py::handle_external_db_connection",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/dummy_db.py",
+      "target": "modules/dummy_db.py::create_tables",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/dummy_db.py",
+      "target": "modules/dummy_db.py::populate_departments",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/dummy_db.py",
+      "target": "modules/dummy_db.py::populate_employees",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/dummy_db.py",
+      "target": "modules/dummy_db.py::populate_projects",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/dummy_db.py",
+      "target": "modules/dummy_db.py::populate_sales",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/dummy_db.py",
+      "target": "modules/dummy_db.py::main",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/plot_generator.py",
+      "target": "modules/plot_generator.py::generate_plot",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/plot_registry.py",
+      "target": "modules/plot_registry.py::bar_plot",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/plot_registry.py",
+      "target": "modules/plot_registry.py::scatter_plot",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/plot_registry.py",
+      "target": "modules/plot_registry.py::histogram_plot",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/plot_registry.py",
+      "target": "modules/plot_registry.py::get_plot_function",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/smart_sql_tool.py",
+      "target": "modules/smart_sql_tool.py::log_ai_event",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/smart_sql_tool.py",
+      "target": "modules/smart_sql_tool.py::SmartSQLQueryTool",
+      "relation": "DEFINES"
+    },
+    {
+      "source": "modules/streamlit_logger.py",
+      "target": "modules/streamlit_logger.py::StreamlitLoggerHandler",
+      "relation": "DEFINES"
+    },
+    {
+      "source": "modules/streamlit_logger.py",
+      "target": "modules/streamlit_logger.py::setup_streamlit_logger",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/ui_components.py",
+      "target": "modules/ui_components.py::_plot_template",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/ui_components.py",
+      "target": "modules/ui_components.py::render_plotly_from_marker",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/ui_components.py",
+      "target": "modules/ui_components.py::display_automated_eda",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/ui_components.py",
+      "target": "modules/ui_components.py::display_quick_visualizer",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/ui_components.py",
+      "target": "modules/ui_components.py::display_chat_interface",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/ui_components.py",
+      "target": "modules/ui_components.py::display_settings",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/vector_store_manager.py",
+      "target": "modules/vector_store_manager.py::get_embeddings_model",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/vector_store_manager.py",
+      "target": "modules/vector_store_manager.py::create_vector_store_retriever",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/smart_sql_tool.py::SmartSQLQueryTool",
+      "target": "modules/smart_sql_tool.py::SmartSQLQueryTool::_is_sql",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/smart_sql_tool.py::SmartSQLQueryTool",
+      "target": "modules/smart_sql_tool.py::SmartSQLQueryTool::_get_engine",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/smart_sql_tool.py::SmartSQLQueryTool",
+      "target": "modules/smart_sql_tool.py::SmartSQLQueryTool::_clean_sql",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/smart_sql_tool.py::SmartSQLQueryTool",
+      "target": "modules/smart_sql_tool.py::SmartSQLQueryTool::_execute_sql",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/smart_sql_tool.py::SmartSQLQueryTool",
+      "target": "modules/smart_sql_tool.py::SmartSQLQueryTool::_store_python_code",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/smart_sql_tool.py::SmartSQLQueryTool",
+      "target": "modules/smart_sql_tool.py::SmartSQLQueryTool::_run",
+      "relation": "CONTAINS"
+    },
+    {
+      "source": "modules/streamlit_logger.py::StreamlitLoggerHandler",
+      "target": "modules/streamlit_logger.py::StreamlitLoggerHandler::emit",
+      "relation": "CONTAINS"
+    }
+  ]
+}

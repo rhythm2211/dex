@@ -27,15 +27,27 @@ app = FastAPI(
     docs_url=f"{settings.API_V1_STR}/docs",
 )
 
-if settings.BACKEND_CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# --- 🔧 CRITICAL FIX: CORS Configuration ---
+# We explicitly allow the Next.js frontend origins to prevent Network Errors.
+origins = [
+    "http://localhost:3000",      # Next.js Local
+    "http://127.0.0.1:3000",      # Next.js Local IP
+    "http://localhost:8000",      # Self (Swagger UI)
+]
 
+# If settings provide more origins, add them
+if settings.BACKEND_CORS_ORIGINS:
+    origins.extend([str(origin) for origin in settings.BACKEND_CORS_ORIGINS])
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow GET, POST, OPTIONS, etc.
+    allow_headers=["*"],  # Allow Content-Type, Authorization, etc.
+)
+
+# --- Request Interceptor (Performance & Auditing) ---
 @app.middleware("http")
 async def request_interceptor(request: Request, call_next):
     request_id = str(uuid.uuid4())
@@ -47,6 +59,7 @@ async def request_interceptor(request: Request, call_next):
         response = await call_next(request)
         process_time = time.perf_counter() - start_time
         
+        # Inject Proprietary Metrics Headers
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time"] = str(round(process_time, 4))
         
@@ -60,6 +73,7 @@ async def request_interceptor(request: Request, call_next):
             content={"error": "Internal System Error", "request_id": request_id}
         )
 
+# --- Router Registration ---
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/health", tags=["System"])
@@ -67,9 +81,11 @@ async def health_probe():
     return {
         "status": "active",
         "version": settings.VERSION,
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
+        "cors_allowed": origins
     }
 
 if __name__ == "__main__":
     import uvicorn
+    # Reload=True is great for dev, but consider turning off for prod
     uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
