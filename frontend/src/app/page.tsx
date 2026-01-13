@@ -25,12 +25,12 @@ const BRANCH_COLORS = [
 ];
 
 const NODE_CONFIG: any = {
-  folder:   { icon: Folder, label: 'Directory' },
-  file:     { icon: File,   label: 'File' },
-  class:    { icon: Box,    label: 'Class' },
-  function: { icon: Code,   label: 'Function' },
-  module:   { icon: Database, label: 'Module' },
-  default:  { icon: FileCode, label: 'Asset' }
+  folder:   { icon: Folder,   label: 'Directory', color: '#f59e0b' }, // Amber
+  file:     { icon: File,     label: 'File',      color: '#3b82f6' }, // Blue
+  class:    { icon: Box,      label: 'Class',     color: '#8b5cf6' }, // Violet
+  function: { icon: Code,     label: 'Function',  color: '#10b981' }, // Emerald
+  module:   { icon: Database, label: 'Module',    color: '#ec4899' }, // Pink
+  default:  { icon: FileCode, label: 'Asset',     color: '#64748b' }  // Slate
 };
 
 // -----------------------------------------------------------------------------
@@ -55,68 +55,108 @@ const assignBranchColors = (node: any, colorIndex = 0, depth = 0) => {
     }
 };
 
-const buildHierarchy = (nodes: any[], links: any[]) => {
+// Build a strict filesystem-style hierarchy:
+// ROOT (repository)
+//   -> Folder (top-level, from first path segment)
+//     -> File (code file, e.g. .py / .ts)
+//       -> Function/Class (defined in that file)
+const buildHierarchy = (nodes: any[], _links: any[]) => {
     if (!nodes.length) return null;
 
-    const nodeMap = new Map();
-    nodes.forEach(n => {
-        nodeMap.set(n.id, { 
-            name: n.name || n.id, 
-            attributes: { ...n, type: n.type?.toLowerCase() || 'default' }, 
-            children: [] 
-        });
-    });
+    const root: any = {
+        name: 'Repository',
+        attributes: { type: 'root', id: 'root' },
+        children: [] as any[],
+    };
 
-    const childrenSet = new Set();
-    
-    links.forEach(link => {
-        const relation = link.relation || link.type;
-        // Strict hierarchy relations
-        if (relation !== 'CONTAINS' && relation !== 'DEFINES') return;
+    const folderMap = new Map<string, any>();
+    const fileNodeMap = new Map<string, any>(); // fileId -> tree node
 
-        const parentId = typeof link.source === 'object' ? link.source.id : link.source;
-        const childId = typeof link.target === 'object' ? link.target.id : link.target;
+    const allNodes = nodes || [];
 
-        const parent = nodeMap.get(parentId);
-        const child = nodeMap.get(childId);
+    // 1) Attach files under their top-level folder (no folder->folder links)
+    allNodes
+        .filter((n: any) => (n.type || '').toLowerCase() === 'file')
+        .forEach((file: any) => {
+            const rawId = String(file.id || '');
+            const pathSepIndex = Math.max(rawId.indexOf('/'), rawId.indexOf('\\'));
 
-        if (parent && child && parentId !== childId) {
-            if (!childrenSet.has(childId)) { // Prevent cycles/multiple parents for tree
-                parent.children.push(child);
-                childrenSet.add(childId);
+            const folderName =
+                pathSepIndex > 0 ? rawId.slice(0, pathSepIndex) : '__root__';
+
+            let folderNode = folderMap.get(folderName);
+            if (!folderNode) {
+                folderNode = {
+                    name: folderName === '__root__' ? 'root_files' : folderName,
+                    attributes: {
+                        id: `folder:${folderName}`,
+                        type: 'folder',
+                    },
+                    children: [] as any[],
+                };
+                folderMap.set(folderName, folderNode);
+                root.children.push(folderNode);
             }
-        }
-    });
 
-    const roots: any[] = [];
-    nodeMap.forEach((val, key) => {
-        if (!childrenSet.has(key)) roots.push(val);
-    });
+            const fileTreeNode: any = {
+                name: file.name || rawId,
+                attributes: {
+                    ...file,
+                    id: file.id,
+                    type: 'file',
+                },
+                children: [] as any[],
+            };
 
-    let finalTree;
-    if (roots.length === 1) {
-        finalTree = roots[0];
-    } else {
-        finalTree = { 
-            name: 'Repository', 
-            attributes: { type: 'root', id: 'root' }, 
-            children: roots 
-        };
-    }
+            folderNode.children.push(fileTreeNode);
+            fileNodeMap.set(file.id, fileTreeNode);
+        });
 
-    assignBranchColors(finalTree);
-    return finalTree;
+    // 2) Attach functions/classes strictly under their defining file
+    allNodes
+        .filter((n: any) => {
+            const t = (n.type || '').toLowerCase();
+            return t === 'function' || t === 'class';
+        })
+        .forEach((fnNode: any) => {
+            const rawId = String(fnNode.id || '');
+            const fileId = rawId.split('::')[0]; // our ingestion uses file_path::something
+
+            const parentFileTreeNode = fileNodeMap.get(fileId);
+            if (!parentFileTreeNode) return; // if we can't find the file, skip to avoid illegal edges
+
+            const childTreeNode: any = {
+                name: fnNode.name || rawId,
+                attributes: {
+                    ...fnNode,
+                    id: fnNode.id,
+                    type: (fnNode.type || '').toLowerCase(),
+                },
+                children: [] as any[],
+            };
+
+            parentFileTreeNode.children.push(childTreeNode);
+        });
+
+    assignBranchColors(root);
+    return root;
 };
 
-const buildParentMap = (nodes: any[], links: any[]) => {
+const buildParentMapFromHierarchy = (root: any | null) => {
     const map = new Map<string, string>();
-    links.forEach(link => {
-        const relation = link.relation || link.type;
-        if (relation !== 'CONTAINS' && relation !== 'DEFINES') return;
-        const s = typeof link.source === 'object' ? link.source.id : link.source;
-        const t = typeof link.target === 'object' ? link.target.id : link.target;
-        map.set(t, s);
-    });
+    if (!root) return map;
+
+    const walk = (node: any, parentId: string | null) => {
+        const nodeId = node.attributes?.id;
+        if (nodeId && parentId) {
+            map.set(nodeId, parentId);
+        }
+        if (Array.isArray(node.children)) {
+            node.children.forEach((child: any) => walk(child, nodeId || parentId));
+        }
+    };
+
+    walk(root, null);
     return map;
 };
 
@@ -152,7 +192,10 @@ export default function Dashboard() {
   useEffect(() => { setMounted(true); }, []);
 
   const hierarchyData = useMemo(() => buildHierarchy(graphData.nodes, graphData.links), [graphData]);
-  const parentMap = useMemo(() => buildParentMap(graphData.nodes, graphData.links), [graphData]);
+  const parentMap = useMemo(
+    () => buildParentMapFromHierarchy(hierarchyData),
+    [hierarchyData]
+  );
 
   // ---------------------------------------------------------------------------
   // API
@@ -246,6 +289,11 @@ export default function Dashboard() {
         });
 
     svg.call(zoom as any);
+    // Clicking on empty space should clear selection & lineage
+    svg.on("click", () => {
+        setSelectedNode(null);
+        setPathSet(new Set());
+    });
 
     // 2. Setup Tree Layout
     const root = d3.hierarchy(hierarchyData);
@@ -268,7 +316,7 @@ export default function Dashboard() {
 
         // --- Nodes ---
         const nodeGroup = g.selectAll(".node")
-            .data(nodes, (d: any) => d.data.id || d.id);
+            .data(nodes, (d: any) => d.data.attributes?.id || d.data.id || d.id);
 
         const nodeEnter = nodeGroup.enter().append("g")
             .attr("class", "node cursor-pointer")
@@ -291,10 +339,15 @@ export default function Dashboard() {
                 update(d);
             });
 
-        // Add Circle
+        // Add Circle (colored strictly by node type)
         nodeEnter.append("circle")
             .attr("r", 0) 
-            .attr("fill", (d: any) => d.data.attributes.type === 'root' ? '#fff' : (d.data.attributes.branchColor || '#666'))
+            .attr("fill", (d: any) => {
+                const t = d.data.attributes.type;
+                if (t === 'root') return '#e5e7eb';
+                const cfg = NODE_CONFIG[t] || NODE_CONFIG.default;
+                return cfg.color;
+            })
             .attr("stroke", (d: any) => d.data.attributes.type === 'root' ? '#000' : 'none')
             .transition().duration(500)
             .attr("r", (d: any) => d.data.attributes.type === 'root' ? 8 : 5);
@@ -318,7 +371,9 @@ export default function Dashboard() {
             .attr("fill", "transparent")
             .on("click", (e, d: any) => {
                 e.stopPropagation();
-                handleNodeChat(d.data.attributes);
+                // Only select + highlight lineage on node click;
+                // chat is triggered explicitly from the sidebar.
+                handleNodeClick(d.data.attributes);
             });
 
         // UPDATE (Transition to new position)
@@ -330,15 +385,30 @@ export default function Dashboard() {
             );
 
         nodeGroup.merge(nodeEnter as any).select("circle")
-             .attr("stroke", (d: any) => selectedNode?.id === d.data.id ? "#fff" : "none")
-             .attr("stroke-width", (d: any) => selectedNode?.id === d.data.id ? 2 : 0)
-             .style("filter", (d: any) => pathSet.has(d.data.id) ? `drop-shadow(0 0 6px ${d.data.attributes.branchColor})` : "none")
-             .style("opacity", (d: any) => (pathSet.size > 0 && !pathSet.has(d.data.id)) ? 0.3 : 1);
+             .attr("stroke", (d: any) => selectedNode?.id === (d.data.attributes?.id || d.data.id) ? "#fff" : "none")
+             .attr("stroke-width", (d: any) => selectedNode?.id === (d.data.attributes?.id || d.data.id) ? 2 : 0)
+             .style("filter", (d: any) => {
+                const nodeId = d.data.attributes?.id || d.data.id;
+                return pathSet.has(nodeId) ? `drop-shadow(0 0 6px ${d.data.attributes.branchColor})` : "none";
+             })
+             .style("opacity", (d: any) => {
+                const nodeId = d.data.attributes?.id || d.data.id;
+                return (pathSet.size > 0 && !pathSet.has(nodeId)) ? 0.3 : 1;
+             });
         
         nodeGroup.merge(nodeEnter as any).select("text")
-             .style("fill", (d: any) => pathSet.has(d.data.id) ? "#fff" : "#94a3b8")
-             .style("font-weight", (d: any) => pathSet.has(d.data.id) ? "bold" : "normal")
-             .style("opacity", (d: any) => (pathSet.size > 0 && !pathSet.has(d.data.id)) ? 0.3 : 1);
+             .style("fill", (d: any) => {
+                const nodeId = d.data.attributes?.id || d.data.id;
+                return pathSet.has(nodeId) ? "#fff" : "#94a3b8";
+             })
+             .style("font-weight", (d: any) => {
+                const nodeId = d.data.attributes?.id || d.data.id;
+                return pathSet.has(nodeId) ? "bold" : "normal";
+             })
+             .style("opacity", (d: any) => {
+                const nodeId = d.data.attributes?.id || d.data.id;
+                return (pathSet.size > 0 && !pathSet.has(nodeId)) ? 0.3 : 1;
+             });
 
 
         // EXIT
@@ -352,7 +422,7 @@ export default function Dashboard() {
 
         // --- Links ---
         const linkGroup = g.selectAll(".link")
-            .data(links, (d: any) => d.target.id);
+            .data(links, (d: any) => d.target.data?.attributes?.id || d.target.id);
 
         const linkEnter = linkGroup.enter().insert("path", "g")
             .attr("class", "link")
@@ -369,7 +439,10 @@ export default function Dashboard() {
         linkUpdate.transition().duration(500)
             .attr("d", (d: any) => diagonal(d.source, d.target))
             .attr("stroke", (d: any) => d.target.data.attributes.branchColor || "#333")
-            .attr("class", (d: any) => pathSet.has(d.target.data.id) ? "link link-active" : "link link-base");
+            .attr("class", (d: any) => {
+                const targetId = d.target.data.attributes?.id || d.target.data.id;
+                return pathSet.has(targetId) ? "link link-active" : "link link-base";
+            });
 
         linkGroup.exit().transition().duration(500)
             .attr("d", (d: any) => {
@@ -506,9 +579,20 @@ export default function Dashboard() {
                                     {selectedNode.type}
                                 </div>
                             </div>
-                            <button onClick={() => handleNodeChat(selectedNode)} className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2">
-                                <Zap size={12} className="text-yellow-400" fill="currentColor"/> Chat About Node
-                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleNodeChat(selectedNode)}
+                                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2"
+                                >
+                                    <Zap size={12} className="text-yellow-400" fill="currentColor"/> Chat About Node
+                                </button>
+                                <button
+                                  onClick={() => { setSelectedNode(null); setPathSet(new Set()); }}
+                                  className="px-3 py-3 bg-[#111] hover:bg-[#1f2933] border border-white/10 text-slate-400 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all"
+                                >
+                                    Clear
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         <div className="py-10 flex flex-col items-center justify-center text-slate-700 gap-3 opacity-60">
@@ -523,7 +607,12 @@ export default function Dashboard() {
                     <div className="grid grid-cols-2 gap-2">
                         {Object.entries(NODE_CONFIG).map(([key, config]: any) => (
                              <div key={key} className="flex items-center gap-2 text-[11px] text-slate-500">
-                                 <config.icon size={10} /> {config.label}
+                                 <span
+                                   className="w-2 h-2 rounded-full"
+                                   style={{ backgroundColor: config.color }}
+                                 />
+                                 <config.icon size={10} />
+                                 <span>{config.label}</span>
                              </div>
                         ))}
                     </div>
