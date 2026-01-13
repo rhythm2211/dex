@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List, Union
+from typing import List, Union, Optional
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import AnyHttpUrl, field_validator
@@ -10,11 +10,6 @@ from dotenv import load_dotenv
 logger = logging.getLogger("uvicorn")
 
 # --- SMART PATH RESOLUTION ---
-# This file is located at: .../backend/app/core/config.py
-# We want to check:
-# 1. .../backend/.env (Standard)
-# 2. .../app/.env     (Your current location)
-
 CONFIG_DIR = Path(__file__).resolve().parent  # app/core
 BACKEND_DIR = CONFIG_DIR.parent.parent        # backend
 ROOT_DIR = BACKEND_DIR.parent                 # app (root)
@@ -38,7 +33,7 @@ if not loaded:
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Dex Cognitive Engine"
-    VERSION: str = "2.0.0"
+    VERSION: str = "2.1.0"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
@@ -53,12 +48,19 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
 
-    # Proprietary Keys
+    # --- AI & Vector DB Keys ---
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str
     GROQ_API_KEY: str
-    GITHUB_TOKEN: str = "" # Defaults to empty if not found
+    GITHUB_TOKEN: str = "" 
     OPENAI_API_KEY: str = "" 
+
+    # --- Neo4j Graph DB Config (New) ---
+    # We make these Optional so the app doesn't crash if you just want to run unit tests
+    # But they are required for the Graph Engine to work.
+    NEO4J_URI: Optional[str] = None
+    NEO4J_USERNAME: Optional[str] = None
+    NEO4J_PASSWORD: Optional[str] = None
 
     DATABASE_URL: str = "sqlite:///./dex.db" 
 

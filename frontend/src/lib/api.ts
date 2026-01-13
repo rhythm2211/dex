@@ -163,6 +163,21 @@ class DexClient {
       return [];
     }
   }
+
+  // 8. NEW: Lazy Load Graph Node
+  public async expandGraphNode(nodeId: string): Promise<GraphData> {
+    try {
+      const res: AxiosResponse<GraphData> = await this.client.get('/graph/expand', {
+        params: { node_id: nodeId }
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("Graph Expansion Failure:", error);
+      return { nodes: [], links: [] };
+    }
+  }
 }
 
 export const dexApi = new DexClient();
+
+

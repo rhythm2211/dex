@@ -24,6 +24,7 @@ class IngestionService:
             chunk_size=1000, 
             chunk_overlap=100
         )
+        # Initialize the Neo4j-backed Graph Engine
         self.graph_engine = GraphEngine()
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         
@@ -32,8 +33,8 @@ class IngestionService:
         self.data_dir = os.path.join(base_dir, "backend", "data")
         os.makedirs(self.data_dir, exist_ok=True)
         
-        self.graph_path = os.path.join(self.data_dir, "repo_graph.json")
-        self.history_path = os.path.join(self.data_dir, "repo_history.json") # NEW: Stores commit log
+        # We still keep history locally for the timeline slider (it's small & sequential)
+        self.history_path = os.path.join(self.data_dir, "repo_history.json") 
 
         # Internal status for polling
         self._status = {"state": "idle", "progress": 0, "step": "Ready"}
@@ -46,14 +47,24 @@ class IngestionService:
         logger.info(f"Ingestion Status: [{progress}%] {step}")
 
     def _wipe_knowledge_base(self):
-        """Atomic Wipe: Clears Vector DB."""
+        """
+        Atomic Wipe: Clears Vector DB (Pinecone) AND Graph DB (Neo4j).
+        """
+        # 1. Clear Pinecone
         try:
             pc = Pinecone(api_key=settings.PINECONE_API_KEY)
             index = pc.Index(settings.PINECONE_INDEX_NAME)
             index.delete(delete_all=True)
-            logger.info("Pinecone index cleared.")
+            logger.info("✅ Pinecone index cleared.")
         except Exception as e:
             logger.error(f"Pinecone wipe failed: {e}")
+
+        # 2. Clear Neo4j
+        try:
+            self.graph_engine.wipe_graph()
+            logger.info("✅ Neo4j database wiped.")
+        except Exception as e:
+            logger.error(f"Neo4j wipe failed: {e}")
 
     def _analyze_git_history(self, repo_path: str):
         """
@@ -68,7 +79,8 @@ class IngestionService:
         try:
             repo = Repo(repo_path)
             
-            # Iterate over commits (limit to last 100 for performance if needed)
+            # Iterate over commits (limit to last 200 for performance)
+            # You can increase this if you want deeper history
             for commit in repo.iter_commits('main', max_count=200):
                 
                 # 1. Build Timeline Entry
@@ -77,7 +89,7 @@ class IngestionService:
                     "msg": commit.message.strip(),
                     "author": commit.author.name,
                     "date": datetime.fromtimestamp(commit.committed_date).isoformat(),
-                    "files": list(commit.stats.files.keys()) # Files changed in this commit
+                    "files": list(commit.stats.files.keys()) 
                 }
                 timeline.append(commit_data)
                 
@@ -108,11 +120,11 @@ class IngestionService:
 
     def process_repository(self, repo_path: str):
         self._update_status("running", 0, "Initializing pipeline...")
+        
+        # Step 0: Clean Slate
         self._wipe_knowledge_base()
         
-        # --- PHASE 1: INSTANT MAP (Skipped for brevity in this snippet, logic remains same) ---
-
-        # --- PHASE 2: DEEP ANALYSIS ---
+        # --- PHASE 1: CLONING & HISTORY ---
         temp_dir = None
         actual_path = repo_path
         
@@ -121,15 +133,14 @@ class IngestionService:
             if any(repo_path.startswith(p) for p in ["http://", "https://", "git@"]):
                 self._update_status("running", 15, "Cloning with full history...")
                 temp_dir = tempfile.mkdtemp(prefix="dex_repo_")
-                # REMOVED depth=1 to allow Time Travel analysis
                 Repo.clone_from(repo_path, temp_dir) 
                 actual_path = temp_dir
             
-            # 2. Git History Extraction (The Time Machine)
+            # 2. Git History Extraction
             self._update_status("running", 30, "Analyzing Git Timeline & Blame...")
             timeline, file_stats = self._analyze_git_history(actual_path)
             
-            # Save Timeline for Frontend (Time Travel Slider)
+            # Save Timeline Locally (It's small and purely sequential)
             with open(self.history_path, 'w') as f:
                 json.dump(timeline, f)
 
@@ -141,37 +152,37 @@ class IngestionService:
             except Exception:
                 raw_docs = []
 
-            # 4. AST Enrichment + Git Data Injection
+            # --- PHASE 2: STREAM TO CLOUD (NEO4J) ---
             total_docs = len(raw_docs)
-            self.graph_engine = GraphEngine() # Reset engine
-
+            
+            # Note: We already wiped the graph in _wipe_knowledge_base
+            
             for i, doc in enumerate(raw_docs):
+                # Update progress bar
                 if i % 5 == 0:
-                    progress = 40 + int((i / total_docs) * 30)
-                    self._update_status("running", progress, f"Mapping Code Structure ({i}/{total_docs})...")
+                    progress = 40 + int((i / total_docs) * 35) # 40% -> 75%
+                    self._update_status("running", progress, f"Streaming Nodes to Cloud ({i}/{total_docs})...")
                 
                 file_path = doc.metadata.get('source', 'unknown')
                 relative_path = os.path.relpath(file_path, actual_path)
                 
-                # Build Graph (Nodes & Imports)
-                self.graph_engine.extract_and_build(doc.page_content, relative_path, repo_root=actual_path)
+                # Get extracted Git Metadata
+                git_meta = file_stats.get(relative_path, {})
                 
-                # INJECT GIT METADATA into the Graph Node
-                if relative_path in self.graph_engine.graph.nodes:
-                    git_info = file_stats.get(relative_path, {})
-                    # We add these attributes to the node so the frontend can see them
-                    nx_node = self.graph_engine.graph.nodes[relative_path]
-                    nx_node["last_author"] = git_info.get("last_author", "Unknown")
-                    nx_node["commit_count"] = git_info.get("commit_count", 0)
-                    nx_node["last_modified"] = git_info.get("last_modified", "")
+                # PUSH TO NEO4J (Streaming)
+                # This replaces the old local 'extract_and_build' + 'save_graph' pattern
+                self.graph_engine.extract_and_build(
+                    file_content=doc.page_content, 
+                    file_path=relative_path, 
+                    repo_root=actual_path,
+                    git_metadata=git_meta
+                )
 
-            self._update_status("running", 75, "Saving enriched knowledge graph...")
-            self.graph_engine.save_graph(self.graph_path)
-
-            # 5. Vector Embeddings (Pinecone)
+            # --- PHASE 3: VECTOR EMBEDDINGS (PINECONE) ---
             self._update_status("running", 80, "Generating semantic vectors...")
             vector_chunks = self.splitter.split_documents(raw_docs)
             
+            # Enhance chunks with filenames
             for chunk in vector_chunks:
                 full_path = chunk.metadata.get('source', '')
                 chunk.metadata['file_name'] = os.path.relpath(full_path, actual_path)
@@ -180,7 +191,7 @@ class IngestionService:
             batch_size = 100
             total_chunks = len(vector_chunks)
             for i in range(0, total_chunks, batch_size):
-                batch_progress = 80 + int((i / total_chunks) * 15)
+                batch_progress = 80 + int((i / total_chunks) * 15) # 80% -> 95%
                 self._update_status("running", batch_progress, f"Indexing vectors ({i}/{total_chunks})...")
                 
                 batch = vector_chunks[i:i + batch_size]
@@ -200,9 +211,7 @@ class IngestionService:
             return {"status": "failed", "error": str(e)}
         finally:
             if temp_dir and os.path.exists(temp_dir):
-                # Only delete if we are using a temp dir (cloned repo)
                 try:
-                    # Windows sometimes locks git files; ignore errors here to prevent crashing
                     shutil.rmtree(temp_dir, ignore_errors=True) 
                 except:
                     pass

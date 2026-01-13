@@ -3,41 +3,66 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { dexApi, GraphData } from '@/lib/api';
 import { 
-  GitBranch, RefreshCw, Zap, Search, Terminal, MessageSquare,
+  RefreshCw, Zap, Search, Terminal, MessageSquare,
   Info, Folder, File, Box, Code, Database, FileCode, 
-  ChevronRight, ChevronDown, ZoomIn, ZoomOut, Move, LayoutTemplate,
-  Play, Layers
+  ChevronRight, ChevronDown, Move, LayoutTemplate,
+  Play
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import dynamic from 'next/dynamic';
-
-// Dynamic import for D3 Tree
-const Tree = dynamic(() => import('react-d3-tree'), { ssr: false });
+import * as d3 from 'd3';
 
 // -----------------------------------------------------------------------------
-// Visual Config
+// Visual Config & Color Palette
 // -----------------------------------------------------------------------------
+const BRANCH_COLORS = [
+  '#ef4444', // Red (Server/Core)
+  '#f59e0b', // Amber (Client/UI)
+  '#8b5cf6', // Violet (Config/Scripts)
+  '#ec4899', // Pink
+  '#10b981', // Emerald
+  '#3b82f6', // Blue
+];
+
 const NODE_CONFIG: any = {
-  folder:   { color: '#fbbf24', icon: Folder, label: 'Directory' },
-  file:     { color: '#60a5fa', icon: File,   label: 'Source File' },
-  class:    { color: '#f472b6', icon: Box,    label: 'Class/Struct' },
-  function: { color: '#34d399', icon: Code,   label: 'Function' },
-  module:   { color: '#a78bfa', icon: Database, label: 'Module' },
-  default:  { color: '#94a3b8', icon: FileCode, label: 'Asset' }
+  folder:   { icon: Folder, label: 'Directory' },
+  file:     { icon: File,   label: 'File' },
+  class:    { icon: Box,    label: 'Class' },
+  function: { icon: Code,   label: 'Function' },
+  module:   { icon: Database, label: 'Module' },
+  default:  { icon: FileCode, label: 'Asset' }
 };
 
 // -----------------------------------------------------------------------------
-// Data Helpers
+// Data Helpers (Graph -> Tree Conversion)
 // -----------------------------------------------------------------------------
+
+const assignBranchColors = (node: any, colorIndex = 0, depth = 0) => {
+    if (depth === 0 && node.children) {
+        node.children.forEach((child: any, index: number) => {
+            const color = BRANCH_COLORS[index % BRANCH_COLORS.length];
+            child.attributes.branchColor = color;
+            assignBranchColors(child, 0, depth + 1);
+        });
+        return;
+    }
+
+    if (node.children) {
+        node.children.forEach((child: any) => {
+            child.attributes.branchColor = node.attributes.branchColor;
+            assignBranchColors(child, 0, depth + 1);
+        });
+    }
+};
+
 const buildHierarchy = (nodes: any[], links: any[]) => {
-    if (!nodes.length) return { name: 'Repository', attributes: { type: 'root', id: 'root' }, children: [] };
+    if (!nodes.length) return null;
 
     const nodeMap = new Map();
     nodes.forEach(n => {
         nodeMap.set(n.id, { 
             name: n.name || n.id, 
-            attributes: { ...n }, 
+            attributes: { ...n, type: n.type?.toLowerCase() || 'default' }, 
             children: [] 
         });
     });
@@ -45,15 +70,21 @@ const buildHierarchy = (nodes: any[], links: any[]) => {
     const childrenSet = new Set();
     
     links.forEach(link => {
+        const relation = link.relation || link.type;
+        // Strict hierarchy relations
+        if (relation !== 'CONTAINS' && relation !== 'DEFINES') return;
+
         const parentId = typeof link.source === 'object' ? link.source.id : link.source;
         const childId = typeof link.target === 'object' ? link.target.id : link.target;
-        
+
         const parent = nodeMap.get(parentId);
         const child = nodeMap.get(childId);
 
         if (parent && child && parentId !== childId) {
-            parent.children.push(child);
-            childrenSet.add(childId);
+            if (!childrenSet.has(childId)) { // Prevent cycles/multiple parents for tree
+                parent.children.push(child);
+                childrenSet.add(childId);
+            }
         }
     });
 
@@ -62,13 +93,26 @@ const buildHierarchy = (nodes: any[], links: any[]) => {
         if (!childrenSet.has(key)) roots.push(val);
     });
 
-    if (roots.length === 1) return roots[0];
-    return { name: 'Root', attributes: { type: 'folder', id: 'root' }, children: roots };
+    let finalTree;
+    if (roots.length === 1) {
+        finalTree = roots[0];
+    } else {
+        finalTree = { 
+            name: 'Repository', 
+            attributes: { type: 'root', id: 'root' }, 
+            children: roots 
+        };
+    }
+
+    assignBranchColors(finalTree);
+    return finalTree;
 };
 
-const buildParentMap = (links: any[]) => {
+const buildParentMap = (nodes: any[], links: any[]) => {
     const map = new Map<string, string>();
     links.forEach(link => {
+        const relation = link.relation || link.type;
+        if (relation !== 'CONTAINS' && relation !== 'DEFINES') return;
         const s = typeof link.source === 'object' ? link.source.id : link.source;
         const t = typeof link.target === 'object' ? link.target.id : link.target;
         map.set(t, s);
@@ -80,7 +124,7 @@ export default function Dashboard() {
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
-  const [mounted, setMounted] = useState(false); // HYDRATION FIX
+  const [mounted, setMounted] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [ragResult, setRagResult] = useState<string | null>(null);
@@ -94,169 +138,307 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'assistant' | 'details'>('assistant');
   
   const [pathSet, setPathSet] = useState<Set<string>>(new Set());
-  const [treeOrientation, setTreeOrientation] = useState<'vertical' | 'horizontal'>('vertical');
-  const [treeTranslate, setTreeTranslate] = useState({ x: 0, y: 0 });
+  const [treeOrientation, setTreeOrientation] = useState<'vertical' | 'horizontal'>('horizontal');
+  
+  // D3 Refs
+  const svgRef = useRef<SVGSVGElement>(null);
+  const wrapperRef = useRef<SVGGElement>(null);
+  // FIX: Define treeContainer ref
   const treeContainer = useRef<HTMLDivElement>(null);
 
   // ---------------------------------------------------------------------------
-  // Lifecycle & Logic
+  // Lifecycle
   // ---------------------------------------------------------------------------
-  
-  // FIX: Prevent Hydration Mismatch
-  useEffect(() => {
-      setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
   const hierarchyData = useMemo(() => buildHierarchy(graphData.nodes, graphData.links), [graphData]);
-  const parentMap = useMemo(() => buildParentMap(graphData.links), [graphData.links]);
+  const parentMap = useMemo(() => buildParentMap(graphData.nodes, graphData.links), [graphData]);
 
-  const centerTree = useCallback(() => {
-      if (treeContainer.current) {
-          const { width, height } = treeContainer.current.getBoundingClientRect();
-          if (treeOrientation === 'vertical') setTreeTranslate({ x: width / 2, y: 50 });
-          else setTreeTranslate({ x: 50, y: height / 2 });
-      }
-  }, [treeOrientation]);
+  // ---------------------------------------------------------------------------
+  // API
+  // ---------------------------------------------------------------------------
+  const loadGraph = useCallback(async () => { const data = await dexApi.getGraphData(); if(data?.nodes?.length) setGraphData(data); }, []);
+  
+  const pollIngestion = useCallback(() => { 
+    const i = setInterval(async () => { 
+        try { 
+            const s = await dexApi.getIngestStatus(); 
+            setProgress(s.progress); 
+            setStep(s.step); 
+            if (s.state === 'completed') { clearInterval(i); setIngesting(false); loadGraph(); } 
+        } catch(e) {} 
+    }, 1000); 
+  }, [loadGraph]);
 
-  useEffect(() => {
-      const t = setTimeout(centerTree, 500);
-      return () => clearTimeout(t);
-  }, [centerTree, graphData, treeOrientation]);
+  useEffect(() => { 
+    dexApi.getIngestStatus().then(s => { 
+        if(s.state === 'processing' || s.state === 'cloning' || s.state === 'running') { 
+            setIngesting(true); pollIngestion(); 
+        } 
+    }).catch(() => {}); 
+  }, [pollIngestion]);
+
+  const handleIngest = async () => { 
+      setIngesting(true); setGraphData({ nodes: [], links: [] }); 
+      try { await dexApi.triggerIngestion(repoUrl); } catch (err) { setIngesting(false); } 
+      pollIngestion(); 
+  };
+  
+  const handleExecute = async (manualQuery?: string) => { 
+      const text = manualQuery || query;
+      if(!text) return; 
+      if(manualQuery) setQuery(manualQuery);
+      
+      setLoading(true); 
+      const res = await dexApi.queryRAG(text); 
+      setRagResult(res.answer); setLoading(false); setActiveTab('assistant'); 
+  };
 
   // ---------------------------------------------------------------------------
   // Interaction
   // ---------------------------------------------------------------------------
-  const handleNodeClick = (nodeAttributes: any) => {
+  const handleNodeClick = useCallback((nodeAttributes: any) => {
       setSelectedNode(nodeAttributes);
-      setActiveTab('details');
-
+      
       const newPath = new Set<string>();
       let currentId = nodeAttributes.id;
       newPath.add(currentId);
-
       while (currentId && parentMap.has(currentId)) {
           const parentId = parentMap.get(currentId);
-          if (parentId) {
-              newPath.add(parentId);
-              currentId = parentId;
-          } else {
-              break;
-          }
+          if (parentId) { newPath.add(parentId); currentId = parentId; } 
+          else break;
       }
       setPathSet(newPath);
-  };
+  }, [parentMap]);
 
-  const clearSelection = () => {
-      setSelectedNode(null);
-      setPathSet(new Set());
-  };
+  const handleNodeChat = useCallback((nodeAttributes: any) => {
+      handleNodeClick(nodeAttributes);
+      const prompt = `Explain more about the path to the selected node: "${nodeAttributes.name}"`;
+      handleExecute(prompt);
+  }, [handleNodeClick]); 
 
   // ---------------------------------------------------------------------------
-  // Renderers
+  // Custom D3 Implementation
   // ---------------------------------------------------------------------------
   
-  // Controls the CSS class of the connecting lines
-  const getPathClass = ({ source, target }: any) => {
-      if (pathSet.has(target.data.attributes?.id)) {
-          return 'link-active'; 
-      }
-      return 'link-base';
-  };
+  const centerTree = useCallback(() => {
+    if (svgRef.current) {
+        const svg = d3.select(svgRef.current);
+        const { width, height } = svgRef.current.getBoundingClientRect();
+        
+        const transform = d3.zoomIdentity.translate(width / 4, height / 2).scale(0.8);
+        svg.transition().duration(750).call(d3.zoom().transform as any, transform);
+    }
+  }, []);
 
-  const renderCustomNode = ({ nodeDatum, toggleNode }: any) => {
-      const type = nodeDatum.attributes?.type || 'default';
-      const config = NODE_CONFIG[type as keyof typeof NODE_CONFIG] || NODE_CONFIG.default;
-      const id = nodeDatum.attributes?.id;
-      
-      const isSelected = selectedNode?.id === id;
-      const isHighlighted = pathSet.has(id);
-      
-      const charWidth = 8;
-      const baseWidth = 40;
-      const width = Math.max(140, (nodeDatum.name.length * charWidth) + baseWidth);
-      const height = 40;
+  useEffect(() => {
+    if (!hierarchyData || !svgRef.current || !wrapperRef.current) return;
 
-      return (
-        <g onClick={(e) => { e.stopPropagation(); handleNodeClick(nodeDatum.attributes); }}>
-          {isHighlighted && (
-              <rect width={width + 4} height={height + 4} x={-(width/2) - 2} y={-(height/2) - 2} rx={8} fill={config.color} fillOpacity={0.3} filter="url(#glow)" />
-          )}
-          <rect 
-            width={width} height={height} x={-width/2} y={-height/2} rx={6} 
-            fill="#121212" stroke={isSelected ? '#fff' : (isHighlighted ? config.color : '#333')} 
-            strokeWidth={isSelected || isHighlighted ? 2 : 1}
-            className="cursor-pointer transition-all duration-200"
-          />
-          <foreignObject x={(-width/2) + 12} y={-8} width={16} height={16} style={{pointerEvents: 'none'}}>
-             <config.icon size={16} color={isHighlighted ? '#fff' : config.color} />
-          </foreignObject>
-          <text 
-            fill={isHighlighted ? '#fff' : '#94a3b8'} x={(-width/2) + 36} y={5} strokeWidth="0" fontSize="13" 
-            fontWeight={isHighlighted ? "700" : "500"} style={{ fontFamily: 'system-ui, sans-serif', pointerEvents: 'none' }}
-          >
-            {nodeDatum.name}
-          </text>
-          {nodeDatum.children && nodeDatum.children.length > 0 && (
-              <g onClick={(e) => { e.stopPropagation(); toggleNode(); }} className="cursor-pointer hover:opacity-80">
-                  <circle r={8} cx={width/2} cy={0} fill="#222" stroke={isHighlighted ? config.color : "#555"} strokeWidth={1} />
-                  <text x={width/2} y={4} textAnchor="middle" fill="#fff" fontSize="12" fontWeight="bold">{nodeDatum.__rd3t.collapsed ? '+' : '-'}</text>
-              </g>
-          )}
-        </g>
-      );
-  };
+    const svg = d3.select(svgRef.current);
+    const g = d3.select(wrapperRef.current);
+    const { width, height } = svgRef.current.getBoundingClientRect();
 
-  // API Handlers
-  const loadGraph = useCallback(async () => { const data = await dexApi.getGraphData(); if(data?.nodes?.length) setGraphData(data); }, []);
-  const pollIngestion = useCallback(() => { const i = setInterval(async () => { try { const s = await dexApi.getIngestStatus(); setProgress(s.progress); setStep(s.step); if (s.state === 'completed') { clearInterval(i); setIngesting(false); loadGraph(); } } catch(e) {} }, 1000); }, [loadGraph]);
-  useEffect(() => { dexApi.getIngestStatus().then(s => { if(s.state === 'processing' || s.state === 'cloning') { setIngesting(true); pollIngestion(); } }).catch(() => {}); }, [pollIngestion]);
-  const handleIngest = async () => { setIngesting(true); setGraphData({ nodes: [], links: [] }); try { await dexApi.triggerIngestion(repoUrl); } catch (err) { setIngesting(false); } pollIngestion(); };
-  const handleExecute = async () => { if(!query) return; setLoading(true); const res = await dexApi.queryRAG(query); setRagResult(res.answer); setLoading(false); setActiveTab('assistant'); };
+    // 1. Setup Zoom
+    const zoom = d3.zoom()
+        .scaleExtent([0.1, 3])
+        .on("zoom", (event) => {
+            g.attr("transform", event.transform);
+        });
 
-  // ---------------------------------------------------------------------------
-  // RENDER
-  // ---------------------------------------------------------------------------
-  if (!mounted) return null; // FIX: Return null on server to prevent Hydration Error
+    svg.call(zoom as any);
+
+    // 2. Setup Tree Layout
+    const root = d3.hierarchy(hierarchyData);
+    
+    // Node size: [height, width] for horizontal
+    const nodeWidth = 220; 
+    const nodeHeight = 50;
+    
+    const treeLayout = d3.tree().nodeSize(
+        treeOrientation === 'horizontal' 
+        ? [nodeHeight, nodeWidth] 
+        : [nodeWidth, nodeHeight]
+    );
+
+    // 3. Update Function
+    const update = (source: any) => {
+        const treeData = treeLayout(root);
+        const nodes = treeData.descendants();
+        const links = treeData.links();
+
+        // --- Nodes ---
+        const nodeGroup = g.selectAll(".node")
+            .data(nodes, (d: any) => d.data.id || d.id);
+
+        const nodeEnter = nodeGroup.enter().append("g")
+            .attr("class", "node cursor-pointer")
+            .attr("transform", (d: any) => {
+                const x = source.y0 || source.y; 
+                const y = source.x0 || source.x;
+                return treeOrientation === 'horizontal' 
+                    ? `translate(${y},${x})` 
+                    : `translate(${x},${y})`;
+            })
+            .on("click", (event, d: any) => {
+                event.stopPropagation();
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                } else {
+                    d.children = d._children;
+                    d._children = null;
+                }
+                update(d);
+            });
+
+        // Add Circle
+        nodeEnter.append("circle")
+            .attr("r", 0) 
+            .attr("fill", (d: any) => d.data.attributes.type === 'root' ? '#fff' : (d.data.attributes.branchColor || '#666'))
+            .attr("stroke", (d: any) => d.data.attributes.type === 'root' ? '#000' : 'none')
+            .transition().duration(500)
+            .attr("r", (d: any) => d.data.attributes.type === 'root' ? 8 : 5);
+
+        // Add Text
+        nodeEnter.append("text")
+            .attr("dy", "0.31em")
+            .attr("x", (d: any) => d.children || d._children ? -10 : 10)
+            .attr("text-anchor", (d: any) => d.children || d._children ? "end" : "start")
+            .text((d: any) => d.data.name)
+            .style("fill-opacity", 0)
+            .style("font-size", "12px")
+            .style("fill", "#94a3b8")
+            .style("font-family", "system-ui")
+            .transition().duration(500)
+            .style("fill-opacity", 1);
+            
+        // Add "Chat" Action Icon
+        nodeEnter.append("circle")
+            .attr("r", 15)
+            .attr("fill", "transparent")
+            .on("click", (e, d: any) => {
+                e.stopPropagation();
+                handleNodeChat(d.data.attributes);
+            });
+
+        // UPDATE (Transition to new position)
+        const nodeUpdate = nodeGroup.merge(nodeEnter as any).transition().duration(500)
+            .attr("transform", (d: any) => 
+                treeOrientation === 'horizontal' 
+                ? `translate(${d.y},${d.x})` 
+                : `translate(${d.x},${d.y})`
+            );
+
+        nodeGroup.merge(nodeEnter as any).select("circle")
+             .attr("stroke", (d: any) => selectedNode?.id === d.data.id ? "#fff" : "none")
+             .attr("stroke-width", (d: any) => selectedNode?.id === d.data.id ? 2 : 0)
+             .style("filter", (d: any) => pathSet.has(d.data.id) ? `drop-shadow(0 0 6px ${d.data.attributes.branchColor})` : "none")
+             .style("opacity", (d: any) => (pathSet.size > 0 && !pathSet.has(d.data.id)) ? 0.3 : 1);
+        
+        nodeGroup.merge(nodeEnter as any).select("text")
+             .style("fill", (d: any) => pathSet.has(d.data.id) ? "#fff" : "#94a3b8")
+             .style("font-weight", (d: any) => pathSet.has(d.data.id) ? "bold" : "normal")
+             .style("opacity", (d: any) => (pathSet.size > 0 && !pathSet.has(d.data.id)) ? 0.3 : 1);
+
+
+        // EXIT
+        nodeGroup.exit().transition().duration(500)
+            .attr("transform", (d: any) => 
+                treeOrientation === 'horizontal' 
+                ? `translate(${source.y},${source.x})` 
+                : `translate(${source.x},${source.y})`
+            )
+            .remove();
+
+        // --- Links ---
+        const linkGroup = g.selectAll(".link")
+            .data(links, (d: any) => d.target.id);
+
+        const linkEnter = linkGroup.enter().insert("path", "g")
+            .attr("class", "link")
+            .attr("fill", "none")
+            .attr("stroke", "#333")
+            .attr("stroke-width", 1.5)
+            .attr("d", (d: any) => {
+                const o = { x: source.x0 || source.x, y: source.y0 || source.y };
+                return diagonal(o, o);
+            });
+
+        const linkUpdate = linkGroup.merge(linkEnter as any);
+
+        linkUpdate.transition().duration(500)
+            .attr("d", (d: any) => diagonal(d.source, d.target))
+            .attr("stroke", (d: any) => d.target.data.attributes.branchColor || "#333")
+            .attr("class", (d: any) => pathSet.has(d.target.data.id) ? "link link-active" : "link link-base");
+
+        linkGroup.exit().transition().duration(500)
+            .attr("d", (d: any) => {
+                const o = { x: source.x, y: source.y };
+                return diagonal(o, o);
+            })
+            .remove();
+
+        // Stash the old positions for transition.
+        nodes.forEach((d: any) => {
+            d.x0 = d.x;
+            d.y0 = d.y;
+        });
+    };
+
+    // Helper for Diagonal Paths
+    const diagonal = (s: any, d: any) => {
+        if (treeOrientation === 'horizontal') {
+            return `M ${s.y} ${s.x}
+                    C ${(s.y + d.y) / 2} ${s.x},
+                      ${(s.y + d.y) / 2} ${d.x},
+                      ${d.y} ${d.x}`;
+        } else {
+            return `M ${s.x} ${s.y}
+                    C ${s.x} ${(s.y + d.y) / 2},
+                      ${d.x} ${(s.y + d.y) / 2},
+                      ${d.x} ${d.y}`;
+        }
+    };
+
+    // Initial Update
+    if(root) {
+        centerTree();
+        update(root);
+    }
+    
+  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeChat, centerTree]);
+
+
+  if (!mounted) return null;
 
   return (
-    <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans selection:bg-indigo-500/30 overflow-hidden">
+    <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden">
       
-      {/* 1. Global CSS to ensure Lines are Visible */}
-      <style jsx global>{`
-        /* Default Lines (Inactive) */
+      <style dangerouslySetInnerHTML={{__html: `
         .link-base {
             fill: none;
-            stroke: #444;  /* Lighter grey to be visible on black */
             stroke-width: 1.5px;
-            transition: all 0.3s ease;
+            transition: stroke 0.5s ease, opacity 0.5s ease;
+            opacity: 0.4;
         }
-        /* Active Lines (Highlighted) */
         .link-active {
             fill: none;
-            stroke: #22d3ee; /* Cyan */
             stroke-width: 2px;
-            stroke-dasharray: 5;
-            animation: dash 1s linear infinite;
-            z-index: 50;
+            stroke-dasharray: 8;
+            animation: flow 1s linear infinite;
+            opacity: 1;
         }
-        @keyframes dash {
-            to { stroke-dashoffset: -10; }
+        @keyframes flow {
+            from { stroke-dashoffset: 16; }
+            to { stroke-dashoffset: 0; }
         }
-      `}</style>
-
-      {/* 2. SVG Filters */}
-      <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-        <defs>
-            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-        </defs>
-      </svg>
-
-      {/* LEFT SIDEBAR */}
+        .node text {
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+      `}} />
+      
+      {/* --- SIDEBAR --- */}
       <aside className="w-[400px] min-w-[400px] flex flex-col border-r border-white/5 bg-[#0a0a0a] z-20 shadow-2xl">
-        {/* Header */}
         <div className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-black/20 shrink-0">
             <div className="flex items-center gap-3">
                 <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20"><Terminal className="text-indigo-500" size={16} /></div>
@@ -268,7 +450,6 @@ export default function Dashboard() {
             </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-white/5 bg-[#0a0a0a]">
             <button onClick={() => setActiveTab('assistant')} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'assistant' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
                 <div className="flex items-center justify-center gap-2"><MessageSquare size={12} /> Assistant</div>
@@ -278,7 +459,6 @@ export default function Dashboard() {
             </button>
         </div>
 
-        {/* Tab 1: Assistant */}
         {activeTab === 'assistant' && (
             <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-left-4 duration-300">
                 <div className="p-5 border-b border-white/5 bg-[#0a0a0a]/50 shrink-0 space-y-3">
@@ -303,16 +483,14 @@ export default function Dashboard() {
                 <div className="p-5 border-t border-white/5 bg-[#0a0a0a] shrink-0">
                     <div className="relative group">
                         <textarea value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ask about structure..." className="w-full bg-[#111] border border-white/10 rounded-xl p-4 pr-12 text-xs text-white focus:border-indigo-500/50 outline-none resize-none h-24 shadow-inner transition-all focus:bg-[#151515]" />
-                        <button onClick={handleExecute} disabled={loading || !query} className="absolute right-3 bottom-3 p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all shadow-lg">{loading ? <RefreshCw className="animate-spin" size={14}/> : <Play size={14} fill="currentColor"/>}</button>
+                        <button onClick={() => handleExecute()} disabled={loading || !query} className="absolute right-3 bottom-3 p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all shadow-lg">{loading ? <RefreshCw className="animate-spin" size={14}/> : <Play size={14} fill="currentColor"/>}</button>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* Tab 2: Details + LEGEND */}
         {activeTab === 'details' && (
             <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-right-4 duration-300">
-                {/* Node Inspector */}
                 <div className="flex-1 p-5 overflow-y-auto border-b border-white/5">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Search size={12}/> Inspector</div>
                     {selectedNode ? (
@@ -324,15 +502,12 @@ export default function Dashboard() {
                             <div className="p-3 rounded-lg bg-[#111] border border-white/5">
                                 <div className="text-[9px] text-slate-500 mb-1 uppercase">Node Type</div>
                                 <div className="text-xs font-bold text-white capitalize flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full" style={{backgroundColor: (NODE_CONFIG[selectedNode.type as keyof typeof NODE_CONFIG] || NODE_CONFIG.default).color}}></div>
+                                    <div className="w-2 h-2 rounded-full" style={{backgroundColor: selectedNode.branchColor || '#fff'}}></div>
                                     {selectedNode.type}
                                 </div>
                             </div>
-                            <button onClick={handleExecute} className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2">
-                                <Zap size={12} className="text-yellow-400" fill="currentColor"/> Analyze Node
-                            </button>
-                            <button onClick={clearSelection} className="w-full py-2 bg-transparent hover:bg-white/5 border border-transparent hover:border-white/10 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all">
-                                Clear Selection
+                            <button onClick={() => handleNodeChat(selectedNode)} className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2">
+                                <Zap size={12} className="text-yellow-400" fill="currentColor"/> Chat About Node
                             </button>
                         </div>
                     ) : (
@@ -342,66 +517,43 @@ export default function Dashboard() {
                         </div>
                     )}
                 </div>
-
-                {/* LEGEND SECTION */}
-                <div className="h-[40%] flex flex-col bg-[#0a0a0a]">
-                    <div className="p-4 border-b border-white/5 bg-[#0f0f0f] shrink-0">
-                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                            <Layers size={12} className="text-purple-500" /> Legend
-                         </span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2">
-                        <table className="w-full text-left border-collapse">
-                            <tbody className="divide-y divide-white/5">
-                                {Object.entries(NODE_CONFIG).map(([key, config]: any) => (
-                                    <tr key={key} className="hover:bg-white/5 transition-colors group cursor-default">
-                                        <td className="px-3 py-2.5">
-                                            <div className="flex items-center gap-2">
-                                                <config.icon size={12} className="text-slate-600" />
-                                                <div className="text-[11px] font-bold text-slate-300">{config.label}</div>
-                                            </div>
-                                        </td>
-                                        <td className="px-3 py-2.5 text-right">
-                                            <div className="inline-block w-2.5 h-2.5 rounded-full border border-white/10" style={{ backgroundColor: config.color, boxShadow: `0 0 8px ${config.color}40` }}></div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                
+                <div className="h-[20%] flex flex-col bg-[#0a0a0a] border-t border-white/5 p-4">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Structure Key</div>
+                    <div className="grid grid-cols-2 gap-2">
+                        {Object.entries(NODE_CONFIG).map(([key, config]: any) => (
+                             <div key={key} className="flex items-center gap-2 text-[11px] text-slate-500">
+                                 <config.icon size={10} /> {config.label}
+                             </div>
+                        ))}
                     </div>
                 </div>
             </div>
         )}
       </aside>
 
-      {/* MAIN TREE */}
+      {/* --- GRAPH AREA --- */}
       <main className="flex-1 min-w-0 relative bg-[#050505] cursor-move overflow-hidden" ref={treeContainer}>
+        {/* Graph Controls */}
         <div className="absolute top-6 left-6 z-10 flex gap-2">
             <div className="p-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 flex gap-2">
-                <button onClick={() => setTreeOrientation('vertical')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'vertical' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ChevronDown size={12} /> Vertical</button>
-                <button onClick={() => setTreeOrientation('horizontal')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'horizontal' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ChevronRight size={12} /> Horizontal</button>
+                <button onClick={() => setTreeOrientation('vertical')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'vertical' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ChevronDown size={12} /> Vert</button>
+                <button onClick={() => setTreeOrientation('horizontal')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'horizontal' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ChevronRight size={12} /> Horz</button>
                 <div className="w-px h-full bg-white/10 mx-1"></div>
                 <button onClick={centerTree} className="px-3 py-1.5 text-slate-400 hover:text-white transition-colors flex items-center gap-2" title="Center Tree"><Move size={12} /> Center</button>
             </div>
         </div>
 
-        <div className="w-full h-full">
+        {/* The D3 Tree */}
+        <div className="w-full h-full relative">
             {graphData.nodes.length > 0 ? (
-                <Tree 
-                    data={hierarchyData} 
-                    translate={treeTranslate}
-                    orientation={treeOrientation}
-                    renderCustomNodeElement={renderCustomNode}
-                    pathFunc="step" 
-                    pathClassFunc={getPathClass} // Apply line classes
-                    nodeSize={treeOrientation === 'vertical' ? { x: 220, y: 120 } : { x: 250, y: 80 }} 
-                    separation={{ siblings: 1.1, nonSiblings: 1.5 }}
-                    enableLegacyTransitions={true}
-                    transitionDuration={400}
-                    zoomable={true}
-                    draggable={true}
-                    scaleExtent={{ min: 0.1, max: 1.5 }}
-                />
+                <svg 
+                    ref={svgRef} 
+                    className="w-full h-full block"
+                    viewBox="0 0 1000 800"
+                >
+                    <g ref={wrapperRef} />
+                </svg>
             ) : (
                 <div className="flex flex-col items-center justify-center h-full text-slate-700 animate-pulse gap-4">
                     <LayoutTemplate size={48} strokeWidth={1} />

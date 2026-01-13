@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-import networkx as nx
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 
@@ -24,39 +23,6 @@ class IngestRequest(BaseModel):
 class HybridRAGRequest(BaseModel):
     query: str
 
-# --- Helpers ---
-def _ensure_graph_loaded():
-    """
-    Ensures the NetworkX graph is loaded in memory for the Impact Radar.
-    If the server restarted, we reload it from the JSON file.
-    """
-    if ingestion_service.graph_engine.graph.number_of_nodes() > 0:
-        return # Already loaded
-
-    # Path resolution
-    current_dir = os.path.dirname(os.path.abspath(__file__)) 
-    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-    graph_path = os.path.join(backend_root, "data", "repo_graph.json")
-
-    if not os.path.exists(graph_path):
-        return # Nothing to load
-
-    try:
-        logger.info("Hydrating Graph Engine from disk...")
-        with open(graph_path, 'r') as f:
-            data = json.load(f)
-        
-        # Reconstruct NetworkX graph manually to ensure accuracy
-        G = ingestion_service.graph_engine.graph
-        for node in data.get("nodes", []):
-            G.add_node(node["id"], **node)
-        for link in data.get("links", []):
-            G.add_edge(link["source"], link["target"], relation=link.get("relation"))
-            
-        logger.info(f"Graph hydrated: {G.number_of_nodes()} nodes.")
-    except Exception as e:
-        logger.error(f"Failed to hydrate graph: {e}")
-
 # --- Background Task Wrapper ---
 def run_ingestion_sequence(repo_path: str):
     try:
@@ -77,43 +43,40 @@ def run_ingestion_sequence(repo_path: str):
 
 @api_router.get("/health")
 def health_check():
-    return {"status": "ok", "version": "1.1.0"}
+    return {"status": "ok", "version": "1.2.0 (Neo4j Cloud)"}
 
 @api_router.get("/graph/structure")
 def get_knowledge_graph():
     """
-    Returns graph JSON for Frontend Visualization (Force Graph).
+    Fetches the knowledge graph directly from Neo4j Cloud.
+    Now supports massive datasets via smart limits.
     """
-    current_dir = os.path.dirname(os.path.abspath(__file__)) 
-    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir))) 
-    graph_path = os.path.join(backend_root, "data", "repo_graph.json")
-    
-    if not os.path.exists(graph_path):
-        return {"nodes": [], "links": []}
-        
     try:
-        with open(graph_path, 'r') as f:
-            return json.load(f)
+        # Default limit 2000 to prevent browser crash on initial load
+        # You can implement lazy loading later if needed
+        return ingestion_service.graph_engine.get_full_graph(limit=2500)
     except Exception as e:
-        logger.error(f"Graph read error: {e}")
+        logger.error(f"Neo4j Read Error: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/graph/impact")
 def get_impact_graph(file_id: str = Query(..., description="The file ID (path) to analyze blast radius for")):
     """
-    IMPACT RADAR: Returns the 'Blast Radius' subgraph.
-    Shows what files depend on the target file.
+    IMPACT RADAR: Queries Neo4j for the dependency subgraph.
+    Returns: All files that depend on 'file_id' (Upstream Dependencies).
     """
-    _ensure_graph_loaded()
-    
-    # Calculate subgraph using Graph Engine
-    subgraph_data = ingestion_service.graph_engine.get_impact_subgraph(file_id, depth=2)
-    return subgraph_data
+    try:
+        # Direct Cypher query via the GraphEngine
+        return ingestion_service.graph_engine.get_impact_subgraph(file_id)
+    except Exception as e:
+        logger.error(f"Neo4j Impact Query Error: {e}")
+        return {"nodes": [], "links": []}
 
 @api_router.get("/git/history")
 def get_git_history():
     """
     TIME TRAVEL: Returns the commit timeline for the slider.
+    NOTE: History is still kept local (JSON) because it's sequential and small.
     """
     current_dir = os.path.dirname(os.path.abspath(__file__))
     backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
@@ -154,3 +117,15 @@ def execute_hybrid_query(request: HybridRAGRequest):
     except Exception as e:
         logger.error(f"Query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/graph/expand")
+def expand_graph_node(node_id: str = Query(..., description="The ID of the node to expand")):
+    """
+    LAZY LOADING: Fetches children of the specific node.
+    Used for progressive rendering of large graphs.
+    """
+    try:
+        return ingestion_service.graph_engine.get_neighbors(node_id)
+    except Exception as e:
+        logger.error(f"Graph Expansion Error: {e}")
+        return {"nodes": [], "links": []}
