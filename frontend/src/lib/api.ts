@@ -19,10 +19,15 @@ export interface RAGResponse {
 export interface GraphNode {
   id: string;
   name: string;
-  // UPDATE: Added 'folder' so 3D graph handles directories correctly
   type: 'file' | 'class' | 'function' | 'module' | 'folder';
   val?: number;   // Visual size
   group?: string; // Visual color group
+  
+  // NEW: Git Metadata for Time Travel & Blame
+  last_author?: string;
+  last_modified?: string;
+  commit_count?: number;
+  
   [key: string]: any;
 }
 
@@ -43,11 +48,19 @@ export interface IngestResponse {
   message: string;
 }
 
-// NEW: Interface for progress bar status
 export interface IngestStatusResponse {
   state: 'idle' | 'running' | 'completed' | 'error';
   progress: number; // 0 to 100
   step: string;     // Description of current step
+}
+
+// NEW: Git Commit History Interface
+export interface CommitNode {
+  hash: string;
+  msg: string;
+  author: string;
+  date: string;
+  files: string[];
 }
 
 // --- The Singleton Client ---
@@ -105,30 +118,49 @@ class DexClient {
       return res.data;
     } catch (error: any) {
       console.error("Failed to get ingestion status:", error);
-      // Return a safe error state so UI doesn't crash
       return { state: 'error', progress: 0, step: "Failed to fetch status" };
     }
   }
 
-  // 5. Get Knowledge Graph Data
+  // 5. Get Knowledge Graph Data (Standard View)
   public async getGraphData(): Promise<GraphData> {
     try {
       const res: AxiosResponse<GraphData> = await this.client.get('/graph/structure');
-      
-      // Validation
       if (!res.data || !Array.isArray(res.data.nodes)) {
         return { nodes: [], links: [] };
       }
-      
       return res.data;
     } catch (error: any) {
       console.error("Graph Load Failure:", error);
-      
       if (error.code === 'ECONNREFUSED' || error.message === 'Network Error') {
         throw new Error("Backend unavailable. Is the server running on port 8000?");
       }
-      
       return { nodes: [], links: [] };
+    }
+  }
+
+  // 6. NEW: Get Impact Radar (Blast Radius)
+  public async getImpactGraph(fileId: string): Promise<GraphData> {
+    try {
+      // Use params to properly encode the URL (handles slashes in file paths)
+      const res: AxiosResponse<GraphData> = await this.client.get('/graph/impact', {
+        params: { file_id: fileId }
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("Impact Graph Failure:", error);
+      return { nodes: [], links: [] };
+    }
+  }
+
+  // 7. NEW: Get Time Travel History
+  public async getGitHistory(): Promise<CommitNode[]> {
+    try {
+      const res: AxiosResponse<CommitNode[]> = await this.client.get('/git/history');
+      return Array.isArray(res.data) ? res.data : [];
+    } catch (error: any) {
+      console.error("Git History Failure:", error);
+      return [];
     }
   }
 }

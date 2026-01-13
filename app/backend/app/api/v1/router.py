@@ -1,7 +1,8 @@
 import os
 import json
 import logging
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+import networkx as nx
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 
 # --- Service Imports ---
@@ -23,6 +24,39 @@ class IngestRequest(BaseModel):
 class HybridRAGRequest(BaseModel):
     query: str
 
+# --- Helpers ---
+def _ensure_graph_loaded():
+    """
+    Ensures the NetworkX graph is loaded in memory for the Impact Radar.
+    If the server restarted, we reload it from the JSON file.
+    """
+    if ingestion_service.graph_engine.graph.number_of_nodes() > 0:
+        return # Already loaded
+
+    # Path resolution
+    current_dir = os.path.dirname(os.path.abspath(__file__)) 
+    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    graph_path = os.path.join(backend_root, "data", "repo_graph.json")
+
+    if not os.path.exists(graph_path):
+        return # Nothing to load
+
+    try:
+        logger.info("Hydrating Graph Engine from disk...")
+        with open(graph_path, 'r') as f:
+            data = json.load(f)
+        
+        # Reconstruct NetworkX graph manually to ensure accuracy
+        G = ingestion_service.graph_engine.graph
+        for node in data.get("nodes", []):
+            G.add_node(node["id"], **node)
+        for link in data.get("links", []):
+            G.add_edge(link["source"], link["target"], relation=link.get("relation"))
+            
+        logger.info(f"Graph hydrated: {G.number_of_nodes()} nodes.")
+    except Exception as e:
+        logger.error(f"Failed to hydrate graph: {e}")
+
 # --- Background Task Wrapper ---
 def run_ingestion_sequence(repo_path: str):
     try:
@@ -41,34 +75,59 @@ def run_ingestion_sequence(repo_path: str):
 
 # --- Endpoints ---
 
+@api_router.get("/health")
+def health_check():
+    return {"status": "ok", "version": "1.1.0"}
+
 @api_router.get("/graph/structure")
 def get_knowledge_graph():
     """
-    Returns graph JSON for Frontend Visualization.
+    Returns graph JSON for Frontend Visualization (Force Graph).
     """
-    # 1. BULLETPROOF PATH RESOLUTION
-    # We find the file relative to the 'backend/data' folder, wherever it may be.
-    # Current file: backend/app/api/v1/router.py
-    # We need:      backend/data/repo_graph.json
-    
-    current_dir = os.path.dirname(os.path.abspath(__file__)) # .../api/v1
-    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir))) # .../backend
+    current_dir = os.path.dirname(os.path.abspath(__file__)) 
+    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir))) 
     graph_path = os.path.join(backend_root, "data", "repo_graph.json")
     
-    # DEBUG PRINT (Check your terminal when you reload the page!)
-    print(f"🔍 LOOKING FOR GRAPH AT: {graph_path}")
-
     if not os.path.exists(graph_path):
-        logger.warning(f"Graph file not found at: {graph_path}")
         return {"nodes": [], "links": []}
         
     try:
         with open(graph_path, 'r') as f:
-            data = json.load(f)
-        return data
+            return json.load(f)
     except Exception as e:
         logger.error(f"Graph read error: {e}")
         return {"nodes": [], "links": []}
+
+@api_router.get("/graph/impact")
+def get_impact_graph(file_id: str = Query(..., description="The file ID (path) to analyze blast radius for")):
+    """
+    IMPACT RADAR: Returns the 'Blast Radius' subgraph.
+    Shows what files depend on the target file.
+    """
+    _ensure_graph_loaded()
+    
+    # Calculate subgraph using Graph Engine
+    subgraph_data = ingestion_service.graph_engine.get_impact_subgraph(file_id, depth=2)
+    return subgraph_data
+
+@api_router.get("/git/history")
+def get_git_history():
+    """
+    TIME TRAVEL: Returns the commit timeline for the slider.
+    """
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    history_path = os.path.join(backend_root, "data", "repo_history.json")
+
+    if not os.path.exists(history_path):
+        return []
+
+    try:
+        with open(history_path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"History read error: {e}")
+        return []
 
 @api_router.post("/ingest")
 async def trigger_ingestion(request: IngestRequest, background_tasks: BackgroundTasks):

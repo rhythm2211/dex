@@ -101,32 +101,37 @@ class HybridRetriever:
 
     def _expand_anchors(self, file_anchors: List[str]) -> str:
         """
-        Finds structural relationships for the specific files found in search.
+        Finds structural relationships AND Metadata (Git info) for the specific files.
         """
-        relevant_triples = set()
+        relevant_info = set()
         
         for filename in file_anchors:
             # 1. Find nodes belonging to this file
-            # Our IDs are formatted as "filename::ClassName"
             related_nodes = [
                 n for n in self.graph.nodes() 
                 if str(n) == filename or str(n).startswith(f"{filename}::")
             ]
             
             for node in related_nodes:
+                # Get Node Metadata (The Git info we just added)
+                node_data = self.graph.nodes[node]
+                meta_str = ""
+                if "last_author" in node_data:
+                    meta_str = f" [Authored by: {node_data.get('last_author')}, Last Mod: {node_data.get('last_modified')}]"
+
                 # Get Incoming Edges (Who calls/imports this?)
                 in_edges = self.graph.in_edges(node, data=True)
                 for u, v, data in in_edges:
                     rel = data.get('relation', 'related')
-                    relevant_triples.add(f"{u} --[{rel}]--> {v}")
+                    relevant_info.add(f"{u} --[{rel}]--> {v}{meta_str}")
                 
                 # Get Outgoing Edges (What does this inherit/define?)
                 out_edges = self.graph.out_edges(node, data=True)
                 for u, v, data in out_edges:
                     rel = data.get('relation', 'related')
-                    relevant_triples.add(f"{u} --[{rel}]--> {v}")
+                    relevant_info.add(f"{u} --[{rel}]--> {v}") # Usually don't need metadata on target for outgoing
 
-        if not relevant_triples:
+        if not relevant_info:
             return "No structural relationships found."
             
-        return "\n".join(list(relevant_triples)[:15]) # Limit to avoid context overflow
+        return "\n".join(list(relevant_info)[:20]) # Limit to avoid context overflow
