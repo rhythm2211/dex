@@ -1,0 +1,51 @@
+services:
+  backend:
+    build:
+      context: ./app
+      dockerfile: backend/Dockerfile
+    container_name: dex-backend
+    env_file:
+      - ./app/.env
+    ports:
+      - "8001:8000"
+    environment:
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - NEO4J_URI=${NEO4J_URI:-}
+      - NEO4J_USERNAME=${NEO4J_USERNAME:-}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./dex.db}
+      - BACKEND_CORS_ORIGINS=["http://localhost:3001","http://localhost:3000","http://frontend:3000"]
+      - ENVIRONMENT=production
+      - DEBUG=false
+    volumes:
+      - ./app/backend/data:/app/backend/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dex-frontend
+    env_file:
+      - ./app/.env
+    ports:
+      - "3001:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  default:
+    name: dex-network

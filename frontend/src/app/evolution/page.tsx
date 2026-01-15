@@ -264,7 +264,8 @@ export default function EvolutionPage() {
                         const sprite = new SpriteText(node.name);
                         sprite.color = getNodeColor(node);
                         sprite.textHeight = 4;
-                        sprite.position.set(0, -12, 0);
+                        // Type assertion: SpriteText extends THREE.Sprite which has position
+                        (sprite as any).position.set(0, -12, 0);
                         return sprite;
                     }
                 }}

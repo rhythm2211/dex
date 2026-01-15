@@ -215,7 +215,7 @@ export default function Dashboard() {
 
   useEffect(() => { 
     dexApi.getIngestStatus().then(s => { 
-        if(s.state === 'processing' || s.state === 'cloning' || s.state === 'running') { 
+        if(s.state === 'running') { 
             setIngesting(true); pollIngestion(); 
         } 
     }).catch(() => {}); 

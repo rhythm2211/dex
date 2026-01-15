@@ -33,11 +33,16 @@ origins = [
     "http://localhost:3000",      # Next.js Local
     "http://127.0.0.1:3000",      # Next.js Local IP
     "http://localhost:8000",      # Self (Swagger UI)
+    "http://frontend:3000",       # Docker service name
 ]
 
 # If settings provide more origins, add them
 if settings.BACKEND_CORS_ORIGINS:
-    origins.extend([str(origin) for origin in settings.BACKEND_CORS_ORIGINS])
+    # Handle both string (comma-separated) and list formats
+    if isinstance(settings.BACKEND_CORS_ORIGINS, str):
+        origins.extend([origin.strip() for origin in settings.BACKEND_CORS_ORIGINS.split(",")])
+    else:
+        origins.extend([str(origin) for origin in settings.BACKEND_CORS_ORIGINS])
 
 app.add_middleware(
     CORSMiddleware,

@@ -66,9 +66,12 @@ export interface CommitNode {
 // --- The Singleton Client ---
 class DexClient {
   private client: AxiosInstance;
-  private baseURL: string = 'http://localhost:8000';
+  private baseURL: string;
 
   constructor() {
+    // Use environment variable if available, otherwise default to localhost
+    this.baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    
     this.client = axios.create({
       baseURL: `${this.baseURL}/api/v1`,
       headers: { 'Content-Type': 'application/json' },
