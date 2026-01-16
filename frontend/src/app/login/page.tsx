@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import Link from "next/link";
-import { signIn } from "next-auth/react"; // <--- ADDED THIS IMPORT
+import { signIn } from "next-auth/react"; 
 import { Terminal, ArrowRight, Github, Lock, Mail, X } from "lucide-react";
 
 // --- ICONS ---
@@ -64,15 +64,10 @@ const SpotlightCard = ({ children, className = "" }: { children: React.ReactNode
 
 export default function LoginPage() {
   
-  // --- REAL AUTH LOGIC ADDED HERE ---
+  // --- REAL AUTH LOGIC ---
   const handleSocialLogin = async (provider: string) => {
-    console.log(`Starting login with ${provider}...`); // Debug log
-    
-    // Map 'microsoft' to 'azure-ad' for NextAuth
-    const providerId = provider === 'microsoft' ? 'azure-ad' : provider;
-    
-    // Trigger NextAuth Sign In
-    await signIn(providerId, { callbackUrl: '/' });
+    console.log(`Starting login with ${provider}...`); 
+    await signIn(provider, { callbackUrl: '/' });
   };
 
   return (
@@ -157,23 +152,26 @@ export default function LoginPage() {
                     <div className="h-px bg-white/10 flex-1" />
                 </div>
 
-                {/* SOCIAL BUTTONS WITH ONCLICK EVENTS WIRED UP */}
+                {/* SOCIAL BUTTONS */}
                 <div className="grid grid-cols-3 gap-3">
                     <button 
                         onClick={() => handleSocialLogin('github')} 
-                        className="flex items-center justify-center py-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all text-slate-300 hover:text-white" title="GitHub"
+                        className="cursor-pointer active:scale-95 flex items-center justify-center py-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all text-slate-300 hover:text-white" 
+                        title="GitHub"
                     >
                         <Github size={20} />
                     </button>
                     <button 
                         onClick={() => handleSocialLogin('google')} 
-                        className="flex items-center justify-center py-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all text-slate-300 hover:text-white" title="Google"
+                        className="cursor-pointer active:scale-95 flex items-center justify-center py-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all text-slate-300 hover:text-white" 
+                        title="Google"
                     >
                         <GoogleIcon />
                     </button>
                     <button 
                         onClick={() => handleSocialLogin('microsoft')} 
-                        className="flex items-center justify-center py-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all text-slate-300 hover:text-white" title="Microsoft"
+                        className="cursor-pointer active:scale-95 flex items-center justify-center py-2.5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all text-slate-300 hover:text-white" 
+                        title="Microsoft"
                     >
                         <MicrosoftIcon />
                     </button>

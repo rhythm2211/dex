@@ -10,16 +10,9 @@ services:
       - ./app/.env
     ports:
       - "8001:8000"
+    networks:
+      - default
     environment:
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME}
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - NEO4J_URI=${NEO4J_URI:-}
-      - NEO4J_USERNAME=${NEO4J_USERNAME:-}
-      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-}
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./dex.db}
       - BACKEND_CORS_ORIGINS=["http://localhost:3001","http://localhost:3000","http://frontend:3000"]
       - ENVIRONMENT=production
       - DEBUG=false
@@ -43,8 +36,11 @@ services:
       - ./frontend/.env.local  # 2. Frontend AUTH variables (GitHub/Google keys)
     ports:
       - "3001:3000"
+    networks:
+      - default
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - INTERNAL_API_URL=http://dex-backend:8000
       - NEXTAUTH_URL=http://localhost:3001
     depends_on:
       - backend

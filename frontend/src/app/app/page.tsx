@@ -217,9 +217,14 @@ export default function Dashboard() {
     dexApi.getIngestStatus().then(s => {
         if(s.state === 'running') {
             setIngesting(true); pollIngestion();
+        } else if(s.state === 'completed') {
+            // Load graph data if ingestion is already completed
+            loadGraph();
         }
     }).catch(() => {});
-  }, [pollIngestion]);
+    // Also try to load graph data on mount in case there's existing data
+    loadGraph();
+  }, [pollIngestion, loadGraph]);
 
   const handleIngest = async () => {
       setIngesting(true); setGraphData({ nodes: [], links: [] });
@@ -479,7 +484,7 @@ export default function Dashboard() {
         update(root);
     }
 
-  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeChat, centerTree]);
+  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeClick, centerTree]);
 
 
   if (!mounted) return null;

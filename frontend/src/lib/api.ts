@@ -23,7 +23,7 @@ export interface GraphNode {
   val?: number;   // Visual size
   group?: string; // Visual color group
   
-  // NEW: Git Metadata for Time Travel & Blame
+  // Git Metadata
   last_author?: string;
   last_modified?: string;
   commit_count?: number;
@@ -54,7 +54,6 @@ export interface IngestStatusResponse {
   step: string;     // Description of current step
 }
 
-// NEW: Git Commit History Interface
 export interface CommitNode {
   hash: string;
   msg: string;
@@ -69,17 +68,29 @@ class DexClient {
   private baseURL: string;
 
   constructor() {
-    // Use environment variable if available, otherwise default to localhost
-    this.baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    // --- DOCKER NETWORKING FIX ---
+    // If running on the Server (SSR), we must use the internal Docker container name.
+    // If running in the Browser, we use localhost.
     
+    if (typeof window === 'undefined') {
+      // SERVER-SIDE: connect to the backend container directly
+      // NOTE: Ensure 'dex-backend' matches your docker-compose service name!
+      this.baseURL = process.env.INTERNAL_API_URL || 'http://dex-backend:8000';
+    } else {
+      // CLIENT-SIDE: connect via the browser's access to localhost
+      // Docker exposes backend on port 8001, so default to that
+      this.baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+    }
+
+    // Set up Axios with the determined URL
     this.client = axios.create({
-      baseURL: `${this.baseURL}/api/v1`,
+      baseURL: `${this.baseURL}/api/v1`, // Ensure your Python backend uses this prefix
       headers: { 'Content-Type': 'application/json' },
-      timeout: 60000, // 60s timeout for deep queries
+      timeout: 60000, 
     });
   }
 
-  // 1. Health Check
+  // 1. Health Check (Note: Hits root /health, not /api/v1/health)
   public async checkHealth(): Promise<boolean> {
     try {
       const res = await axios.get(`${this.baseURL}/health`, {
@@ -88,6 +99,7 @@ class DexClient {
       });
       return res.status === 200;
     } catch (error) {
+      console.warn("Health check failed:", error);
       return false;
     }
   }
@@ -98,7 +110,7 @@ class DexClient {
       const res: AxiosResponse<RAGResponse> = await this.client.post('/query/hybrid', { query });
       return res.data;
     } catch (error: any) {
-      console.error("RAG Engine Failure:", error);
+      console.error("RAG Engine Failure:", error?.message);
       throw new Error(error.response?.data?.detail || "AI Analysis Failed");
     }
   }
@@ -109,23 +121,23 @@ class DexClient {
       const res: AxiosResponse<IngestResponse> = await this.client.post('/ingest', { repo_path: repoUrl });
       return res.data;
     } catch (error: any) {
-      console.error("Ingestion Trigger Failure:", error);
+      console.error("Ingestion Trigger Failure:", error?.message);
       throw new Error(error.response?.data?.detail || "Failed to start ingestion");
     }
   }
 
-  // 4. Get Ingestion Progress (Polling)
+  // 4. Get Ingestion Progress
   public async getIngestStatus(): Promise<IngestStatusResponse> {
     try {
       const res: AxiosResponse<IngestStatusResponse> = await this.client.get('/ingest/status');
       return res.data;
     } catch (error: any) {
-      console.error("Failed to get ingestion status:", error);
+      // Don't spam console if just polling
       return { state: 'error', progress: 0, step: "Failed to fetch status" };
     }
   }
 
-  // 5. Get Knowledge Graph Data (Standard View)
+  // 5. Get Knowledge Graph Data
   public async getGraphData(): Promise<GraphData> {
     try {
       const res: AxiosResponse<GraphData> = await this.client.get('/graph/structure');
@@ -134,40 +146,36 @@ class DexClient {
       }
       return res.data;
     } catch (error: any) {
-      console.error("Graph Load Failure:", error);
-      if (error.code === 'ECONNREFUSED' || error.message === 'Network Error') {
-        throw new Error("Backend unavailable. Is the server running on port 8000?");
-      }
+      console.error("Graph Load Failure:", error?.message);
       return { nodes: [], links: [] };
     }
   }
 
-  // 6. NEW: Get Impact Radar (Blast Radius)
+  // 6. Get Impact Radar
   public async getImpactGraph(fileId: string): Promise<GraphData> {
     try {
-      // Use params to properly encode the URL (handles slashes in file paths)
       const res: AxiosResponse<GraphData> = await this.client.get('/graph/impact', {
         params: { file_id: fileId }
       });
       return res.data;
     } catch (error: any) {
-      console.error("Impact Graph Failure:", error);
+      console.error("Impact Graph Failure:", error?.message);
       return { nodes: [], links: [] };
     }
   }
 
-  // 7. NEW: Get Time Travel History
+  // 7. Get Time Travel History
   public async getGitHistory(): Promise<CommitNode[]> {
     try {
       const res: AxiosResponse<CommitNode[]> = await this.client.get('/git/history');
       return Array.isArray(res.data) ? res.data : [];
     } catch (error: any) {
-      console.error("Git History Failure:", error);
+      console.error("Git History Failure:", error?.message);
       return [];
     }
   }
 
-  // 8. NEW: Lazy Load Graph Node
+  // 8. Lazy Load Graph Node
   public async expandGraphNode(nodeId: string): Promise<GraphData> {
     try {
       const res: AxiosResponse<GraphData> = await this.client.get('/graph/expand', {
@@ -175,12 +183,10 @@ class DexClient {
       });
       return res.data;
     } catch (error: any) {
-      console.error("Graph Expansion Failure:", error);
+      console.error("Graph Expansion Failure:", error?.message);
       return { nodes: [], links: [] };
     }
   }
 }
 
 export const dexApi = new DexClient();
-
-

@@ -31,8 +31,11 @@ app = FastAPI(
 # We explicitly allow the Next.js frontend origins to prevent Network Errors.
 origins = [
     "http://localhost:3000",      # Next.js Local
+    "http://localhost:3001",      # Next.js Docker (host port)
     "http://127.0.0.1:3000",      # Next.js Local IP
+    "http://127.0.0.1:3001",      # Next.js Docker IP
     "http://localhost:8000",      # Self (Swagger UI)
+    "http://localhost:8001",      # Self (Swagger UI - Docker port)
     "http://frontend:3000",       # Docker service name
 ]
 
