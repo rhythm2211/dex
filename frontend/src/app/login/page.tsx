@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { signIn } from "next-auth/react"; 
+import { useRouter } from "next/navigation";
+import { signIn, useSession } from "next-auth/react"; 
 import { Terminal, ArrowRight, Github, Lock, Mail, X } from "lucide-react";
 
 // --- ICONS ---
@@ -63,12 +64,29 @@ const SpotlightCard = ({ children, className = "" }: { children: React.ReactNode
 };
 
 export default function LoginPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   
   // --- REAL AUTH LOGIC ---
   const handleSocialLogin = async (provider: string) => {
     console.log(`Starting login with ${provider}...`); 
-    await signIn(provider, { callbackUrl: '/' });
+    
+    // IMPORTANT: Map 'microsoft' to 'azure-ad' because that is the ID NextAuth uses internally
+    const providerId = provider === 'microsoft' ? 'azure-ad' : provider;
+    
+    await signIn(providerId, { callbackUrl: '/' });
   };
+
+  // Get user's first name or username
+  const getUserDisplayName = () => {
+    if (!session?.user) return "";
+    const name = session.user.name || session.user.email || "";
+    // Extract first name if full name is provided
+    const firstName = name.split(" ")[0];
+    return firstName || name;
+  };
+
+  const isLoggedIn = status === "authenticated" && session?.user;
 
   return (
     <div className="min-h-screen bg-[#050505] text-slate-200 font-sans flex flex-col items-center justify-center relative overflow-hidden selection:bg-indigo-500/30 selection:text-white py-20 px-4 sm:px-6">
@@ -105,10 +123,23 @@ export default function LoginPage() {
             <div className="p-8 relative z-10 backdrop-blur-sm bg-black/40">
                 
                 <div className="text-center mb-8">
-                    <h1 className="text-xl font-semibold text-white mb-2">Welcome back</h1>
-                    <p className="text-sm text-slate-400">Enter your credentials to access the graph.</p>
+                    <h1 className="text-xl font-semibold text-white mb-2">
+                        {isLoggedIn ? `Welcome back, ${getUserDisplayName()}` : "Welcome back"}
+                    </h1>
+                    <p className="text-sm text-slate-400">
+                        {isLoggedIn ? "You're already signed in. Continue to the app?" : "Enter your credentials to access the graph."}
+                    </p>
+                    {isLoggedIn && (
+                        <Link 
+                            href="/app" 
+                            className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 text-xs font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)]"
+                        >
+                            Go to App <ArrowRight size={14} />
+                        </Link>
+                    )}
                 </div>
 
+                {!isLoggedIn && (
                 <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
                     <div className="space-y-1.5">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Email</label>
@@ -145,7 +176,10 @@ export default function LoginPage() {
                         Sign In <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
                     </button>
                 </form>
+                )}
 
+                {!isLoggedIn && (
+                <>
                 <div className="my-8 flex items-center gap-4">
                     <div className="h-px bg-white/10 flex-1" />
                     <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Or continue with</span>
@@ -176,6 +210,8 @@ export default function LoginPage() {
                         <MicrosoftIcon />
                     </button>
                 </div>
+                </>
+                )}
             </div>
             
             <div className="p-5 bg-white/[0.02] border-t border-white/5 text-center">

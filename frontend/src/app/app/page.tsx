@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useSession, signOut } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import { dexApi, GraphData } from '@/lib/api';
 import {
   RefreshCw, Zap, Search, Terminal, MessageSquare,
   Info, Folder, File, Box, Code, Database, FileCode,
   ChevronRight, ChevronDown, Move, LayoutTemplate,
-  Play
+  Play, LogOut, User
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -164,6 +166,8 @@ export default function Dashboard() {
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
+  const { data: session } = useSession();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -522,9 +526,28 @@ export default function Dashboard() {
                 <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20"><Terminal className="text-indigo-500" size={16} /></div>
                 <h1 className="text-sm font-bold text-white tracking-widest leading-none">DEX</h1>
             </div>
-            <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-emerald-500/5 border border-emerald-500/10">
-                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-                 <span className="text-[10px] text-emerald-500 font-medium uppercase tracking-wider">Online</span>
+            <div className="flex items-center gap-2">
+                {session?.user && (
+                    <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                        <User size={12} className="text-indigo-400" />
+                        <span className="text-[10px] text-indigo-300 font-medium max-w-[100px] truncate">
+                            {session.user.name || session.user.email}
+                        </span>
+                    </div>
+                )}
+                <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-emerald-500/5 border border-emerald-500/10">
+                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
+                    <span className="text-[10px] text-emerald-500 font-medium uppercase tracking-wider">Online</span>
+                </div>
+                {session?.user && (
+                    <button
+                        onClick={() => signOut({ callbackUrl: '/' })}
+                        className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500/10 hover:border-red-500/30 text-slate-400 hover:text-red-400 transition-all"
+                        title="Log out"
+                    >
+                        <LogOut size={14} />
+                    </button>
+                )}
             </div>
         </div>
 

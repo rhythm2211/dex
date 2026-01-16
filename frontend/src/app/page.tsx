@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, useMemo } from "react";
 import Link from "next/link";
-import { Terminal, ArrowRight, Zap, GitBranch, ShieldCheck, Sparkles, Quote, Network, Play } from "lucide-react";
+import { useSession, signOut } from "next-auth/react";
+import { Terminal, ArrowRight, Zap, GitBranch, ShieldCheck, Sparkles, Quote, Network, Play, User, LogOut } from "lucide-react";
 
 // -----------------------------------------------------------------------------
 // EFFECT COMPONENTS (ZONED)
@@ -300,6 +301,7 @@ const CAROUSEL_ITEMS = [
 ];
 
 export default function HomePage() {
+  const { data: session } = useSession();
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -327,8 +329,29 @@ export default function HomePage() {
             <span className="text-xs font-bold tracking-[0.32em] text-white">DEX</span>
           </Link>
           <div className="flex items-center gap-4">
-            <Link href="/login" className="text-xs font-semibold text-slate-400 hover:text-white transition-colors">Log in</Link>
-            <Link href="/signup" className="hidden sm:inline-flex items-center justify-center rounded-full bg-white text-black px-4 py-2 text-xs font-bold hover:bg-slate-200 transition-colors">Sign up</Link>
+            {session?.user ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                  <User size={14} className="text-indigo-400" />
+                  <span className="text-xs text-indigo-300 font-medium max-w-[120px] truncate">
+                    {session.user.name || session.user.email}
+                  </span>
+                </div>
+                <button
+                  onClick={() => signOut({ callbackUrl: '/' })}
+                  className="text-xs font-semibold text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1.5"
+                  title="Log out"
+                >
+                  <LogOut size={14} />
+                  Log out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="text-xs font-semibold text-slate-400 hover:text-white transition-colors">Log in</Link>
+                <Link href="/signup" className="hidden sm:inline-flex items-center justify-center rounded-full bg-white text-black px-4 py-2 text-xs font-bold hover:bg-slate-200 transition-colors">Sign up</Link>
+              </>
+            )}
           </div>
         </div>
       </header>
