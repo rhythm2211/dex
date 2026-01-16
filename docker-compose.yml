@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./app
+      dockerfile: backend/Dockerfile
+    container_name: dex-backend
+    env_file:
+      - ./app/.env
+    ports:
+      - "8001:8000"
+    networks:
+      - default
+    environment:
+      - BACKEND_CORS_ORIGINS=["http://localhost:3001","http://localhost:3000","http://frontend:3000"]
+      - ENVIRONMENT=production
+      - DEBUG=false
+    volumes:
+      - ./app/backend/data:/app/backend/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dex-frontend
+    env_file:
+      - ./app/.env             # 1. Backend variables (if needed)
+      - ./frontend/.env.local  # 2. Frontend AUTH variables (GitHub/Google keys)
+    ports:
+      - "3001:3000"
+    networks:
+      - default
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - INTERNAL_API_URL=http://dex-backend:8000
+      - NEXTAUTH_URL=http://localhost:3001
+      # Auth variables - loaded from ./frontend/.env.local
+      - GITHUB_ID=${GITHUB_ID}
+      - GITHUB_SECRET=${GITHUB_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - AZURE_AD_CLIENT_ID=${AZURE_AD_CLIENT_ID}
+      - AZURE_AD_CLIENT_SECRET=${AZURE_AD_CLIENT_SECRET}
+      - AZURE_AD_TENANT_ID=${AZURE_AD_TENANT_ID:-common}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  default:
+    name: dex-network

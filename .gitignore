@@ -1,15 +1,2 @@
-# Python
-__pycache__/
-*.py[cod]
-ingestion/venv/
-ingestion/.env
-
-# Node.js / Web App
-node_modules/
-.next/
-out/
-build/
-web-app/.env.local
-
-# System
-.DS_Store
+app/.env
+node_modules
