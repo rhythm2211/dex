@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   backend:
     build:
@@ -37,11 +39,13 @@ services:
       dockerfile: Dockerfile
     container_name: dex-frontend
     env_file:
-      - ./app/.env
+      - ./app/.env             # 1. Backend variables (if needed)
+      - ./frontend/.env.local  # 2. Frontend AUTH variables (GitHub/Google keys)
     ports:
       - "3001:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - NEXTAUTH_URL=http://localhost:3001
     depends_on:
       - backend
     restart: unless-stopped

@@ -1,656 +1,552 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { dexApi, GraphData } from '@/lib/api';
-import { 
-  RefreshCw, Zap, Search, Terminal, MessageSquare,
-  Info, Folder, File, Box, Code, Database, FileCode, 
-  ChevronRight, ChevronDown, Move, LayoutTemplate,
-  Play
-} from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import * as d3 from 'd3';
+import { useEffect, useState, useRef, useMemo } from "react";
+import Link from "next/link";
+import { Terminal, ArrowRight, Zap, GitBranch, ShieldCheck, Sparkles, Quote, Network, Play } from "lucide-react";
 
 // -----------------------------------------------------------------------------
-// Visual Config & Color Palette
-// -----------------------------------------------------------------------------
-const BRANCH_COLORS = [
-  '#ef4444', // Red (Server/Core)
-  '#f59e0b', // Amber (Client/UI)
-  '#8b5cf6', // Violet (Config/Scripts)
-  '#ec4899', // Pink
-  '#10b981', // Emerald
-  '#3b82f6', // Blue
-];
-
-const NODE_CONFIG: any = {
-  folder:   { icon: Folder,   label: 'Directory', color: '#f59e0b' }, // Amber
-  file:     { icon: File,     label: 'File',      color: '#3b82f6' }, // Blue
-  class:    { icon: Box,      label: 'Class',     color: '#8b5cf6' }, // Violet
-  function: { icon: Code,     label: 'Function',  color: '#10b981' }, // Emerald
-  module:   { icon: Database, label: 'Module',    color: '#ec4899' }, // Pink
-  default:  { icon: FileCode, label: 'Asset',     color: '#64748b' }  // Slate
-};
-
-// -----------------------------------------------------------------------------
-// Data Helpers (Graph -> Tree Conversion)
+// EFFECT COMPONENTS (ZONED)
 // -----------------------------------------------------------------------------
 
-const assignBranchColors = (node: any, colorIndex = 0, depth = 0) => {
-    if (depth === 0 && node.children) {
-        node.children.forEach((child: any, index: number) => {
-            const color = BRANCH_COLORS[index % BRANCH_COLORS.length];
-            child.attributes.branchColor = color;
-            assignBranchColors(child, 0, depth + 1);
-        });
-        return;
-    }
-
-    if (node.children) {
-        node.children.forEach((child: any) => {
-            child.attributes.branchColor = node.attributes.branchColor;
-            assignBranchColors(child, 0, depth + 1);
-        });
-    }
-};
-
-// Build a strict filesystem-style hierarchy:
-// ROOT (repository)
-//   -> Folder (top-level, from first path segment)
-//     -> File (code file, e.g. .py / .ts)
-//       -> Function/Class (defined in that file)
-const buildHierarchy = (nodes: any[], _links: any[]) => {
-    if (!nodes.length) return null;
-
-    const root: any = {
-        name: 'Repository',
-        attributes: { type: 'root', id: 'root' },
-        children: [] as any[],
-    };
-
-    const folderMap = new Map<string, any>();
-    const fileNodeMap = new Map<string, any>(); // fileId -> tree node
-
-    const allNodes = nodes || [];
-
-    // 1) Attach files under their top-level folder (no folder->folder links)
-    allNodes
-        .filter((n: any) => (n.type || '').toLowerCase() === 'file')
-        .forEach((file: any) => {
-            const rawId = String(file.id || '');
-            const pathSepIndex = Math.max(rawId.indexOf('/'), rawId.indexOf('\\'));
-
-            const folderName =
-                pathSepIndex > 0 ? rawId.slice(0, pathSepIndex) : '__root__';
-
-            let folderNode = folderMap.get(folderName);
-            if (!folderNode) {
-                folderNode = {
-                    name: folderName === '__root__' ? 'root_files' : folderName,
-                    attributes: {
-                        id: `folder:${folderName}`,
-                        type: 'folder',
-                    },
-                    children: [] as any[],
-                };
-                folderMap.set(folderName, folderNode);
-                root.children.push(folderNode);
-            }
-
-            const fileTreeNode: any = {
-                name: file.name || rawId,
-                attributes: {
-                    ...file,
-                    id: file.id,
-                    type: 'file',
-                },
-                children: [] as any[],
-            };
-
-            folderNode.children.push(fileTreeNode);
-            fileNodeMap.set(file.id, fileTreeNode);
-        });
-
-    // 2) Attach functions/classes strictly under their defining file
-    allNodes
-        .filter((n: any) => {
-            const t = (n.type || '').toLowerCase();
-            return t === 'function' || t === 'class';
-        })
-        .forEach((fnNode: any) => {
-            const rawId = String(fnNode.id || '');
-            const fileId = rawId.split('::')[0]; // our ingestion uses file_path::something
-
-            const parentFileTreeNode = fileNodeMap.get(fileId);
-            if (!parentFileTreeNode) return; // if we can't find the file, skip to avoid illegal edges
-
-            const childTreeNode: any = {
-                name: fnNode.name || rawId,
-                attributes: {
-                    ...fnNode,
-                    id: fnNode.id,
-                    type: (fnNode.type || '').toLowerCase(),
-                },
-                children: [] as any[],
-            };
-
-            parentFileTreeNode.children.push(childTreeNode);
-        });
-
-    assignBranchColors(root);
-    return root;
-};
-
-const buildParentMapFromHierarchy = (root: any | null) => {
-    const map = new Map<string, string>();
-    if (!root) return map;
-
-    const walk = (node: any, parentId: string | null) => {
-        const nodeId = node.attributes?.id;
-        if (nodeId && parentId) {
-            map.set(nodeId, parentId);
-        }
-        if (Array.isArray(node.children)) {
-            node.children.forEach((child: any) => walk(child, nodeId || parentId));
-        }
-    };
-
-    walk(root, null);
-    return map;
-};
-
-export default function Dashboard() {
-  // ---------------------------------------------------------------------------
-  // State
-  // ---------------------------------------------------------------------------
-  const [mounted, setMounted] = useState(false);
-  const [query, setQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [ragResult, setRagResult] = useState<string | null>(null);
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
-  const [repoUrl, setRepoUrl] = useState('https://github.com/rhythm2211/ai-analyst');
-  const [ingesting, setIngesting] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [step, setStep] = useState('');
-  
-  const [selectedNode, setSelectedNode] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'assistant' | 'details'>('assistant');
-  
-  const [pathSet, setPathSet] = useState<Set<string>>(new Set());
-  const [treeOrientation, setTreeOrientation] = useState<'vertical' | 'horizontal'>('horizontal');
-  
-  // D3 Refs
-  const svgRef = useRef<SVGSVGElement>(null);
-  const wrapperRef = useRef<SVGGElement>(null);
-  // FIX: Define treeContainer ref
-  const treeContainer = useRef<HTMLDivElement>(null);
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle
-  // ---------------------------------------------------------------------------
-  useEffect(() => { setMounted(true); }, []);
-
-  const hierarchyData = useMemo(() => buildHierarchy(graphData.nodes, graphData.links), [graphData]);
-  const parentMap = useMemo(
-    () => buildParentMapFromHierarchy(hierarchyData),
-    [hierarchyData]
-  );
-
-  // ---------------------------------------------------------------------------
-  // API
-  // ---------------------------------------------------------------------------
-  const loadGraph = useCallback(async () => { const data = await dexApi.getGraphData(); if(data?.nodes?.length) setGraphData(data); }, []);
-  
-  const pollIngestion = useCallback(() => { 
-    const i = setInterval(async () => { 
-        try { 
-            const s = await dexApi.getIngestStatus(); 
-            setProgress(s.progress); 
-            setStep(s.step); 
-            if (s.state === 'completed') { clearInterval(i); setIngesting(false); loadGraph(); } 
-        } catch(e) {} 
-    }, 1000); 
-  }, [loadGraph]);
-
-  useEffect(() => { 
-    dexApi.getIngestStatus().then(s => { 
-        if(s.state === 'running') { 
-            setIngesting(true); pollIngestion(); 
-        } 
-    }).catch(() => {}); 
-  }, [pollIngestion]);
-
-  const handleIngest = async () => { 
-      setIngesting(true); setGraphData({ nodes: [], links: [] }); 
-      try { await dexApi.triggerIngestion(repoUrl); } catch (err) { setIngesting(false); } 
-      pollIngestion(); 
-  };
-  
-  const handleExecute = async (manualQuery?: string) => { 
-      const text = manualQuery || query;
-      if(!text) return; 
-      if(manualQuery) setQuery(manualQuery);
-      
-      setLoading(true); 
-      const res = await dexApi.queryRAG(text); 
-      setRagResult(res.answer); setLoading(false); setActiveTab('assistant'); 
-  };
-
-  // ---------------------------------------------------------------------------
-  // Interaction
-  // ---------------------------------------------------------------------------
-  const handleNodeClick = useCallback((nodeAttributes: any) => {
-      setSelectedNode(nodeAttributes);
-      
-      const newPath = new Set<string>();
-      let currentId = nodeAttributes.id;
-      newPath.add(currentId);
-      while (currentId && parentMap.has(currentId)) {
-          const parentId = parentMap.get(currentId);
-          if (parentId) { newPath.add(parentId); currentId = parentId; } 
-          else break;
+// ZONE 1: HERO - Glowing Grid
+const GlowingContributionGrid = () => {
+  const grid = useMemo(() => {
+    const rows = 7;
+    const cols = 36;
+    const items = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const rand = Math.random();
+        let level = 0;
+        if (rand > 0.85) level = 1;
+        if (rand > 0.93) level = 2;
+        if (rand > 0.98) level = 3;
+        items.push({ id: `${r}-${c}`, level });
       }
-      setPathSet(newPath);
-  }, [parentMap]);
-
-  const handleNodeChat = useCallback((nodeAttributes: any) => {
-      handleNodeClick(nodeAttributes);
-      const prompt = `Explain more about the path to the selected node: "${nodeAttributes.name}"`;
-      handleExecute(prompt);
-  }, [handleNodeClick]); 
-
-  // ---------------------------------------------------------------------------
-  // Custom D3 Implementation
-  // ---------------------------------------------------------------------------
-  
-  const centerTree = useCallback(() => {
-    if (svgRef.current) {
-        const svg = d3.select(svgRef.current);
-        const { width, height } = svgRef.current.getBoundingClientRect();
-        
-        const transform = d3.zoomIdentity.translate(width / 4, height / 2).scale(0.8);
-        svg.transition().duration(750).call(d3.zoom().transform as any, transform);
     }
+    return { rows, cols, items };
   }, []);
 
-  useEffect(() => {
-    if (!hierarchyData || !svgRef.current || !wrapperRef.current) return;
+  return (
+    <div 
+      className="absolute top-40 left-1/2 -translate-x-1/2 z-0 pointer-events-none"
+      style={{
+        maskImage: "radial-gradient(ellipse at center, black 10%, transparent 65%)",
+        WebkitMaskImage: "radial-gradient(ellipse at center, black 10%, transparent 65%)",
+      }}
+    >
+      <div 
+        className="grid gap-1.5 p-4"
+        style={{ 
+          gridTemplateColumns: `repeat(${grid.cols}, 12px)`,
+          transform: "perspective(1000px) rotateX(25deg)", 
+          opacity: 0.6 
+        }}
+      >
+        {grid.items.map((item) => {
+          let bgClass = "bg-slate-800/30";
+          let glowClass = "";
+          if (item.level === 1) bgClass = "bg-indigo-500/40";
+          if (item.level === 2) bgClass = "bg-violet-500/50";
+          if (item.level === 3) {
+            bgClass = "bg-emerald-400/90 animate-pulse"; 
+            glowClass = "shadow-[0_0_10px_rgba(52,211,153,0.6)] z-10 relative";
+          }
+          return <div key={item.id} className={`h-3 w-3 rounded-[2px] transition-colors duration-700 ${bgClass} ${glowClass}`} />;
+        })}
+      </div>
+    </div>
+  );
+};
 
-    const svg = d3.select(svgRef.current);
-    const g = d3.select(wrapperRef.current);
-    const { width, height } = svgRef.current.getBoundingClientRect();
-
-    // 1. Setup Zoom
-    const zoom = d3.zoom()
-        .scaleExtent([0.1, 3])
-        .on("zoom", (event) => {
-            g.attr("transform", event.transform);
-        });
-
-    svg.call(zoom as any);
-    // Clicking on empty space should clear selection & lineage
-    svg.on("click", () => {
-        setSelectedNode(null);
-        setPathSet(new Set());
-    });
-
-    // 2. Setup Tree Layout
-    const root = d3.hierarchy(hierarchyData);
-    
-    // Node size: [height, width] for horizontal
-    const nodeWidth = 220; 
-    const nodeHeight = 50;
-    
-    const treeLayout = d3.tree().nodeSize(
-        treeOrientation === 'horizontal' 
-        ? [nodeHeight, nodeWidth] 
-        : [nodeWidth, nodeHeight]
-    );
-
-    // 3. Update Function
-    const update = (source: any) => {
-        const treeData = treeLayout(root);
-        const nodes = treeData.descendants();
-        const links = treeData.links();
-
-        // --- Nodes ---
-        const nodeGroup = g.selectAll(".node")
-            .data(nodes, (d: any) => d.data.attributes?.id || d.data.id || d.id);
-
-        const nodeEnter = nodeGroup.enter().append("g")
-            .attr("class", "node cursor-pointer")
-            .attr("transform", (d: any) => {
-                const x = source.y0 || source.y; 
-                const y = source.x0 || source.x;
-                return treeOrientation === 'horizontal' 
-                    ? `translate(${y},${x})` 
-                    : `translate(${x},${y})`;
-            })
-            .on("click", (event, d: any) => {
-                event.stopPropagation();
-                if (d.children) {
-                    d._children = d.children;
-                    d.children = null;
-                } else {
-                    d.children = d._children;
-                    d._children = null;
-                }
-                update(d);
-            });
-
-        // Add Circle (colored strictly by node type)
-        nodeEnter.append("circle")
-            .attr("r", 0) 
-            .attr("fill", (d: any) => {
-                const t = d.data.attributes.type;
-                if (t === 'root') return '#e5e7eb';
-                const cfg = NODE_CONFIG[t] || NODE_CONFIG.default;
-                return cfg.color;
-            })
-            .attr("stroke", (d: any) => d.data.attributes.type === 'root' ? '#000' : 'none')
-            .transition().duration(500)
-            .attr("r", (d: any) => d.data.attributes.type === 'root' ? 8 : 5);
-
-        // Add Text
-        nodeEnter.append("text")
-            .attr("dy", "0.31em")
-            .attr("x", (d: any) => d.children || d._children ? -10 : 10)
-            .attr("text-anchor", (d: any) => d.children || d._children ? "end" : "start")
-            .text((d: any) => d.data.name)
-            .style("fill-opacity", 0)
-            .style("font-size", "12px")
-            .style("fill", "#94a3b8")
-            .style("font-family", "system-ui")
-            .transition().duration(500)
-            .style("fill-opacity", 1);
-            
-        // Add "Chat" Action Icon
-        nodeEnter.append("circle")
-            .attr("r", 15)
-            .attr("fill", "transparent")
-            .on("click", (e, d: any) => {
-                e.stopPropagation();
-                // Only select + highlight lineage on node click;
-                // chat is triggered explicitly from the sidebar.
-                handleNodeClick(d.data.attributes);
-            });
-
-        // UPDATE (Transition to new position)
-        const nodeUpdate = nodeGroup.merge(nodeEnter as any).transition().duration(500)
-            .attr("transform", (d: any) => 
-                treeOrientation === 'horizontal' 
-                ? `translate(${d.y},${d.x})` 
-                : `translate(${d.x},${d.y})`
-            );
-
-        nodeGroup.merge(nodeEnter as any).select("circle")
-             .attr("stroke", (d: any) => selectedNode?.id === (d.data.attributes?.id || d.data.id) ? "#fff" : "none")
-             .attr("stroke-width", (d: any) => selectedNode?.id === (d.data.attributes?.id || d.data.id) ? 2 : 0)
-             .style("filter", (d: any) => {
-                const nodeId = d.data.attributes?.id || d.data.id;
-                return pathSet.has(nodeId) ? `drop-shadow(0 0 6px ${d.data.attributes.branchColor})` : "none";
-             })
-             .style("opacity", (d: any) => {
-                const nodeId = d.data.attributes?.id || d.data.id;
-                return (pathSet.size > 0 && !pathSet.has(nodeId)) ? 0.3 : 1;
-             });
-        
-        nodeGroup.merge(nodeEnter as any).select("text")
-             .style("fill", (d: any) => {
-                const nodeId = d.data.attributes?.id || d.data.id;
-                return pathSet.has(nodeId) ? "#fff" : "#94a3b8";
-             })
-             .style("font-weight", (d: any) => {
-                const nodeId = d.data.attributes?.id || d.data.id;
-                return pathSet.has(nodeId) ? "bold" : "normal";
-             })
-             .style("opacity", (d: any) => {
-                const nodeId = d.data.attributes?.id || d.data.id;
-                return (pathSet.size > 0 && !pathSet.has(nodeId)) ? 0.3 : 1;
-             });
-
-
-        // EXIT
-        nodeGroup.exit().transition().duration(500)
-            .attr("transform", (d: any) => 
-                treeOrientation === 'horizontal' 
-                ? `translate(${source.y},${source.x})` 
-                : `translate(${source.x},${source.y})`
-            )
-            .remove();
-
-        // --- Links ---
-        const linkGroup = g.selectAll(".link")
-            .data(links, (d: any) => d.target.data?.attributes?.id || d.target.id);
-
-        const linkEnter = linkGroup.enter().insert("path", "g")
-            .attr("class", "link")
-            .attr("fill", "none")
-            .attr("stroke", "#333")
-            .attr("stroke-width", 1.5)
-            .attr("d", (d: any) => {
-                const o = { x: source.x0 || source.x, y: source.y0 || source.y };
-                return diagonal(o, o);
-            });
-
-        const linkUpdate = linkGroup.merge(linkEnter as any);
-
-        linkUpdate.transition().duration(500)
-            .attr("d", (d: any) => diagonal(d.source, d.target))
-            .attr("stroke", (d: any) => d.target.data.attributes.branchColor || "#333")
-            .attr("class", (d: any) => {
-                const targetId = d.target.data.attributes?.id || d.target.data.id;
-                return pathSet.has(targetId) ? "link link-active" : "link link-base";
-            });
-
-        linkGroup.exit().transition().duration(500)
-            .attr("d", (d: any) => {
-                const o = { x: source.x, y: source.y };
-                return diagonal(o, o);
-            })
-            .remove();
-
-        // Stash the old positions for transition.
-        nodes.forEach((d: any) => {
-            d.x0 = d.x;
-            d.y0 = d.y;
-        });
-    };
-
-    // Helper for Diagonal Paths
-    const diagonal = (s: any, d: any) => {
-        if (treeOrientation === 'horizontal') {
-            return `M ${s.y} ${s.x}
-                    C ${(s.y + d.y) / 2} ${s.x},
-                      ${(s.y + d.y) / 2} ${d.x},
-                      ${d.y} ${d.x}`;
-        } else {
-            return `M ${s.x} ${s.y}
-                    C ${s.x} ${(s.y + d.y) / 2},
-                      ${d.x} ${(s.y + d.y) / 2},
-                      ${d.x} ${d.y}`;
+// ZONE 1: HERO - Data Stream (Subtle Background)
+const DataStreamBackground = () => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      let width = (canvas.width = window.innerWidth);
+      let height = (canvas.height = window.innerHeight);
+      const handleResize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
+      window.addEventListener("resize", handleResize);
+  
+      class Packet {
+        x: number; y: number; speed: number; size: number; color: string; traceLength: number;
+        constructor() {
+          this.x = Math.random() * width;
+          const gridSize = 40; 
+          this.y = Math.floor((Math.random() * height) / gridSize) * gridSize + gridSize / 2;
+          this.speed = Math.random() * 3 + 1;
+          this.size = Math.random() * 1.5 + 0.5;
+          this.traceLength = Math.random() * 50 + 20;
+          const colors = ["rgba(99, 102, 241, 0.4)", "rgba(139, 92, 246, 0.4)", "rgba(16, 185, 129, 0.5)"];
+          this.color = colors[Math.floor(Math.random() * colors.length)];
         }
+        update() {
+          this.x += this.speed;
+          if (this.x > width + this.traceLength) {
+              this.x = -this.traceLength;
+               const gridSize = 40; 
+               this.y = Math.floor((Math.random() * height) / gridSize) * gridSize + gridSize / 2;
+          }
+        }
+        draw(context: CanvasRenderingContext2D) {
+          const gradient = context.createLinearGradient(this.x - this.traceLength, this.y, this.x, this.y);
+          gradient.addColorStop(0, "transparent");
+          gradient.addColorStop(1, this.color);
+          context.beginPath();
+          context.strokeStyle = gradient;
+          context.lineWidth = this.size;
+          context.moveTo(this.x - this.traceLength, this.y);
+          context.lineTo(this.x, this.y);
+          context.stroke();
+        }
+      }
+      const packetCount = Math.floor(height / 40);
+      const packets: Packet[] = Array.from({ length: packetCount }, () => new Packet());
+      const animate = () => {
+        ctx.clearRect(0, 0, width, height);
+        packets.forEach(p => { p.update(); p.draw(ctx); });
+        requestAnimationFrame(animate);
+      };
+      animate();
+      return () => window.removeEventListener("resize", handleResize);
+    }, []);
+    return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-0 opacity-30 mix-blend-screen" />;
+};
+
+// ZONE 2: MIDDLE - Interactive Graph (Ropes)
+const InteractiveGraphOverlay = () => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const mouseRef = useRef({ x: -999, y: -999 });
+  
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+  
+      const updateSize = () => {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+      };
+      updateSize();
+      window.addEventListener("resize", updateSize);
+
+      const handleMouseMove = (e: MouseEvent) => {
+        const rect = canvas.getBoundingClientRect();
+        mouseRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      };
+      container.addEventListener("mousemove", handleMouseMove);
+      container.addEventListener("mouseleave", () => { mouseRef.current = { x: -999, y: -999 }; });
+  
+      // --- FIXED CLASS DEFINITION HERE ---
+      class Node {
+        x: number; y: number; vx: number; vy: number; baseX: number; baseY: number;
+        constructor() {
+          // ADDED '!' TO ASSERT CANVAS EXISTS
+          this.baseX = Math.random() * canvas!.width;
+          this.baseY = Math.random() * canvas!.height;
+          this.x = this.baseX; this.y = this.baseY;
+          this.vx = (Math.random() - 0.5) * 0.3;
+          this.vy = (Math.random() - 0.5) * 0.3;
+        }
+        update() {
+          this.baseX += this.vx; this.baseY += this.vy;
+          // ADDED '!' TO ASSERT CANVAS EXISTS
+          if (this.baseX < 0 || this.baseX > canvas!.width) this.vx *= -1;
+          if (this.baseY < 0 || this.baseY > canvas!.height) this.vy *= -1;
+  
+          const dx = mouseRef.current.x - this.baseX;
+          const dy = mouseRef.current.y - this.baseY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 200) {
+             this.x = this.baseX + (dx * 0.2);
+             this.y = this.baseY + (dy * 0.2);
+          } else {
+             this.x = this.baseX; this.y = this.baseY;
+          }
+        }
+        draw() {
+          ctx!.beginPath(); ctx!.arc(this.x, this.y, 1.5, 0, Math.PI * 2); ctx!.fillStyle = "rgba(167, 139, 250, 0.3)"; ctx!.fill();
+        }
+      }
+      // ------------------------------------
+
+      const nodes = Array.from({ length: 40 }, () => new Node());
+  
+      const animate = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        nodes.forEach(node => {
+          node.update();
+          // Mouse Connections
+          const dx = mouseRef.current.x - node.x;
+          const dy = mouseRef.current.y - node.y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < 200) {
+              ctx.beginPath(); ctx.moveTo(node.x, node.y); ctx.lineTo(mouseRef.current.x, mouseRef.current.y);
+              ctx.strokeStyle = `rgba(99, 102, 241, ${0.4 - dist/200})`; ctx.lineWidth = 1; ctx.stroke();
+          }
+          // Node-Node Connections
+          nodes.forEach(other => {
+              const d = Math.sqrt((node.x-other.x)**2 + (node.y-other.y)**2);
+              if (d < 80) {
+                  ctx.beginPath(); ctx.moveTo(node.x, node.y); ctx.lineTo(other.x, other.y);
+                  ctx.strokeStyle = `rgba(255, 255, 255, 0.05)`; ctx.stroke();
+              }
+          })
+          node.draw();
+        });
+        requestAnimationFrame(animate);
+      };
+      animate();
+      return () => { window.removeEventListener("resize", updateSize); container.removeEventListener("mousemove", handleMouseMove); };
+    }, []);
+    return <div ref={containerRef} className="absolute inset-0 z-0"><canvas ref={canvasRef} className="absolute inset-0" /></div>;
+};
+
+// ZONE 3: BOTTOM - Shooting Stars
+const ShootingStars = () => {
+    return (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+            <div className="absolute top-[20%] left-[-100px] w-[200px] h-[1px] bg-gradient-to-r from-transparent via-indigo-500 to-transparent animate-[shoot_3s_infinite_linear]" />
+            <div className="absolute top-[50%] left-[-150px] w-[300px] h-[1px] bg-gradient-to-r from-transparent via-emerald-500 to-transparent animate-[shoot_5s_infinite_linear_1s]" />
+            <div className="absolute top-[80%] left-[-200px] w-[250px] h-[1px] bg-gradient-to-r from-transparent via-violet-500 to-transparent animate-[shoot_4s_infinite_linear_2s]" />
+            <style jsx>{`@keyframes shoot { 0% { transform: translateX(0); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateX(120vw); opacity: 0; } }`}</style>
+        </div>
+    );
+}
+
+// -----------------------------------------------------------------------------
+// UI COMPONENTS
+// -----------------------------------------------------------------------------
+
+const MagneticBadge = ({ children }: { children: React.ReactNode }) => {
+    const ref = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState({ x: 0, y: 0 });
+    const handleMove = (e: React.MouseEvent) => {
+      if (!ref.current) return;
+      const { left, top, width, height } = ref.current.getBoundingClientRect();
+      setPos({ x: (e.clientX - (left + width/2)) * 0.2, y: (e.clientY - (top + height/2)) * 0.2 });
     };
+    return (
+      <div 
+        ref={ref} onMouseMove={handleMove} onMouseLeave={() => setPos({x:0, y:0})}
+        style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
+        className="inline-block transition-transform duration-200 ease-out cursor-default"
+      >
+        {children}
+      </div>
+    );
+};
 
-    // Initial Update
-    if(root) {
-        centerTree();
-        update(root);
-    }
-    
-  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeChat, centerTree]);
+const SpotlightCard = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => {
+    const divRef = useRef<HTMLDivElement>(null);
+    const [isFocused, setIsFocused] = useState(false);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+  
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!divRef.current) return;
+      const rect = divRef.current.getBoundingClientRect();
+      setPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    };
+  
+    return (
+      <div
+        ref={divRef}
+        onMouseMove={handleMouseMove}
+        onMouseEnter={() => setIsFocused(true)}
+        onMouseLeave={() => setIsFocused(false)}
+        className={`relative overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0a] ${className}`}
+      >
+        <div
+          className="pointer-events-none absolute -inset-px opacity-0 transition duration-300"
+          style={{ opacity: isFocused ? 1 : 0, background: `radial-gradient(600px circle at ${position.x}px ${position.y}px, rgba(99,102,241,0.15), transparent 40%)` }}
+        />
+        <div 
+            className="pointer-events-none absolute -inset-px opacity-0 transition duration-300"
+            style={{
+                opacity: isFocused ? 1 : 0,
+                background: `radial-gradient(600px circle at ${position.x}px ${position.y}px, rgba(99,102,241,0.4), transparent 40%)`,
+                maskImage: "linear-gradient(black, black) content-box, linear-gradient(black, black)",
+                WebkitMaskComposite: "xor",
+                maskComposite: "exclude",
+            }}
+        />
+        {children}
+      </div>
+    );
+};
 
+// -----------------------------------------------------------------------------
+// DATA
+// -----------------------------------------------------------------------------
+const FEATURES = [
+  { icon: Sparkles, title: "Instant mental model", desc: "Turn any repo into a navigable structure map—folders, files, and symbols—so you can orient in minutes, not days.", accent: "from-indigo-500/15 to-indigo-500/0 border-indigo-500/20" },
+  { icon: Zap, title: "Ask questions. Get grounded answers.", desc: "Query the codebase with context from the graph and retrieval—great for onboarding, refactors, and impact analysis.", accent: "from-emerald-500/15 to-emerald-500/0 border-emerald-500/20" },
+  { icon: GitBranch, title: "See change over time", desc: "Explore evolution and hotspots to understand how the system grew—and where it’s most fragile.", accent: "from-violet-500/15 to-violet-500/0 border-violet-500/20" },
+  { icon: ShieldCheck, title: "Built for serious work", desc: "A focused dark UI, fast interactions, and a palette tuned for clarity across dense graphs.", accent: "from-slate-500/10 to-slate-500/0 border-white/10" },
+];
 
-  if (!mounted) return null;
+const CAROUSEL_ITEMS = [
+  { tag: "Onboarding", title: "“I can drop into a new repo and feel oriented in 10 minutes.”", body: "DEX gives senior-level intuition about structure to every engineer on the team." },
+  { tag: "Refactors", title: "“I don’t ship blind refactors anymore.”", body: "Graph + evolution views help you see blast radius and hotspots before you touch a line." },
+  { tag: "Everyday flow", title: "“It feels like having a map and a guide inside my editor.”", body: "Ask questions, follow the structure, and keep context persistent as you work." },
+  { tag: "Debugging", title: "“When a bug pops up, I can see all the code that really matters.”", body: "Trace execution paths through the graph instead of grepping blindly." },
+];
+
+export default function HomePage() {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => { setActiveIndex((prev) => (prev + 1) % CAROUSEL_ITEMS.length); }, 4500);
+    return () => clearInterval(id);
+  }, []);
 
   return (
-    <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden">
+    <div className="min-h-screen bg-[#050505] text-slate-200 overflow-x-hidden relative selection:bg-indigo-500/30 selection:text-white font-sans">
       
+      {/* GLOBAL STYLES */}
       <style dangerouslySetInnerHTML={{__html: `
-        .link-base {
-            fill: none;
-            stroke-width: 1.5px;
-            transition: stroke 0.5s ease, opacity 0.5s ease;
-            opacity: 0.4;
-        }
-        .link-active {
-            fill: none;
-            stroke-width: 2px;
-            stroke-dasharray: 8;
-            animation: flow 1s linear infinite;
-            opacity: 1;
-        }
-        @keyframes flow {
-            from { stroke-dashoffset: 16; }
-            to { stroke-dashoffset: 0; }
-        }
-        .node text {
-            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-        }
+        @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fade-in-up 0.8s ease-out forwards; opacity: 0; }
+        .delay-100 { animation-delay: 0.1s; } .delay-200 { animation-delay: 0.2s; } .delay-300 { animation-delay: 0.3s; }
       `}} />
-      
-      {/* --- SIDEBAR --- */}
-      <aside className="w-[400px] min-w-[400px] flex flex-col border-r border-white/5 bg-[#0a0a0a] z-20 shadow-2xl">
-        <div className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-black/20 shrink-0">
-            <div className="flex items-center gap-3">
-                <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20"><Terminal className="text-indigo-500" size={16} /></div>
-                <h1 className="text-sm font-bold text-white tracking-widest leading-none">DEX<span className="text-slate-600 font-light">TREE</span></h1>
-            </div>
-            <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-emerald-500/5 border border-emerald-500/10">
-                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-                 <span className="text-[10px] text-emerald-500 font-medium uppercase tracking-wider">Online</span>
-            </div>
+
+      {/* --- HEADER --- */}
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#050505]/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 h-16">
+          <Link href="/" className="group inline-flex items-center gap-3">
+            <span className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.3)] group-hover:shadow-[0_0_25px_rgba(99,102,241,0.5)] transition-all">
+              <Terminal className="text-indigo-400 group-hover:text-indigo-300" size={16} />
+            </span>
+            <span className="text-xs font-bold tracking-[0.32em] text-white">DEX</span>
+          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/login" className="text-xs font-semibold text-slate-400 hover:text-white transition-colors">Log in</Link>
+            <Link href="/signup" className="hidden sm:inline-flex items-center justify-center rounded-full bg-white text-black px-4 py-2 text-xs font-bold hover:bg-slate-200 transition-colors">Sign up</Link>
+          </div>
         </div>
+      </header>
 
-        <div className="flex border-b border-white/5 bg-[#0a0a0a]">
-            <button onClick={() => setActiveTab('assistant')} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'assistant' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
-                <div className="flex items-center justify-center gap-2"><MessageSquare size={12} /> Assistant</div>
-            </button>
-            <button onClick={() => setActiveTab('details')} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'details' ? 'border-emerald-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
-                <div className="flex items-center justify-center gap-2"><Info size={12} /> Details</div>
-            </button>
-        </div>
 
-        {activeTab === 'assistant' && (
-            <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-left-4 duration-300">
-                <div className="p-5 border-b border-white/5 bg-[#0a0a0a]/50 shrink-0 space-y-3">
-                    <div className="flex justify-between items-baseline">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Repository URL</label>
-                        {step && ingesting && <span className="text-[10px] text-indigo-400 animate-pulse font-mono">{step}</span>}
-                    </div>
-                    <div className="flex gap-2">
-                        <input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50 transition-all font-mono" />
-                        <button onClick={handleIngest} disabled={ingesting} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 rounded-lg transition-all flex items-center justify-center shrink-0">
-                            {ingesting ? <RefreshCw className="animate-spin" size={14}/> : <RefreshCw size={14}/>}
-                        </button>
-                    </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-thumb-white/10 bg-[#0c0c0c]">
-                    {ragResult ? (
-                        <div className="prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed font-light text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{ragResult}</ReactMarkdown></div>
-                    ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-800 gap-3 opacity-60"><MessageSquare size={28} /><p className="text-[10px] uppercase tracking-widest">Ready to analyze</p></div>
-                    )}
-                </div>
-                <div className="p-5 border-t border-white/5 bg-[#0a0a0a] shrink-0">
-                    <div className="relative group">
-                        <textarea value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ask about structure..." className="w-full bg-[#111] border border-white/10 rounded-xl p-4 pr-12 text-xs text-white focus:border-indigo-500/50 outline-none resize-none h-24 shadow-inner transition-all focus:bg-[#151515]" />
-                        <button onClick={() => handleExecute()} disabled={loading || !query} className="absolute right-3 bottom-3 p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all shadow-lg">{loading ? <RefreshCw className="animate-spin" size={14}/> : <Play size={14} fill="currentColor"/>}</button>
-                    </div>
-                </div>
+      <main className="relative pt-24">
+        
+        {/* ===========================================================================
+            ZONE 1: HERO
+            Contains: Data Stream, GitHub Grid (Vertical Lines Removed)
+        ============================================================================ */}
+        <section className="relative mx-auto max-w-6xl px-6 pt-20 pb-10 text-center z-10">
+          
+          {/* Zone 1 Effects */}
+          <DataStreamBackground />
+          <GlowingContributionGrid />
+
+          {/* Badge */}
+          <MagneticBadge>
+            <div className="animate-fade-in inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest text-indigo-200 backdrop-blur-md shadow-[0_0_15px_rgba(99,102,241,0.15)] group hover:bg-indigo-500/20 transition-colors">
+                <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
+                </span>
+                Map your code. Ask better questions.
             </div>
-        )}
+          </MagneticBadge>
 
-        {activeTab === 'details' && (
-            <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="flex-1 p-5 overflow-y-auto border-b border-white/5">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Search size={12}/> Inspector</div>
-                    {selectedNode ? (
-                        <div className="space-y-4">
-                            <div className="p-4 rounded-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 shadow-sm">
-                                <div className="text-[9px] text-indigo-400 font-bold mb-2 uppercase tracking-wider">Active Node</div>
-                                <div className="text-sm font-mono text-white break-all">{selectedNode.name || selectedNode.id}</div>
-                            </div>
-                            <div className="p-3 rounded-lg bg-[#111] border border-white/5">
-                                <div className="text-[9px] text-slate-500 mb-1 uppercase">Node Type</div>
-                                <div className="text-xs font-bold text-white capitalize flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full" style={{backgroundColor: selectedNode.branchColor || '#fff'}}></div>
-                                    {selectedNode.type}
+          {/* Headline */}
+          <h1 className="animate-fade-in delay-100 mt-8 text-5xl sm:text-6xl lg:text-7xl font-semibold tracking-tight text-white max-w-4xl mx-auto leading-[1.1] relative drop-shadow-2xl">
+            Understand any repository{" "}
+            <span className="relative whitespace-nowrap text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-indigo-100 to-emerald-200">
+              at a glance
+              <svg className="absolute -bottom-2 left-0 w-full h-4 text-indigo-500/40 -z-10 blur-[1px]" viewBox="0 0 100 10" preserveAspectRatio="none">
+                 <path d="M0 7 Q 50 2 100 7" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" />
+              </svg>
+            </span>
+            .
+          </h1>
+
+          <p className="animate-fade-in delay-200 mt-8 max-w-2xl mx-auto text-sm sm:text-base leading-relaxed text-slate-300/90 font-light relative z-10">
+            DEX turns your codebase into a structured map and pairs it with a focused assistant—so onboarding, debugging, and refactoring feel less like archaeology.
+          </p>
+
+          {/* Buttons */}
+          <div className="animate-fade-in delay-300 mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link href="/app" className="group relative inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-8 py-4 text-xs font-bold uppercase tracking-widest text-white hover:bg-indigo-500 transition-all shadow-[0_0_25px_rgba(99,102,241,0.3)] hover:shadow-[0_0_40px_rgba(99,102,241,0.5)] hover:-translate-y-0.5 w-full sm:w-auto overflow-hidden border border-indigo-400/50">
+              <span className="relative z-10 flex items-center gap-2">Launch DEX <ArrowRight size={16} /></span>
+            </Link>
+            <Link href="#how" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-8 py-4 text-xs font-bold uppercase tracking-widest text-slate-200 hover:bg-white/10 transition-colors hover:border-white/20 w-full sm:w-auto backdrop-blur-sm group">
+              <Terminal size={14} className="text-slate-400 group-hover:text-white transition-colors" />
+              How it works
+            </Link>
+          </div>
+        </section>
+
+
+        {/* ===========================================================================
+            ZONE 2: MENTAL MODEL (Stacked)
+            Contains: Interactive Graph (Ropes)
+        ============================================================================ */}
+        <section className="relative mt-24 pb-24">
+            
+            {/* Zone 2 Effects (Localized) */}
+            <InteractiveGraphOverlay />
+
+            <div className="relative mx-auto max-w-4xl px-6 flex flex-col gap-12 animate-fade-in delay-300 z-10">
+                {/* 1. Preview Info Card */}
+                <SpotlightCard className="p-1 shadow-2xl">
+                    <div className="rounded-xl bg-[#0a0a0a]/90 p-8 h-full relative z-10 backdrop-blur-sm">
+                        <div className="flex flex-col gap-8 items-center text-center">
+                            <div className="space-y-3">
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400/80 flex items-center justify-center gap-2">
+                                    <Sparkles size={12} /> What you get
                                 </div>
+                                <div className="text-xl font-medium text-white">A map-first workspace for code intelligence</div>
+                                <div className="text-sm text-slate-400 max-w-md mx-auto">Graph navigation + retrieval-backed answers—wrapped in a clean, dark UI.</div>
                             </div>
-                            <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleNodeChat(selectedNode)}
-                                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2"
-                                >
-                                    <Zap size={12} className="text-yellow-400" fill="currentColor"/> Chat About Node
-                                </button>
-                                <button
-                                  onClick={() => { setSelectedNode(null); setPathSet(new Set()); }}
-                                  className="px-3 py-3 bg-[#111] hover:bg-[#1f2933] border border-white/10 text-slate-400 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all"
-                                >
-                                    Clear
-                                </button>
+                            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 w-full">
+                                {[["Indigo", "Navigation & focus", "bg-indigo-500"], ["Emerald", "Signals & status", "bg-emerald-500 animate-pulse"], ["Violet", "Structure & types", "bg-violet-500"], ["Slate", "Low-noise detail", "bg-slate-500"]].map(([label, desc, colorClass]) => (
+                                    <div key={label} className="rounded-lg border border-white/5 bg-black/40 p-4 text-left hover:bg-white/5 transition-colors group/item relative overflow-hidden">
+                                        <div className={`absolute top-0 left-0 w-full h-0.5 ${colorClass} opacity-30 group-hover/item:opacity-60 transition-opacity`} />
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className={`h-1.5 w-1.5 rounded-full ${colorClass} shadow-[0_0_6px_currentColor]`} />
+                                            <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 group-hover/item:text-slate-300">{label}</div>
+                                        </div>
+                                        <div className="text-xs text-slate-400 leading-snug group-hover/item:text-slate-200">{desc}</div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
-                    ) : (
-                        <div className="py-10 flex flex-col items-center justify-center text-slate-700 gap-3 opacity-60">
-                            <Search size={28} />
-                            <p className="text-[10px] uppercase tracking-widest">Select a node</p>
+                    </div>
+                </SpotlightCard>
+
+                {/* 2. Carousel */}
+                <div className="w-full rounded-2xl border border-white/10 bg-black/60 p-8 relative overflow-hidden text-center backdrop-blur-md shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+                    <div className="relative flex flex-col gap-6 items-center z-10">
+                        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-indigo-300">
+                            <Quote size={14} className="text-indigo-400" /> Signals from real workflows
                         </div>
-                    )}
-                </div>
-                
-                <div className="h-[20%] flex flex-col bg-[#0a0a0a] border-t border-white/5 p-4">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Structure Key</div>
-                    <div className="grid grid-cols-2 gap-2">
-                        {Object.entries(NODE_CONFIG).map(([key, config]: any) => (
-                             <div key={key} className="flex items-center gap-2 text-[11px] text-slate-500">
-                                 <span
-                                   className="w-2 h-2 rounded-full"
-                                   style={{ backgroundColor: config.color }}
-                                 />
-                                 <config.icon size={10} />
-                                 <span>{config.label}</span>
-                             </div>
-                        ))}
+                        <div className="relative h-28 w-full max-w-xl flex items-center justify-center">
+                            {CAROUSEL_ITEMS.map((item, idx) => (
+                                <div key={item.tag} className={`absolute inset-0 flex flex-col items-center justify-center transition-all duration-700 ease-in-out ${idx === activeIndex ? "opacity-100 translate-y-0 scale-100 z-10" : "opacity-0 translate-y-4 scale-95 -z-10"}`}>
+                                    <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-indigo-200 mb-4 shadow-[0_0_10px_rgba(99,102,241,0.2)]">{item.tag}</div>
+                                    <div className="text-lg md:text-xl font-medium text-white mb-2 leading-relaxed drop-shadow-md">{item.title}</div>
+                                    <div className="text-sm text-slate-400">{item.body}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="flex gap-2 justify-center mt-4">
+                            {CAROUSEL_ITEMS.map((_, idx) => (
+                                <button key={idx} onClick={() => setActiveIndex(idx)} className={`h-1 rounded-full transition-all duration-500 ${idx === activeIndex ? "w-8 bg-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.5)]" : "w-1.5 bg-slate-800 hover:bg-slate-700"}`} />
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
-        )}
-      </aside>
+        </section>
 
-      {/* --- GRAPH AREA --- */}
-      <main className="flex-1 min-w-0 relative bg-[#050505] cursor-move overflow-hidden" ref={treeContainer}>
-        {/* Graph Controls */}
-        <div className="absolute top-6 left-6 z-10 flex gap-2">
-            <div className="p-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 flex gap-2">
-                <button onClick={() => setTreeOrientation('vertical')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'vertical' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ChevronDown size={12} /> Vert</button>
-                <button onClick={() => setTreeOrientation('horizontal')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'horizontal' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ChevronRight size={12} /> Horz</button>
-                <div className="w-px h-full bg-white/10 mx-1"></div>
-                <button onClick={centerTree} className="px-3 py-1.5 text-slate-400 hover:text-white transition-colors flex items-center gap-2" title="Center Tree"><Move size={12} /> Center</button>
-            </div>
-        </div>
 
-        {/* The D3 Tree */}
-        <div className="w-full h-full relative">
-            {graphData.nodes.length > 0 ? (
-                <svg 
-                    ref={svgRef} 
-                    className="w-full h-full block"
-                    viewBox="0 0 1000 800"
-                >
-                    <g ref={wrapperRef} />
-                </svg>
-            ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-700 animate-pulse gap-4">
-                    <LayoutTemplate size={48} strokeWidth={1} />
-                    <span className="uppercase tracking-widest text-xs">Waiting for Repository...</span>
+        {/* FEATURES GRID */}
+        <section className="mx-auto max-w-6xl px-6 py-20 relative z-10">
+          <div className="grid gap-6 md:grid-cols-2">
+            {FEATURES.map((f) => (
+              <div key={f.title} className={`group relative rounded-2xl border bg-gradient-to-br ${f.accent} p-px overflow-hidden transition-all duration-500 hover:shadow-[0_0_30px_rgba(99,102,241,0.15)]`}>
+                 <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                 <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500/20 via-violet-500/20 to-emerald-500/20 blur-xl opacity-0 group-hover:opacity-70 transition-opacity duration-700 group-hover:duration-200" />
+                 <div className="relative h-full rounded-2xl bg-[#080808]/90 backdrop-blur-xl p-6 sm:p-8">
+                    <div className="flex items-start gap-5">
+                      <div className="rounded-xl border border-white/10 bg-white/5 p-3 shrink-0 text-slate-200 group-hover:text-indigo-300 group-hover:scale-110 group-hover:border-indigo-500/30 transition-all duration-300 shadow-[0_0_0_rgba(0,0,0,0)] group-hover:shadow-[0_0_15px_rgba(99,102,241,0.3)]">
+                        <f.icon size={20} />
+                      </div>
+                      <div>
+                        <div className="text-base font-semibold text-white group-hover:text-indigo-200 transition-colors">{f.title}</div>
+                        <div className="mt-2 text-sm leading-relaxed text-slate-400 group-hover:text-slate-300 transition-colors">{f.desc}</div>
+                      </div>
+                    </div>
+                 </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+
+        {/* ===========================================================================
+            ZONE 3: HOW IT WORKS
+            Contains: Shooting Stars (Speed)
+        ============================================================================ */}
+        <section id="how" className="mx-auto max-w-6xl px-6 py-10 relative">
+          
+          <div className="relative rounded-3xl border border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md p-8 sm:p-12 overflow-hidden shadow-2xl">
+            
+             {/* Zone 3 Effects */}
+             <ShootingStars />
+             <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:32px_32px] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] z-0" />
+             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-1/2 bg-indigo-600/10 blur-[100px] pointer-events-none mix-blend-screen z-0" />
+
+            <div className="relative z-10">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-400/80 flex items-center gap-2">
+                  <Terminal size={12} /> How it works
                 </div>
-            )}
-        </div>
+                <div className="mt-2 text-2xl font-semibold text-white">From repo URL to answers</div>
+
+                <div className="mt-8 grid gap-6 md:grid-cols-3 relative">
+                  <div className="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-indigo-500/20 to-transparent hidden md:block -translate-y-1/2 z-0" />
+                  
+                  {[
+                    { step: "01", title: "Ingest", desc: "Paste a repository URL and build the structure graph.", icon: GitBranch },
+                    { step: "02", title: "Navigate", desc: "Click through folders/files/symbols and keep context pinned.", icon: Network },
+                    { step: "03", title: "Ask", desc: "Ask questions and get retrieval-backed explanations grounded in code.", icon: Zap },
+                  ].map((s) => (
+                    <div key={s.step} className="relative z-10 rounded-xl border border-white/10 bg-black/60 p-6 backdrop-blur-sm hover:border-indigo-500/30 transition-all duration-300 hover:-translate-y-1 shadow-[0_4px_20px_rgba(0,0,0,0.2)] group">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded-md shadow-[0_0_10px_rgba(99,102,241,0.2)]">Step {s.step}</div>
+                        <s.icon size={16} className="text-slate-500 group-hover:text-emerald-400 transition-colors" />
+                      </div>
+                      <div className="text-base font-semibold text-white mb-2 group-hover:text-indigo-200 transition-colors">{s.title}</div>
+                      <div className="text-sm text-slate-400 leading-relaxed group-hover:text-slate-300">{s.desc}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center border-t border-white/5 pt-8">
+                  <Link href="/app" className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600/90 border border-indigo-500/50 px-6 py-3.5 text-xs font-bold uppercase tracking-widest text-white hover:bg-indigo-500 transition-all shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)]">
+                    Start mapping <ArrowRight size={16} />
+                  </Link>
+                  <Link href="/evolution" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-6 py-3.5 text-xs font-bold uppercase tracking-widest text-slate-200 hover:bg-white/10 transition-colors group">
+                    <Play size={14} className="text-slate-400 group-hover:text-white transition-colors" />
+                    Watch demo
+                  </Link>
+                </div>
+            </div>
+          </div>
+        </section>
+
       </main>
+
+      {/* --- FOOTER --- */}
+      <footer className="mx-auto max-w-6xl px-6 pt-10 pb-10 relative z-10 border-t border-white/5 mt-10">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded bg-indigo-500/10 border border-indigo-500/20"><Terminal size={12} className="text-indigo-400" /></span>
+              <span className="font-semibold text-slate-400 tracking-wider text-xs">DEX</span>
+              <span className="text-slate-700 text-xs">/</span>
+              <span className="text-slate-600 text-xs">Code intelligence, map-first.</span>
+            </div>
+            <div className="flex items-center gap-8 text-xs font-medium text-slate-500">
+              <Link href="/app" className="hover:text-indigo-400 transition-colors">Open app</Link>
+              <Link href="/evolution" className="hover:text-indigo-400 transition-colors">Evolution</Link>
+              <Link href="#" className="hover:text-indigo-400 transition-colors">Privacy</Link>
+              <Link href="https://github.com" className="hover:text-indigo-400 transition-colors flex items-center gap-1">
+                GitHub <ArrowRight size={10} className="-rotate-45" />
+              </Link>
+            </div>
+            <div className="text-[10px] text-slate-700">© 2024 Dex Inc.</div>
+          </div>
+      </footer>
+
     </div>
   );
 }

@@ -146,7 +146,7 @@ export default function EvolutionPage() {
       {/* --- SIDEBAR: EVOLUTION DETAILS --- */}
       <aside className="w-[350px] flex flex-col border-r border-white/5 bg-[#0a0a0a] z-20">
         <div className="h-14 flex items-center gap-3 px-6 border-b border-white/5">
-            <Link href="/" className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+            <Link href="/app" className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
                 <ArrowLeft size={16} className="text-slate-400"/>
             </Link>
             <h1 className="text-sm font-bold text-white tracking-widest uppercase">Time Travel</h1>
