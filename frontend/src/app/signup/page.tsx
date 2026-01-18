@@ -70,7 +70,8 @@ export default function SignupPage() {
     // IMPORTANT: Map 'microsoft' to 'azure-ad' because that is the ID NextAuth uses internally
     const providerId = provider === 'microsoft' ? 'azure-ad' : provider;
     
-    await signIn(providerId, { callbackUrl: '/' });
+    // Redirect to onboarding after signup
+    await signIn(providerId, { callbackUrl: '/onboarding' });
   };
 
   return (

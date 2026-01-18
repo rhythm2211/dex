@@ -67,6 +67,36 @@ export default function LoginPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   
+  // Check profile completion and redirect if needed
+  useEffect(() => {
+    const checkProfileAndRedirect = async () => {
+      if (status === "authenticated" && session?.user?.email) {
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+          const response = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`);
+          
+          if (response.ok) {
+            const userData = await response.json();
+            if (!userData.profile_completed) {
+              router.push("/onboarding");
+            } else {
+              router.push("/app");
+            }
+          } else {
+            // User doesn't exist, redirect to onboarding
+            router.push("/onboarding");
+          }
+        } catch (error) {
+          console.error("Failed to check profile:", error);
+          // On error, still redirect to onboarding to be safe
+          router.push("/onboarding");
+        }
+      }
+    };
+    
+    checkProfileAndRedirect();
+  }, [status, session, router]);
+  
   // --- REAL AUTH LOGIC ---
   const handleSocialLogin = async (provider: string) => {
     console.log(`Starting login with ${provider}...`); 
@@ -74,7 +104,7 @@ export default function LoginPage() {
     // IMPORTANT: Map 'microsoft' to 'azure-ad' because that is the ID NextAuth uses internally
     const providerId = provider === 'microsoft' ? 'azure-ad' : provider;
     
-    await signIn(providerId, { callbackUrl: '/' });
+    await signIn(providerId, { callbackUrl: '/onboarding' });
   };
 
   // Get user's first name or username
@@ -130,12 +160,9 @@ export default function LoginPage() {
                         {isLoggedIn ? "You're already signed in. Continue to the app?" : "Enter your credentials to access the graph."}
                     </p>
                     {isLoggedIn && (
-                        <Link 
-                            href="/app" 
-                            className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 text-xs font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)]"
-                        >
-                            Go to App <ArrowRight size={14} />
-                        </Link>
+                        <div className="mt-4">
+                            <p className="text-xs text-slate-500 mb-3">Checking your profile...</p>
+                        </div>
                     )}
                 </div>
 

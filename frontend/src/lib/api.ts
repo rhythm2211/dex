@@ -68,18 +68,14 @@ class DexClient {
   private baseURL: string;
 
   constructor() {
-    // --- DOCKER NETWORKING FIX ---
-    // If running on the Server (SSR), we must use the internal Docker container name.
-    // If running in the Browser, we use localhost.
-    
+    // --- DOCKER / LOCAL NETWORKING ---
+    // - SERVER (SSR): Use INTERNAL_API_URL (Docker: dex-backend:8000) or NEXT_PUBLIC_API_URL or localhost:8000.
+    // - BROWSER: Use NEXT_PUBLIC_API_URL or localhost:8000 (backend default). With Docker, set NEXT_PUBLIC_API_URL=http://localhost:8001.
+    const defaultLocal = 'http://localhost:8000';
     if (typeof window === 'undefined') {
-      // SERVER-SIDE: connect to the backend container directly
-      // NOTE: Ensure 'dex-backend' matches your docker-compose service name!
-      this.baseURL = process.env.INTERNAL_API_URL || 'http://dex-backend:8000';
+      this.baseURL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || defaultLocal;
     } else {
-      // CLIENT-SIDE: connect via the browser's access to localhost
-      // Docker exposes backend on port 8001, so default to that
-      this.baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+      this.baseURL = process.env.NEXT_PUBLIC_API_URL || defaultLocal;
     }
 
     // Set up Axios with the determined URL

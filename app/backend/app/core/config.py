@@ -15,8 +15,8 @@ BACKEND_DIR = CONFIG_DIR.parent.parent        # backend
 ROOT_DIR = BACKEND_DIR.parent                 # app (root)
 
 env_paths = [
+    ROOT_DIR / ".env",           # app/.env (your backend .env)
     BACKEND_DIR / ".env",
-    ROOT_DIR / ".env",
     Path(os.getcwd()) / ".env"
 ]
 
@@ -49,9 +49,9 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # --- AI & Vector DB Keys ---
-    PINECONE_API_KEY: str
-    PINECONE_INDEX_NAME: str
-    GROQ_API_KEY: str
+    PINECONE_API_KEY: str = ""
+    PINECONE_INDEX_NAME: str = ""
+    GROQ_API_KEY: str = ""
     GITHUB_TOKEN: str = "" 
     OPENAI_API_KEY: str = "" 
 

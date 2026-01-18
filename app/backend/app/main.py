@@ -11,6 +11,10 @@ sys.path.append(".")
 
 from backend.app.core.config import settings
 from backend.app.api.v1.router import api_router
+from backend.app.models.user import init_db
+
+# Initialize database on startup
+init_db()
 
 # Proprietary Structured Logging
 logging.basicConfig(

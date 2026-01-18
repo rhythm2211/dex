@@ -7,10 +7,14 @@ from pydantic import BaseModel
 # --- Service Imports ---
 from backend.app.services.ingestion_service import IngestionService
 from backend.app.services.rag_service import RAGService
+from backend.app.api.v1.endpoints.users import router as users_router
 
 logger = logging.getLogger("dex-core")
 
 api_router = APIRouter()
+
+# Include user routes
+api_router.include_router(users_router, tags=["users"])
 
 # --- Singleton Services ---
 ingestion_service = IngestionService()

@@ -84,13 +84,25 @@ class GraphEngine:
             self.driver.close()
 
     def _create_indices(self):
-        """Ensures fast lookups for massive repos."""
-        if not self.driver: return
+        """Ensures fast lookups for massive repos. Non-fatal if Neo4j is unreachable."""
+        if not self.driver:
+            return
         try:
             with self.driver.session() as session:
                 session.run("CREATE CONSTRAINT node_id_unique IF NOT EXISTS FOR (n:CodeNode) REQUIRE n.id IS UNIQUE")
+            logger.info("Neo4j constraint ensured: CodeNode.id")
         except Exception as e:
-            logger.warning(f"Index creation skipped (might already exist): {e}")
+            err = str(e).lower()
+            if "routing" in err or "unable to retrieve" in err:
+                logger.warning(
+                    "Neo4j: unable to retrieve routing information. "
+                    "For Aura/cloud use neo4j+s://HOST (not neo4j://). "
+                    "Check NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD and network (Bolt/7687). Graph features may be limited."
+                )
+            elif "equivalent" in err or "already exist" in err:
+                logger.debug("Neo4j constraint already exists, skipping.")
+            else:
+                logger.warning(f"Neo4j index/constraint setup skipped: {e}")
 
     def wipe_graph(self):
         """Clears the Cloud Database for fresh ingestion."""
