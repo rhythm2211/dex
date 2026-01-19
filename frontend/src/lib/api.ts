@@ -28,6 +28,11 @@ export interface GraphNode {
   last_modified?: string;
   commit_count?: number;
   
+  // [NEW] Social & Risk Metadata (Populated by Ingestion)
+  top_owner?: string;        // The "Live Blame" owner
+  bus_risk_score?: number;   // 0.0 to 1.0 (Bus Factor)
+  collaborators?: string[];  // List of people who touch this file
+
   [key: string]: any;
 }
 
@@ -62,6 +67,35 @@ export interface CommitNode {
   files: string[];
 }
 
+// [NEW] Onboarding Interfaces
+export interface TeamNode {
+  id: string;      // Developer Name
+  group: 'person';
+  radius: number;
+}
+
+export interface TeamLink {
+  source: string; // Developer Name A
+  target: string; // Developer Name B
+  value: number;  // Collaboration strength (co-edits)
+}
+
+export interface TeamTopologyResponse {
+  nodes: TeamNode[];
+  links: TeamLink[];
+}
+
+export interface ZoneData {
+  name: string;      // Folder path (e.g., "backend/services")
+  value: number;     // Commit count
+  intensity: 'High' | 'Low';
+}
+
+export interface ActiveZonesResponse {
+  zones: ZoneData[];
+  msg?: string;
+}
+
 // --- The Singleton Client ---
 class DexClient {
   private client: AxiosInstance;
@@ -69,8 +103,6 @@ class DexClient {
 
   constructor() {
     // --- DOCKER / LOCAL NETWORKING ---
-    // - SERVER (SSR): Use INTERNAL_API_URL (Docker: dex-backend:8000) or NEXT_PUBLIC_API_URL or localhost:8000.
-    // - BROWSER: Use NEXT_PUBLIC_API_URL or localhost:8000 (backend default). With Docker, set NEXT_PUBLIC_API_URL=http://localhost:8001.
     const defaultLocal = 'http://localhost:8000';
     if (typeof window === 'undefined') {
       this.baseURL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || defaultLocal;
@@ -114,7 +146,10 @@ class DexClient {
   // 3. Ingestion Trigger
   public async triggerIngestion(repoUrl: string): Promise<IngestResponse> {
     try {
-      const res: AxiosResponse<IngestResponse> = await this.client.post('/ingest', { repo_path: repoUrl });
+      // Ingestion should return immediately (uses background tasks), so shorter timeout is fine
+      const res: AxiosResponse<IngestResponse> = await this.client.post('/ingest', { repo_path: repoUrl }, {
+        timeout: 10000, // 10 seconds should be enough for the endpoint to accept the request
+      });
       return res.data;
     } catch (error: any) {
       console.error("Ingestion Trigger Failure:", error?.message);
@@ -136,13 +171,17 @@ class DexClient {
   // 5. Get Knowledge Graph Data
   public async getGraphData(): Promise<GraphData> {
     try {
-      const res: AxiosResponse<GraphData> = await this.client.get('/graph/structure');
+      // Graph queries can take longer, especially for large codebases
+      const res: AxiosResponse<GraphData> = await this.client.get('/graph/structure', {
+        timeout: 120000, // 2 minutes for large graphs
+      });
       if (!res.data || !Array.isArray(res.data.nodes)) {
         return { nodes: [], links: [] };
       }
       return res.data;
     } catch (error: any) {
       console.error("Graph Load Failure:", error?.message);
+      // Return empty graph instead of throwing to prevent UI crashes
       return { nodes: [], links: [] };
     }
   }
@@ -151,7 +190,8 @@ class DexClient {
   public async getImpactGraph(fileId: string): Promise<GraphData> {
     try {
       const res: AxiosResponse<GraphData> = await this.client.get('/graph/impact', {
-        params: { file_id: fileId }
+        params: { file_id: fileId },
+        timeout: 60000, // 1 minute for impact analysis
       });
       return res.data;
     } catch (error: any) {
@@ -175,12 +215,37 @@ class DexClient {
   public async expandGraphNode(nodeId: string): Promise<GraphData> {
     try {
       const res: AxiosResponse<GraphData> = await this.client.get('/graph/expand', {
-        params: { node_id: nodeId }
+        params: { node_id: nodeId },
+        timeout: 60000, // 1 minute for node expansion
       });
       return res.data;
     } catch (error: any) {
       console.error("Graph Expansion Failure:", error?.message);
       return { nodes: [], links: [] };
+    }
+  }
+
+  // [NEW] 9. Get Team Topology (Who works with whom?)
+  public async getTeamTopology(): Promise<TeamTopologyResponse> {
+    try {
+      const res: AxiosResponse<TeamTopologyResponse> = await this.client.get('/onboarding/team-topology');
+      return res.data;
+    } catch (error: any) {
+      console.error("Team Topology Failure:", error?.message);
+      return { nodes: [], links: [] };
+    }
+  }
+
+  // [NEW] 10. Get Active Zones (Heatmap)
+  public async getActiveZones(days: number = 30): Promise<ActiveZonesResponse> {
+    try {
+      const res: AxiosResponse<ActiveZonesResponse> = await this.client.get('/onboarding/active-zones', {
+        params: { days }
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("Active Zones Failure:", error?.message);
+      return { zones: [] };
     }
   }
 }

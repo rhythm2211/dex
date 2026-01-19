@@ -2,10 +2,12 @@
 User profile API endpoints
 """
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
-from typing import Optional
+from sqlalchemy import func
+from typing import Optional, List
+from datetime import datetime, timedelta
 
 from backend.app.models.user import User, get_db, init_db
 
@@ -32,6 +34,7 @@ class UserProfileUpdate(BaseModel):
     role: Optional[str] = None
     bio: Optional[str] = None
     profile_completed: Optional[bool] = None
+    is_active: Optional[bool] = None
 
 class UserProfileResponse(BaseModel):
     id: str
@@ -42,6 +45,8 @@ class UserProfileResponse(BaseModel):
     role: Optional[str]
     bio: Optional[str]
     profile_completed: bool
+    is_active: bool
+    last_login: Optional[str]
     created_at: Optional[str]
     updated_at: Optional[str]
 
@@ -81,7 +86,9 @@ def create_user_profile(profile: UserProfileCreate, db: Session = Depends(get_db
         company=profile.company,
         role=profile.role,
         bio=profile.bio,
-        profile_completed=False
+        profile_completed=False,
+        is_active=True,  # New users are active by default
+        last_login=None  # Will be set on first login
     )
     
     db.add(new_user)
@@ -111,8 +118,9 @@ def update_user_profile(user_id: str, profile: UserProfileUpdate, db: Session = 
         user.bio = profile.bio
     if profile.profile_completed is not None:
         user.profile_completed = profile.profile_completed
+    if profile.is_active is not None:
+        user.is_active = profile.is_active
     
-    from datetime import datetime
     user.updated_at = datetime.utcnow()
     
     db.commit()
@@ -132,3 +140,130 @@ def check_profile_completed(user_id: str, db: Session = Depends(get_db)):
         "profile_completed": user.profile_completed,
         "exists": True
     }
+
+@router.get("/users/active", response_model=List[UserProfileResponse])
+def get_active_users(
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back for activity"),
+    use_last_login: bool = Query(True, description="Use last_login instead of updated_at for activity check"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get active users based on their last login or update time.
+    Users are considered active if:
+    1. is_active=True AND
+    2. (last_login or updated_at) within the specified number of days
+    
+    Args:
+        days: Number of days to look back (default: 30, max: 365)
+        use_last_login: If True, use last_login; if False, use updated_at (default: True)
+    
+    Returns:
+        List of active user profiles
+    """
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    
+    query = db.query(User).filter(User.is_active == True)
+    
+    if use_last_login:
+        # Use last_login if available, otherwise fall back to updated_at
+        from sqlalchemy import desc, nullslast
+        query = query.filter(
+            (User.last_login >= cutoff_date) | 
+            ((User.last_login.is_(None)) & (User.updated_at >= cutoff_date))
+        ).order_by(nullslast(desc(User.last_login)), desc(User.updated_at))
+    else:
+        query = query.filter(User.updated_at >= cutoff_date).order_by(User.updated_at.desc())
+    
+    active_users = query.all()
+    return [user.to_dict() for user in active_users]
+
+@router.get("/users/active/count")
+def get_active_users_count(
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back for activity"),
+    use_last_login: bool = Query(True, description="Use last_login instead of updated_at for activity check"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get count of active users.
+    
+    Args:
+        days: Number of days to look back (default: 30, max: 365)
+        use_last_login: If True, use last_login; if False, use updated_at (default: True)
+    
+    Returns:
+        Count of active users
+    """
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    
+    query = db.query(func.count(User.id)).filter(User.is_active == True)
+    
+    if use_last_login:
+        query = query.filter(
+            (User.last_login >= cutoff_date) | 
+            ((User.last_login.is_(None)) & (User.updated_at >= cutoff_date))
+        )
+    else:
+        query = query.filter(User.updated_at >= cutoff_date)
+    
+    count = query.scalar()
+    
+    return {
+        "active_users_count": count or 0,
+        "days_lookback": days,
+        "use_last_login": use_last_login,
+        "cutoff_date": cutoff_date.isoformat()
+    }
+
+@router.post("/users/{user_id}/update-login")
+def update_user_login(user_id: str, db: Session = Depends(get_db)):
+    """
+    Update the last_login timestamp for a user.
+    This should be called when a user authenticates.
+    
+    Args:
+        user_id: User ID (email or provider ID)
+    
+    Returns:
+        Updated user profile
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update last_login and set is_active to True
+    user.last_login = datetime.utcnow()
+    user.is_active = True
+    user.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(user)
+    
+    logger.info(f"Updated login timestamp for user: {user_id}")
+    return user.to_dict()
+
+@router.post("/users/email/{email}/update-login")
+def update_user_login_by_email(email: str, db: Session = Depends(get_db)):
+    """
+    Update the last_login timestamp for a user by email.
+    This should be called when a user authenticates.
+    
+    Args:
+        email: User email address
+    
+    Returns:
+        Updated user profile
+    """
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Update last_login and set is_active to True
+    user.last_login = datetime.utcnow()
+    user.is_active = True
+    user.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(user)
+    
+    logger.info(f"Updated login timestamp for user: {email}")
+    return user.to_dict()

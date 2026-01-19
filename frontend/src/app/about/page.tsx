@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
-import { Terminal, LogOut, Rocket, ArrowRight, Layers, Cpu, GitBranch } from "lucide-react";
+import { Terminal, LogOut, Rocket, ArrowRight, Layers, Cpu, GitBranch, Users, Activity } from "lucide-react";
 
 // -----------------------------------------------------------------------------
 // GLOBAL STYLES (aligned with main page)
@@ -126,6 +126,51 @@ export default function AboutPage() {
                 <div className="text-xs text-slate-500 mt-1">{desc}</div>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* Insights Section */}
+        <section className="mx-auto max-w-4xl px-6 py-8">
+          <div className="text-center mb-8">
+            <div className="text-indigo-400 font-mono text-xs mb-4 flex items-center justify-center gap-2">
+              <span className="w-6 h-px bg-indigo-400" /> INSIGHTS
+            </div>
+            <h2 className="text-2xl font-semibold text-white mb-2">Explore Your Codebase</h2>
+            <p className="text-slate-400 text-sm">Visualize team collaboration and repository activity patterns</p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Link
+              href="/insights/team"
+              className="group p-6 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.04] hover:border-indigo-500/30 transition-all relative overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div className="relative z-10">
+                <div className="w-12 h-12 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 group-hover:bg-indigo-500/30 transition-colors">
+                  <Users size={24} />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-indigo-300 transition-colors">Team Network</h3>
+                <p className="text-xs text-slate-500 mb-4">Visualize collaboration patterns and developer relationships in your codebase</p>
+                <div className="flex items-center gap-2 text-xs text-indigo-400 font-medium">
+                  View Network <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            </Link>
+            <Link
+              href="/insights/activity"
+              className="group p-6 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.04] hover:border-indigo-500/30 transition-all relative overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div className="relative z-10">
+                <div className="w-12 h-12 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 group-hover:bg-indigo-500/30 transition-colors">
+                  <Activity size={24} />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-indigo-300 transition-colors">Repository Activity</h3>
+                <p className="text-xs text-slate-500 mb-4">Identify high-churn areas and hotspots in your codebase</p>
+                <div className="flex items-center gap-2 text-xs text-indigo-400 font-medium">
+                  View Activity <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            </Link>
           </div>
         </section>
 
