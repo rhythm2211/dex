@@ -199,6 +199,12 @@ export default function AboutPage() {
             <Link href="/" className="hover:text-indigo-400 transition-colors">Home</Link>
             <Link href="/#features" className="hover:text-indigo-400 transition-colors">Features</Link>
             <Link href="/signup" className="hover:text-indigo-400 transition-colors">Sign up</Link>
+            <Link href="/grievance" className="hover:text-indigo-400 transition-colors">Contact</Link>
+          </div>
+        </div>
+        <div className="mx-auto max-w-6xl px-6 pt-4 border-t border-white/5 mt-4">
+          <div className="text-center text-[10px] text-slate-600">
+            © 2024 Dex Inc. All rights reserved. | Developed by Rhythm Suthar 2026
           </div>
         </div>
       </footer>

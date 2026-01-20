@@ -748,6 +748,7 @@ export default function HomePage() {
              <Link href="#insights" className="hover:text-white transition-colors">Insights</Link>
              <Link href="#security" className="hover:text-white transition-colors">Security</Link>
              <Link href="/about" className="hover:text-white transition-colors">About</Link>
+             <Link href="/grievance" className="hover:text-white transition-colors">Contact</Link>
           </div>
           <div className="flex items-center gap-4">
             {session?.user ? (
@@ -1173,11 +1174,12 @@ export default function HomePage() {
                         <li><Link href="#" className="hover:text-indigo-400">Privacy Policy</Link></li>
                         <li><Link href="#" className="hover:text-indigo-400">Terms of Service</Link></li>
                         <li><Link href="#" className="hover:text-indigo-400">Security</Link></li>
+                        <li><Link href="/grievance" className="hover:text-indigo-400">Contact / Grievance</Link></li>
                     </ul>
                 </div>
             </div>
             <div className="border-t border-white/5 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div className="text-[10px] text-slate-600">© 2024 Dex Inc. All rights reserved.</div>
+                <div className="text-[10px] text-slate-600">© 2026 Dex Inc. All rights reserved. | Developed by Rhythm Suthar 2026</div>
                 <div className="flex gap-4">
                     <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                     <span className="text-[10px] text-emerald-500 font-medium">All Systems Operational</span>
