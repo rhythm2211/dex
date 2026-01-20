@@ -8,7 +8,7 @@ import {
   Quote, Network, Play, LogOut, Code, FileText, 
   Cpu, Search, CheckCircle, Command, Lock, Layers, 
   ChevronRight, Database, Github, Activity, Users, TrendingUp, Flame,
-  GitCommit, MessageSquare, TreePine, GitMerge
+  GitCommit, MessageSquare, TreePine, GitMerge, Rocket
 } from "lucide-react";
 import { dexApi, ActiveZonesResponse, TeamTopologyResponse, ZoneData } from "@/lib/api";
 
@@ -746,7 +746,7 @@ export default function HomePage() {
              <Link href="#how-it-works" className="hover:text-white transition-colors">Methodology</Link>
              <Link href="#features" className="hover:text-white transition-colors">Features</Link>
              <Link href="#insights" className="hover:text-white transition-colors">Insights</Link>
-             <Link href="#security" className="hover:text-white transition-colors">Security</Link>
+             <Link href="/security" className="hover:text-white transition-colors">Security</Link>
              <Link href="/about" className="hover:text-white transition-colors">About</Link>
              <Link href="/grievance" className="hover:text-white transition-colors">Contact</Link>
           </div>
@@ -801,11 +801,23 @@ export default function HomePage() {
             DEX indexes your repository into a semantic graph, allowing you to debug, refactor, and onboard 10x faster using context-aware AI.
           </p>
           
-          <p className="animate-fade-in delay-200 max-w-2xl mx-auto text-sm leading-relaxed text-slate-500 mb-10">
+          <p className="animate-fade-in delay-200 max-w-2xl mx-auto text-sm leading-relaxed text-slate-500 mb-6">
             Connect your GitHub repository, watch DEX build a comprehensive dependency tree, and interact with an AI assistant that understands your entire codebase structure—not just isolated snippets.
           </p>
 
+          <p className="animate-fade-in delay-200 max-w-2xl mx-auto text-xs leading-relaxed text-slate-600 mb-10">
+            <span className="text-indigo-400 font-semibold">Sign up</span> for the best experience with full access to all features.
+          </p>
+
           <div className="animate-fade-in delay-300 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link href="/app" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-indigo-600 text-white px-8 py-3.5 transition-all hover:bg-indigo-500 hover:shadow-[0_0_40px_rgba(99,102,241,0.4)] hover:scale-105">
+              <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
+                <Rocket size={14} className="group-hover:scale-110 transition-transform" />
+                Launch App
+                <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+              </span>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+            </Link>
             <Link href="/signup" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-white text-black px-8 py-3.5 transition-all hover:bg-slate-200 hover:shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:scale-105">
               <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
                 Start for free <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
@@ -1171,9 +1183,9 @@ export default function HomePage() {
                 <div>
                     <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Legal</h4>
                     <ul className="space-y-2 text-xs text-slate-500">
-                        <li><Link href="#" className="hover:text-indigo-400">Privacy Policy</Link></li>
-                        <li><Link href="#" className="hover:text-indigo-400">Terms of Service</Link></li>
-                        <li><Link href="#" className="hover:text-indigo-400">Security</Link></li>
+                        <li><Link href="/privacy" className="hover:text-indigo-400">Privacy Policy</Link></li>
+                        <li><Link href="/terms" className="hover:text-indigo-400">Terms of Service</Link></li>
+                        <li><Link href="/security" className="hover:text-indigo-400">Security</Link></li>
                         <li><Link href="/grievance" className="hover:text-indigo-400">Contact / Grievance</Link></li>
                     </ul>
                 </div>

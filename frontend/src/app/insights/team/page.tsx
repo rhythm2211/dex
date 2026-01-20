@@ -168,7 +168,7 @@ export default function TeamInsightsPage() {
           <div className="hidden md:flex items-center gap-8 text-xs font-medium text-slate-400">
             <Link href="/#how-it-works" className="hover:text-white transition-colors">Methodology</Link>
             <Link href="/#features" className="hover:text-white transition-colors">Features</Link>
-            <Link href="/#security" className="hover:text-white transition-colors">Security</Link>
+            <Link href="/security" className="hover:text-white transition-colors">Security</Link>
             <Link href="/about" className="hover:text-white transition-colors">About</Link>
           </div>
           <div className="flex items-center gap-4">
