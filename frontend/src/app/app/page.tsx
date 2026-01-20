@@ -8,7 +8,7 @@ import {
   RefreshCw, Zap, Search, Terminal, MessageSquare,
   Info, Folder, File, Box, Code, Database, FileCode,
   ChevronRight, ChevronDown, Move, LayoutTemplate,
-  Play, LogOut, User
+  Play, LogOut, User, X
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -177,6 +177,7 @@ export default function Dashboard() {
   const [ingesting, setIngesting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [step, setStep] = useState('');
+  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'assistant' | 'details'>('assistant');
@@ -212,15 +213,33 @@ export default function Dashboard() {
             const s = await dexApi.getIngestStatus();
             setProgress(s.progress);
             setStep(s.step);
-            if (s.state === 'completed') { clearInterval(i); setIngesting(false); loadGraph(); }
+            if (s.state === 'completed') { 
+                clearInterval(i); 
+                setIngesting(false); 
+                setPollInterval(null);
+                loadGraph(); 
+            }
+            if (s.state === 'cancelled') { 
+                clearInterval(i); 
+                setIngesting(false); 
+                setPollInterval(null);
+            }
+            if (s.state === 'error') { 
+                clearInterval(i); 
+                setIngesting(false); 
+                setPollInterval(null);
+            }
         } catch(e) {}
     }, 1000);
+    return i; // Return interval ID so we can clear it
   }, [loadGraph]);
 
   useEffect(() => {
     dexApi.getIngestStatus().then(s => {
         if(s.state === 'running') {
-            setIngesting(true); pollIngestion();
+            setIngesting(true); 
+            const interval = pollIngestion();
+            setPollInterval(interval);
         } else if(s.state === 'completed') {
             // Load graph data if ingestion is already completed
             loadGraph();
@@ -228,12 +247,58 @@ export default function Dashboard() {
     }).catch(() => {});
     // Also try to load graph data on mount in case there's existing data
     loadGraph();
+    
+    // Cleanup interval on unmount
+    return () => {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+        }
+    };
   }, [pollIngestion, loadGraph]);
 
   const handleIngest = async () => {
       setIngesting(true); setGraphData({ nodes: [], links: [] });
-      try { await dexApi.triggerIngestion(repoUrl); } catch (err) { setIngesting(false); }
-      pollIngestion();
+      try { 
+          await dexApi.triggerIngestion(repoUrl); 
+          const interval = pollIngestion();
+          setPollInterval(interval);
+      } catch (err: any) { 
+          console.error("Ingestion error:", err);
+          // If error is 409 (already running), try to reset and retry
+          if (err?.message?.includes("already running") || err?.response?.status === 409) {
+              try {
+                  console.log("Resetting stuck ingestion and retrying...");
+                  await dexApi.resetIngestionStatus();
+                  // Small delay before retry
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  await dexApi.triggerIngestion(repoUrl);
+                  const interval = pollIngestion();
+                  setPollInterval(interval);
+              } catch (retryErr: any) {
+                  console.error("Retry failed:", retryErr);
+                  setIngesting(false);
+                  alert(`Ingestion failed: ${retryErr?.message || "Unknown error"}`);
+              }
+          } else {
+              setIngesting(false);
+              alert(`Ingestion failed: ${err?.message || "Unknown error"}`);
+          }
+      }
+  };
+
+  const handleCancel = async () => {
+      try {
+          await dexApi.cancelIngestion();
+          if (pollInterval) {
+              clearInterval(pollInterval);
+              setPollInterval(null);
+          }
+          setIngesting(false);
+          setStep("Cancelled");
+      } catch (err: any) {
+          console.error("Cancel error:", err);
+          alert(`Failed to cancel ingestion: ${err?.message || "Unknown error"}`);
+      }
   };
 
   const handleExecute = async (manualQuery?: string) => {
@@ -632,15 +697,26 @@ export default function Dashboard() {
                     {/* Enhanced progress bar */}
                     {ingesting && (
                       <div className="space-y-1">
-                        <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                          <span>Ingesting…</span>
-                          <span>{Math.min(100, Math.max(0, progress))}%</span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden shadow-inner">
-                          <div 
-                              className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 transition-all duration-300 shadow-[0_0_8px_rgba(99,102,241,0.5)]" 
-                              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} 
-                          />
+                        <div className="flex justify-between items-center gap-2">
+                          <div className="flex-1">
+                            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                              <span>Ingesting…</span>
+                              <span>{Math.min(100, Math.max(0, progress))}%</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden shadow-inner mt-1">
+                              <div 
+                                  className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 transition-all duration-300 shadow-[0_0_8px_rgba(99,102,241,0.5)]" 
+                                  style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} 
+                              />
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleCancel}
+                            className="bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 px-2 py-1.5 rounded-lg transition-all flex items-center justify-center shrink-0 border border-red-500/30 hover:border-red-500/50"
+                            title="Cancel ingestion"
+                          >
+                            <X size={14} />
+                          </button>
                         </div>
                       </div>
                     )}

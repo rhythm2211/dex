@@ -18,9 +18,43 @@ api_router = APIRouter()
 # Include user routes
 api_router.include_router(users_router, tags=["users"])
 
-# --- Singleton Services ---
-ingestion_service = IngestionService()
-rag_service = RAGService()
+# --- Singleton Services (Lazy Initialization) ---
+# Initialize services lazily to avoid blocking on startup
+_ingestion_service = None
+_rag_service = None
+# Lightweight status storage (doesn't require full service initialization)
+_ingestion_status = {"state": "idle", "progress": 0, "step": "Ready"}
+# Track if cancellation was requested
+_cancellation_requested = False
+
+def get_ingestion_service():
+    global _ingestion_service
+    if _ingestion_service is None:
+        try:
+            _ingestion_service = IngestionService()
+            # Sync status after initialization
+            global _ingestion_status
+            _ingestion_status = _ingestion_service.get_current_status()
+        except Exception as e:
+            logger.exception(f"Failed to initialize IngestionService: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to initialize ingestion service: {str(e)}") from e
+    return _ingestion_service
+
+def get_ingestion_status_lightweight():
+    """Get ingestion status without initializing the full service."""
+    global _ingestion_service, _ingestion_status
+    if _ingestion_service is not None:
+        # Service is initialized, use it
+        return _ingestion_service.get_current_status()
+    else:
+        # Service not initialized, return cached status
+        return _ingestion_status
+
+def get_rag_service():
+    global _rag_service
+    if _rag_service is None:
+        _rag_service = RAGService()
+    return _rag_service
 
 # --- Data Models ---
 class IngestRequest(BaseModel):
@@ -31,19 +65,37 @@ class HybridRAGRequest(BaseModel):
 
 # --- Background Task Wrapper ---
 def run_ingestion_sequence(repo_path: str):
+    global _ingestion_status, _cancellation_requested
+    _cancellation_requested = False  # Reset cancellation flag at start
     try:
+        ingestion_service = get_ingestion_service()
+        # Sync status immediately after initialization
+        _ingestion_status = ingestion_service.get_current_status()
+        
         logger.info(f"🚀 Starting background ingestion for: {repo_path}")
         result = ingestion_service.process_repository(repo_path)
         
+        # Sync status after processing
+        _ingestion_status = ingestion_service.get_current_status()
+        
         if result.get("status") == "success":
             logger.info("💾 Ingestion processing done. Triggering RAG memory refresh...")
+            rag_service = get_rag_service()
             rag_service.reload_knowledge_base()
             logger.info("✅ System fully updated.")
+        elif result.get("status") == "cancelled":
+            logger.info("🛑 Ingestion was cancelled by user")
         else:
             logger.error(f"❌ Ingestion failed: {result.get('error')}")
     except Exception as e:
         logger.exception(f"Background task crashed: {e}")
-        ingestion_service._update_status("error", 0, f"System Error: {str(e)}")
+        try:
+            ingestion_service = get_ingestion_service()
+            ingestion_service._update_status("error", 0, f"System Error: {str(e)}")
+            _ingestion_status = ingestion_service.get_current_status()
+        except:
+            # If service initialization fails, update lightweight status
+            _ingestion_status = {"state": "error", "progress": 0, "step": f"System Error: {str(e)}"}
 
 # --- Endpoints ---
 
@@ -60,6 +112,7 @@ async def get_knowledge_graph():
     """
     try:
         # Default limit 2500 to prevent browser crash on initial load
+        ingestion_service = get_ingestion_service()
         graph_data = ingestion_service.graph_engine.get_full_graph(limit=2500)
         return graph_data
     except Exception as e:
@@ -75,6 +128,7 @@ def get_impact_graph(file_id: str = Query(..., description="The file ID (path) t
     Returns: All files that depend on 'file_id' (Upstream Dependencies).
     """
     try:
+        ingestion_service = get_ingestion_service()
         return ingestion_service.graph_engine.get_impact_subgraph(file_id)
     except Exception as e:
         logger.error(f"Neo4j Impact Query Error: {e}")
@@ -112,6 +166,7 @@ async def get_team_topology():
     Nodes = Developers. Edges = Collaboration strength (co-edited files).
     Uses the Neo4j driver from the existing GraphEngine.
     """
+    ingestion_service = get_ingestion_service()
     engine = ingestion_service.graph_engine
     
     if not engine or not engine.driver:
@@ -226,11 +281,14 @@ async def trigger_ingestion(request: IngestRequest, background_tasks: Background
     Use /ingest/status to check progress.
     """
     try:
-        current_status = ingestion_service.get_current_status()
+        # Check status without initializing the full service (lazy check)
+        current_status = get_ingestion_status_lightweight()
+        
         if current_status["state"] == "running":
             raise HTTPException(status_code=409, detail="An ingestion task is already running.")
 
         # Start background task - this should return immediately
+        # Service initialization will happen in the background task, not here
         background_tasks.add_task(run_ingestion_sequence, request.repo_path)
         
         logger.info(f"Ingestion request accepted for: {request.repo_path}")
@@ -241,16 +299,67 @@ async def trigger_ingestion(request: IngestRequest, background_tasks: Background
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to start ingestion: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to start ingestion: {str(e)}")
+        logger.exception(f"Failed to start ingestion: {e}", exc_info=True)
+        error_detail = str(e)
+        # Provide more helpful error messages for common issues
+        if "Neo4j" in error_detail or "NEO4J" in error_detail:
+            error_detail = f"Neo4j connection error: {error_detail}. Please check NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD environment variables."
+        elif "PostgreSQL" in error_detail or "postgres" in error_detail.lower():
+            error_detail = f"PostgreSQL connection error: {error_detail}. Please check database connection settings."
+        elif "GraphEngine" in error_detail or "graph_engine" in error_detail.lower():
+            error_detail = f"Graph engine initialization error: {error_detail}. Please check Neo4j configuration."
+        raise HTTPException(status_code=500, detail=f"Failed to start ingestion: {error_detail}")
 
 @api_router.get("/ingest/status")
 def get_ingestion_status():
-    return ingestion_service.get_current_status()
+    # Use lightweight status check to avoid blocking on service initialization
+    return get_ingestion_status_lightweight()
+
+@api_router.post("/ingest/cancel")
+def cancel_ingestion():
+    """
+    Cancel the currently running ingestion process.
+    """
+    global _ingestion_status, _cancellation_requested
+    _cancellation_requested = True
+    try:
+        ingestion_service = get_ingestion_service()
+        ingestion_service.cancel()
+        _ingestion_status = ingestion_service.get_current_status()
+        logger.info("🛑 Ingestion cancellation requested via API")
+        return {"status": "cancelled", "message": "Ingestion cancellation requested"}
+    except Exception as e:
+        logger.error(f"Failed to cancel ingestion: {e}")
+        # Try to update status anyway
+        _ingestion_status = {"state": "cancelled", "progress": 0, "step": "Cancellation attempted"}
+        return {"status": "cancelled", "message": f"Cancellation requested (service may not be initialized): {str(e)}"}
+
+@api_router.post("/ingest/reset")
+def reset_ingestion_status():
+    """
+    Reset ingestion status if it gets stuck.
+    This allows starting a new ingestion after a failed/stuck one.
+    """
+    global _ingestion_status
+    try:
+        # Reset lightweight status immediately
+        _ingestion_status = {"state": "idle", "progress": 0, "step": "Ready"}
+        
+        # If service is initialized, also reset it
+        if _ingestion_service is not None:
+            _ingestion_service._update_status("idle", 0, "Ready")
+            _ingestion_status = _ingestion_service.get_current_status()
+        
+        logger.info("Ingestion status reset to idle")
+        return {"status": "reset", "message": "Ingestion status has been reset"}
+    except Exception as e:
+        logger.error(f"Failed to reset ingestion status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset ingestion status: {str(e)}")
 
 @api_router.post("/query/hybrid")
 def execute_hybrid_query(request: HybridRAGRequest):
     try:
+        rag_service = get_rag_service()
         response = rag_service.answer_query(request.query)
         return response
     except Exception as e:
@@ -264,6 +373,7 @@ def expand_graph_node(node_id: str = Query(..., description="The ID of the node 
     Used for progressive rendering of large graphs.
     """
     try:
+        ingestion_service = get_ingestion_service()
         return ingestion_service.graph_engine.get_neighbors(node_id)
     except Exception as e:
         logger.error(f"Graph Expansion Error: {e}")

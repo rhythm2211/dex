@@ -1,6 +1,8 @@
 import logging
 import json
-from langchain_pinecone import PineconeVectorStore
+# Explicitly import pgvector before PGVector to ensure it's available
+import pgvector  # Required for LangChain's PGVector implementation
+from langchain_community.vectorstores import PGVector
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,10 +15,13 @@ class RAGService:
     def __init__(self):
         # Initialize Embeddings & Vector Store once
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        self.vector_store = PineconeVectorStore(
-            index_name=settings.PINECONE_INDEX_NAME,
-            embedding=self.embeddings,
-            pinecone_api_key=settings.PINECONE_API_KEY
+        
+        # Initialize PGVector store
+        self.vector_store = PGVector(
+            connection_string=settings.POSTGRES_CONNECTION_STRING,
+            embedding_function=self.embeddings,
+            collection_name=settings.POSTGRES_VECTOR_TABLE,
+            use_jsonb=True  # Use JSONB for metadata
         )
         
         # Initialize Retriever (loads graph into memory)

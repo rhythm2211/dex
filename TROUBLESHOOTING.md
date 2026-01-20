@@ -58,8 +58,12 @@ origins = [
 #### 5. Check Environment Variables
 Ensure `.env` file exists in `app/backend/` with:
 ```
-PINECONE_API_KEY=your_key
-PINECONE_INDEX_NAME=your_index
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_password
+POSTGRES_DB=dex
+POSTGRES_VECTOR_TABLE=document_vectors
 GROQ_API_KEY=your_key
 ```
 
@@ -73,7 +77,9 @@ Key dependencies:
 - fastapi
 - uvicorn
 - langchain
-- pinecone-client
+- langchain-community
+- psycopg[binary]
+- pgvector
 - gitpython
 - networkx
 
@@ -142,11 +148,14 @@ Ingestion creates temporary directories. Ensure you have enough space:
 df -h
 ```
 
-#### 4. Check Pinecone Configuration
-Verify your Pinecone credentials:
+#### 4. Check PostgreSQL Configuration
+Verify your PostgreSQL connection and pgvector setup:
 ```bash
-# Test Pinecone connection
-python -c "from pinecone import Pinecone; pc = Pinecone(api_key='YOUR_KEY'); print(pc.list_indexes())"
+# Test PostgreSQL connection
+python -c "import psycopg; from backend.app.core.config import settings; conn = psycopg.connect(settings.POSTGRES_CONNECTION_STRING); print('Connected!'); conn.close()"
+
+# Run pgvector setup script
+python -m backend.app.scripts.setup_pgvector
 ```
 
 ## Graph Data Format Issues
@@ -191,14 +200,14 @@ Open browser DevTools (F12) and check:
 #### 1. Verify Wipe Functionality
 The ingestion service should:
 - Delete old graph file
-- Clear Pinecone index
+- Clear PostgreSQL vector table
 - Reset graph engine
 
 Check backend logs for:
 ```
 🧹 Wiping previous knowledge base...
 Deleted local graph file.
-Pinecone index cleared.
+PostgreSQL vector table cleared.
 ```
 
 #### 2. Manual Cleanup
@@ -207,12 +216,23 @@ If automatic cleanup fails:
 # Delete graph file
 rm app/backend/data/repo_graph.json
 
-# Clear Pinecone index (via Python)
+# Clear PostgreSQL vector table (via Python)
 python -c "
-from pinecone import Pinecone
-pc = Pinecone(api_key='YOUR_KEY')
-index = pc.Index('YOUR_INDEX')
-index.delete(delete_all=True)
+import psycopg
+from backend.app.core.config import settings
+from psycopg.conninfo import make_conninfo
+conninfo = make_conninfo(
+    host=settings.POSTGRES_HOST,
+    port=settings.POSTGRES_PORT,
+    user=settings.POSTGRES_USER,
+    password=settings.POSTGRES_PASSWORD,
+    dbname=settings.POSTGRES_DB
+)
+with psycopg.connect(conninfo) as conn:
+    with conn.cursor() as cur:
+        cur.execute(f'TRUNCATE TABLE {settings.POSTGRES_VECTOR_TABLE};')
+        conn.commit()
+print('Vector table cleared!')
 "
 ```
 

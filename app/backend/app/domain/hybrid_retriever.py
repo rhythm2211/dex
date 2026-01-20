@@ -1,8 +1,9 @@
 import os
 import json
 import logging
-from typing import List
-from langchain_pinecone import PineconeVectorStore
+from typing import List, Union
+from langchain_community.vectorstores import PGVector
+from langchain_core.vectorstores import VectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from neo4j import GraphDatabase
@@ -13,7 +14,7 @@ from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j
 logger = logging.getLogger("dex-core")
 
 class HybridRetriever:
-    def __init__(self, vector_store: PineconeVectorStore):
+    def __init__(self, vector_store: Union[PGVector, VectorStore]):
         self.vector_store = vector_store
         self.llm = ChatGroq(
             model_name="llama-3.3-70b-versatile",
@@ -53,7 +54,7 @@ class HybridRetriever:
         1. Find the code (Vector Search)
         2. Find the context (Graph Lookup via Neo4j)
         """
-        # Step 1: Semantic Search (Pinecone)
+        # Step 1: Semantic Search (PGVector)
         try:
             docs = self.vector_store.similarity_search(query, k=k_vectors)
         except Exception as e:

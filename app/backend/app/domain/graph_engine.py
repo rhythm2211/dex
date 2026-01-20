@@ -216,6 +216,9 @@ class GraphEngine:
         # 2. Parse AST
         visitor = CodeStructureVisitor(file_path, repo_root)
         nodes, edges = visitor.process(file_content)
+        
+        if len(nodes) > 0 or len(edges) > 0:
+            logger.debug(f"  📊 Neo4j: Extracted {len(nodes)} nodes, {len(edges)} edges from {os.path.basename(file_path)}")
 
         # 3. Push Children (Classes/Functions)
         for node in nodes:

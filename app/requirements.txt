@@ -12,10 +12,13 @@ langchain
 langchain-community
 langchain-groq
 langchain-huggingface
-langchain-pinecone
 
-# --- Vector Database ---
-pinecone-client
+# --- Vector Database (PostgreSQL + pgvector) ---
+# Note: pgvector PostgreSQL extension must be installed in the database: CREATE EXTENSION vector;
+# The pgvector Python package is required by LangChain's PGVector implementation
+pgvector  # Python package for pgvector support in LangChain
+psycopg[binary]  # For pgvector (LangChain)
+psycopg2-binary  # For SQLAlchemy (user storage)
 
 # --- Machine Learning & Embeddings ---
 sentence-transformers

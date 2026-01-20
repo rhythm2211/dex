@@ -24,8 +24,12 @@ Make sure this file exists:
 
 Minimum required backend keys:
 
-- `PINECONE_API_KEY`
-- `PINECONE_INDEX_NAME`
+- `POSTGRES_HOST` (default: localhost)
+- `POSTGRES_PORT` (default: 5432)
+- `POSTGRES_USER` (default: postgres)
+- `POSTGRES_PASSWORD` (required)
+- `POSTGRES_DB` (default: dex)
+- `POSTGRES_VECTOR_TABLE` (default: document_vectors)
 - `GROQ_API_KEY`
 
 Neo4j keys are optional unless you’re using the graph engine:
@@ -118,8 +122,12 @@ docker compose --env-file app/.env up --build
 The following environment variables can be set in `app/.env`:
 
 ### Backend
-- `PINECONE_API_KEY` - Required
-- `PINECONE_INDEX_NAME` - Required
+- `POSTGRES_HOST` - PostgreSQL host (default: localhost)
+- `POSTGRES_PORT` - PostgreSQL port (default: 5432)
+- `POSTGRES_USER` - PostgreSQL user (default: postgres)
+- `POSTGRES_PASSWORD` - PostgreSQL password (required)
+- `POSTGRES_DB` - Database name (default: dex)
+- `POSTGRES_VECTOR_TABLE` - Vector table name (default: document_vectors)
 - `GROQ_API_KEY` - Required
 - `GITHUB_TOKEN` - Optional
 - `OPENAI_API_KEY` - Optional

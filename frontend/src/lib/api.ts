@@ -54,7 +54,7 @@ export interface IngestResponse {
 }
 
 export interface IngestStatusResponse {
-  state: 'idle' | 'running' | 'completed' | 'error';
+  state: 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
   progress: number; // 0 to 100
   step: string;     // Description of current step
 }
@@ -146,14 +146,18 @@ class DexClient {
   // 3. Ingestion Trigger
   public async triggerIngestion(repoUrl: string): Promise<IngestResponse> {
     try {
-      // Ingestion should return immediately (uses background tasks), so shorter timeout is fine
+      // Ingestion should return immediately (uses background tasks)
+      // Increased timeout to handle any initialization delays
       const res: AxiosResponse<IngestResponse> = await this.client.post('/ingest', { repo_path: repoUrl }, {
-        timeout: 10000, // 10 seconds should be enough for the endpoint to accept the request
+        timeout: 30000, // 30 seconds to handle service initialization if needed
       });
       return res.data;
     } catch (error: any) {
       console.error("Ingestion Trigger Failure:", error?.message);
-      throw new Error(error.response?.data?.detail || "Failed to start ingestion");
+      console.error("Full error:", error);
+      // Provide more detailed error information
+      const errorMessage = error.response?.data?.detail || error.message || "Failed to start ingestion";
+      throw new Error(errorMessage);
     }
   }
 
@@ -168,7 +172,27 @@ class DexClient {
     }
   }
 
-  // 5. Get Knowledge Graph Data
+  // 5. Cancel Ingestion
+  public async cancelIngestion(): Promise<void> {
+    try {
+      await this.client.post('/ingest/cancel');
+    } catch (error: any) {
+      console.error("Failed to cancel ingestion:", error?.message);
+      throw new Error(error.response?.data?.detail || "Failed to cancel ingestion");
+    }
+  }
+
+  // 6. Reset Ingestion Status (for stuck ingestion)
+  public async resetIngestionStatus(): Promise<void> {
+    try {
+      await this.client.post('/ingest/reset');
+    } catch (error: any) {
+      console.error("Failed to reset ingestion status:", error?.message);
+      throw new Error(error.response?.data?.detail || "Failed to reset ingestion status");
+    }
+  }
+
+  // 6. Get Knowledge Graph Data
   public async getGraphData(): Promise<GraphData> {
     try {
       // Graph queries can take longer, especially for large codebases

@@ -41,8 +41,8 @@ DEX (Developer Experience) is a codebase intelligence platform that combines sem
           │                 │                  │
           │                 │                  │
 ┌─────────▼─────────┐ ┌─────▼──────┐  ┌──────▼──────────┐
-│   Pinecone        │ │  Hybrid    │  │    Neo4j        │
-│   (Vector DB)     │ │  Retriever │  │  (Graph DB)     │
+│   PostgreSQL       │ │  Hybrid    │  │    Neo4j        │
+│   (pgvector)       │ │  Retriever │  │  (Graph DB)     │
 │                   │ └────────────┘  └──────────────────┘
 │  - Code chunks    │
 │  - Embeddings     │
@@ -116,14 +116,14 @@ DEX (Developer Experience) is a codebase intelligence platform that combines sem
   4. **Vector Embedding**: 
      - Split code into chunks
      - Generate embeddings (HuggingFace)
-     - Index in Pinecone
+     - Index in PostgreSQL (pgvector)
   5. **Status Updates**: Progress tracking for frontend polling
 
 ### 4. **RAG Service** (`/app/backend/app/services/rag_service.py`)
 - **Purpose**: Answer natural language queries about codebase
 - **Workflow**:
   1. **Hybrid Retrieval**: 
-     - Vector search in Pinecone (semantic similarity)
+     - Vector search in PostgreSQL/pgvector (semantic similarity)
      - Graph traversal in Neo4j (structural context)
   2. **Context Fusion**: Combine code snippets + graph relationships
   3. **LLM Generation**: Use Groq (Llama 3.3 70B) to synthesize answer
@@ -143,7 +143,7 @@ DEX (Developer Experience) is a codebase intelligence platform that combines sem
 ### 6. **Hybrid Retriever** (`/app/backend/app/domain/hybrid_retriever.py`)
 - **Purpose**: Combine vector search + graph traversal for RAG
 - **Algorithm**:
-  1. **Vector Search**: Find top-k similar code chunks in Pinecone
+  1. **Vector Search**: Find top-k similar code chunks in PostgreSQL/pgvector
   2. **Anchor Extraction**: Extract file names from retrieved chunks
   3. **Graph Expansion**: Query Neo4j for structural relationships of anchor files
   4. **Context Assembly**: Return JSON with code_context + graph_context
@@ -174,7 +174,7 @@ Background Task: run_ingestion_sequence()
     │   │   ├─► Extract edges (imports, contains)
     │   │   └─► Stream to Neo4j (GraphEngine.upsert_node/edge)
     │   │
-    │   └─► Generate embeddings → Pinecone
+    │   └─► Generate embeddings → PostgreSQL/pgvector
     │
     └─► RAGService.reload_knowledge_base()
         └─► HybridRetriever.reload_graph() (no-op for Neo4j)
@@ -196,7 +196,7 @@ RAGService.answer_query()
     │
     ├─► HybridRetriever.retrieve()
     │   │
-    │   ├─► Vector Search (Pinecone)
+    │   ├─► Vector Search (PostgreSQL/pgvector)
     │   │   └─► Find top-k similar code chunks
     │   │
     │   ├─► Extract file anchors
@@ -272,14 +272,22 @@ GraphEngine.get_impact_subgraph()
     - `CONTAINS`: File contains class/function
     - `DEFINES`: Scope hierarchy
 
-### 2. **Pinecone (Vector Database)**
+### 2. **PostgreSQL + pgvector (Vector Database)**
 - **Purpose**: Semantic search over code chunks
-- **Schema**:
-  - **Vectors**: 384-dim embeddings (sentence-transformers/all-MiniLM-L6-v2)
-  - **Metadata**: 
+- **Schema**: `document_vectors` table with:
+  - `id`: Primary key (SERIAL)
+  - `content`: Code chunk text
+  - `embedding`: vector(384) - embeddings (sentence-transformers/all-MiniLM-L6-v2)
+  - `metadata`: JSONB field containing:
     - `file_name`: Source file path
     - `source`: Full file path
-  - **Content**: Code chunks (1000 chars, 100 overlap)
+  - `file_name`: TEXT (indexed for faster lookups)
+  - `source`: TEXT
+  - `created_at`: TIMESTAMP
+  - **Indexes**: 
+    - HNSW index on `embedding` for fast similarity search
+    - GIN index on `metadata` for JSONB queries
+    - B-tree index on `file_name`
 
 ### 3. **SQLite (User Database)**
 - **Purpose**: Store user profiles
@@ -311,10 +319,11 @@ GraphEngine.get_impact_subgraph()
 - **LangChain**: LLM orchestration
 - **Groq**: LLM provider (Llama 3.3 70B)
 - **HuggingFace**: Embedding models
-- **Pinecone**: Vector database
+- **PostgreSQL + pgvector**: Vector database (replaces Pinecone)
 - **Neo4j**: Graph database
 - **GitPython**: Repository cloning
 - **SQLAlchemy**: ORM for SQLite
+- **psycopg**: PostgreSQL adapter for Python
 
 ## Environment Variables
 
@@ -325,9 +334,13 @@ NEO4J_URI=neo4j+s://...
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=...
 
-# Pinecone
-PINECONE_API_KEY=...
-PINECONE_INDEX_NAME=dex-index
+# PostgreSQL + pgvector
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_password
+POSTGRES_DB=dex
+POSTGRES_VECTOR_TABLE=document_vectors
 
 # LLM
 GROQ_API_KEY=...
@@ -352,7 +365,7 @@ INTERNAL_API_URL=http://dex-backend:8000  # Docker internal
 
 ### Production Considerations
 - Neo4j: Use Neo4j Aura (cloud) or self-hosted
-- Pinecone: Managed cloud service
+- PostgreSQL: Use managed PostgreSQL (AWS RDS, Google Cloud SQL, Azure Database) with pgvector extension
 - Frontend: Vercel/Netlify deployment
 - Backend: Container orchestration (K8s, ECS, etc.)
 
@@ -372,6 +385,7 @@ INTERNAL_API_URL=http://dex-backend:8000  # Docker internal
 4. **Background Tasks**: Ingestion runs asynchronously
 5. **Caching**: Vector store and graph DB serve as caches
 6. **Batch Processing**: Vector embeddings uploaded in batches of 100
+7. **pgvector Indexing**: HNSW index enables fast approximate nearest neighbor search
 
 ## Future Enhancements
 
