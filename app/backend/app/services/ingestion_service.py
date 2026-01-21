@@ -7,10 +7,11 @@ import threading
 import re
 from datetime import datetime
 from collections import Counter
+from typing import Dict, Optional
 from git import Repo, RemoteProgress
 from git.exc import GitCommandError
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter, Language
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 # Explicitly import pgvector before PGVector to ensure it's available
 import pgvector  # Required for LangChain's PGVector implementation
 from langchain_community.vectorstores import PGVector
@@ -20,16 +21,117 @@ from psycopg.conninfo import make_conninfo
 from backend.app.core.config import settings
 from backend.app.domain.graph_engine import GraphEngine
 
-# Setup Logging
+# Setup Logging first
 logger = logging.getLogger("dex-core")
 
+# Try to import tree-sitter for multi-language parsing (use different name to avoid conflict)
+try:
+    import tree_sitter
+    from tree_sitter import Language as TreeSitterLanguage, Parser
+    TREE_SITTER_AVAILABLE = True
+except ImportError:
+    TREE_SITTER_AVAILABLE = False
+    TreeSitterLanguage = None
+    Parser = None
+
 class IngestionService:
-    def __init__(self):
-        self.splitter = RecursiveCharacterTextSplitter.from_language(
-            language=Language.PYTHON, 
-            chunk_size=1000, 
+    def _init_language_splitters(self):
+        """Initialize language-specific text splitters for better code chunking."""
+        # Map file extensions to language strings (RecursiveCharacterTextSplitter.from_language uses strings)
+        language_map = {
+            '.py': 'python',
+            '.js': 'js',
+            '.jsx': 'js',
+            '.mjs': 'js',
+            '.cjs': 'js',
+            '.ts': 'ts',
+            '.tsx': 'ts',
+            '.d.ts': 'ts',
+            '.java': 'java',
+            '.kt': 'kotlin',
+            '.kts': 'kotlin',
+            '.scala': 'scala',
+            '.cpp': 'cpp',
+            '.cc': 'cpp',
+            '.cxx': 'cpp',
+            '.c': 'cpp',
+            '.h': 'cpp',
+            '.hpp': 'cpp',
+            '.hxx': 'cpp',
+            '.hh': 'cpp',
+            '.cs': 'csharp',
+            '.csx': 'csharp',
+            '.go': 'go',
+            '.rs': 'rust',
+            '.rb': 'ruby',
+            '.rake': 'ruby',
+            '.rbw': 'ruby',
+            '.php': 'php',
+            '.phtml': 'php',
+            '.php3': 'php',
+            '.php4': 'php',
+            '.php5': 'php',
+            '.swift': 'swift',
+            '.m': 'objc',
+            '.mm': 'objc',
+            '.r': 'r',
+            '.R': 'r',
+            '.lua': 'lua',
+            '.pl': 'perl',
+            '.pm': 'perl',
+            '.t': 'perl',
+            '.sh': 'bash',
+            '.bash': 'bash',
+            '.zsh': 'bash',
+            '.fish': 'bash',
+            '.ksh': 'bash',
+            '.sql': 'sql',
+            '.html': 'html',
+            '.htm': 'html',
+            '.xhtml': 'html',
+            '.css': 'css',
+            '.scss': 'css',
+            '.sass': 'css',
+            '.less': 'css',
+            '.styl': 'css',
+            '.md': 'markdown',
+            '.markdown': 'markdown',
+            '.mdown': 'markdown',
+            '.mkdn': 'markdown',
+        }
+        
+        # Create splitters for each language
+        for ext, lang in language_map.items():
+            try:
+                self.splitters[ext] = RecursiveCharacterTextSplitter.from_language(
+                    language=lang,
+                    chunk_size=1000,
+                    chunk_overlap=100
+                )
+            except Exception as e:
+                logger.debug(f"Could not create splitter for {ext}: {e}")
+                # Fallback to generic splitter
+                self.splitters[ext] = RecursiveCharacterTextSplitter(
+                    chunk_size=1000,
+                    chunk_overlap=100
+                )
+        
+        # Default splitter for unknown languages
+        self.default_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
             chunk_overlap=100
         )
+    
+    def _get_splitter_for_file(self, file_path: str) -> RecursiveCharacterTextSplitter:
+        """Get the appropriate text splitter for a file based on its extension."""
+        ext = os.path.splitext(file_path)[1].lower()
+        return self.splitters.get(ext, self.default_splitter)
+    
+    def __init__(self):
+        # Create language-specific splitters for better chunking
+        self.splitters: Dict[str, RecursiveCharacterTextSplitter] = {}
+        self._init_language_splitters()
+        
         # Initialize the Neo4j-backed Graph Engine
         self.graph_engine = GraphEngine()
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
@@ -72,20 +174,38 @@ class IngestionService:
         logger.info(f"Ingestion Status: [{progress}%] {step}")
     
     class _CloneProgress(RemoteProgress):
-        """Progress callback for git clone operations"""
-        def __init__(self, status_callback):
+        """Progress callback for git clone operations with progress tracking"""
+        def __init__(self, status_callback, ingestion_service):
             super().__init__()
             self.status_callback = status_callback
+            self.ingestion_service = ingestion_service
             self.last_update = 0
+            self.last_progress_time = None
+            self.progress_result = None  # Reference to clone_result dict
             
         def update(self, op_code, cur_count, max_count=None, message=''):
-            # Update every 5% or when max_count changes
+            # Check for cancellation
+            if self.ingestion_service._cancelled:
+                raise RuntimeError("Clone operation cancelled by user")
+            
+            # Update progress tracking
+            current_time = datetime.now()
             if max_count and max_count > 0:
                 progress_pct = int((cur_count / max_count) * 10)  # 0-10% of total 15% progress
                 if progress_pct != self.last_update:
                     self.status_callback("running", 15 + progress_pct, 
                                        f"Cloning... ({cur_count}/{max_count} objects)" if max_count else "Cloning...")
                     self.last_update = progress_pct
+                    self.last_progress_time = current_time
+                    
+                    # Update progress timestamp in clone_result if available
+                    if self.progress_result is not None:
+                        self.progress_result["last_progress"] = current_time
+            else:
+                # Even without max_count, update timestamp to show activity
+                self.last_progress_time = current_time
+                if self.progress_result is not None:
+                    self.progress_result["last_progress"] = current_time
 
     def _wipe_knowledge_base(self):
         """
@@ -369,36 +489,117 @@ class IngestionService:
                 self._update_status("running", 15, "Cloning with full history...")
                 temp_dir = tempfile.mkdtemp(prefix="dex_repo_")
                 
-                # Create progress callback
-                progress_callback = self._CloneProgress(self._update_status)
-                
                 # Clone with progress reporting and timeout handling
                 try:
-                    # Use threading to implement timeout
-                    clone_result = {"success": False, "error": None}
+                    # Use threading to implement timeout with better error handling
+                    clone_result = {"success": False, "error": None, "last_progress": None}
+                    clone_start_time = datetime.now()
+                    
+                    # Create progress callback with cancellation check and progress tracking
+                    progress_callback = self._CloneProgress(self._update_status, self)
+                    progress_callback.progress_result = clone_result  # Link for progress tracking
                     
                     def clone_worker():
                         try:
-                            Repo.clone_from(repo_path, temp_dir, progress=progress_callback)
+                            # Set git config for timeouts to prevent hanging
+                            import subprocess
+                            # Configure git to timeout on slow operations
+                            subprocess.run(
+                                ["git", "config", "--global", "http.lowSpeedLimit", "1000"],
+                                capture_output=True, timeout=5
+                            )
+                            subprocess.run(
+                                ["git", "config", "--global", "http.lowSpeedTime", "300"],
+                                capture_output=True, timeout=5
+                            )
+                            subprocess.run(
+                                ["git", "config", "--global", "http.postBuffer", "524288000"],
+                                capture_output=True, timeout=5
+                            )
+                            
+                            logger.info(f"Starting git clone for: {repo_path}")
+                            # Initialize progress timestamp
+                            clone_result["last_progress"] = datetime.now()
+                            
+                            Repo.clone_from(
+                                repo_path, 
+                                temp_dir, 
+                                progress=progress_callback,
+                                env={
+                                    **os.environ,
+                                    "GIT_TERMINAL_PROMPT": "0",  # Disable prompts
+                                    "GIT_ASKPASS": "echo",  # Disable credential prompts
+                                }
+                            )
                             clone_result["success"] = True
+                            logger.info(f"Git clone completed successfully for: {repo_path}")
                         except Exception as e:
                             clone_result["error"] = e
+                            logger.error(f"Git clone error in worker thread: {e}", exc_info=True)
                     
                     clone_thread = threading.Thread(target=clone_worker, daemon=True)
                     clone_thread.start()
-                    clone_thread.join(timeout=600)  # 10 minute timeout
                     
-                    if clone_thread.is_alive():
-                        # Thread is still running, timeout occurred
-                        raise TimeoutError(f"Git clone timed out after 10 minutes. The repository may be too large or network is slow.")
+                    # Monitor progress with timeout
+                    timeout_seconds = 600  # 10 minutes total
+                    progress_timeout = 120  # 2 minutes without progress = stuck
                     
+                    while clone_thread.is_alive():
+                        clone_thread.join(timeout=10)  # Check every 10 seconds
+                        
+                        # Check for cancellation
+                        if self._cancelled:
+                            logger.warning("Clone cancelled by user")
+                            # Try to clean up temp directory
+                            try:
+                                shutil.rmtree(temp_dir, ignore_errors=True)
+                            except:
+                                pass
+                            raise RuntimeError("Clone operation was cancelled")
+                        
+                        elapsed = (datetime.now() - clone_start_time).total_seconds()
+                        
+                        # Check if we've exceeded total timeout
+                        if elapsed > timeout_seconds:
+                            logger.error(f"Git clone timed out after {timeout_seconds} seconds for: {repo_path}")
+                            raise TimeoutError(
+                                f"Git clone timed out after {timeout_seconds} seconds. "
+                                f"The repository may be too large or network is slow. "
+                                f"Repository: {repo_path}"
+                            )
+                        
+                        # Check if progress has stalled (no updates in last 2 minutes)
+                        if clone_result["last_progress"]:
+                            time_since_progress = (datetime.now() - clone_result["last_progress"]).total_seconds()
+                            if time_since_progress > progress_timeout:
+                                logger.error(
+                                    f"Git clone appears stuck - no progress for {progress_timeout} seconds. "
+                                    f"Repository: {repo_path}"
+                                )
+                                raise TimeoutError(
+                                    f"Git clone appears to be stuck - no progress detected for {progress_timeout} seconds. "
+                                    f"This may indicate:\n"
+                                    f"- Network connectivity issues\n"
+                                    f"- Repository server is unresponsive\n"
+                                    f"- Repository is extremely large\n"
+                                    f"Repository: {repo_path}"
+                                )
+                    
+                    # Thread finished, check result
                     if not clone_result["success"]:
                         if clone_result["error"]:
+                            # Clean up temp directory on error
+                            try:
+                                shutil.rmtree(temp_dir, ignore_errors=True)
+                            except:
+                                pass
                             raise clone_result["error"]
                         else:
                             raise RuntimeError("Git clone failed for unknown reason")
                     
                     actual_path = temp_dir
+                    elapsed_time = (datetime.now() - clone_start_time).total_seconds()
+                    logger.info(f"Clone completed successfully in {elapsed_time:.1f} seconds")
                     self._update_status("running", 25, "Clone completed successfully")
                     
                 except GitCommandError as e:
@@ -455,9 +656,22 @@ class IngestionService:
                         raise RuntimeError(f"Failed to clone repository: {e}")
                 except TimeoutError as e:
                     logger.error(f"Git clone timeout: {e}")
+                    # Clean up temp directory on timeout
+                    try:
+                        if temp_dir and os.path.exists(temp_dir):
+                            shutil.rmtree(temp_dir, ignore_errors=True)
+                            logger.info(f"Cleaned up temp directory after timeout: {temp_dir}")
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to clean up temp directory: {cleanup_error}")
                     raise
                 except (ConnectionError, OSError) as e:
                     error_msg = str(e)
+                    # Clean up temp directory on connection error
+                    try:
+                        if temp_dir and os.path.exists(temp_dir):
+                            shutil.rmtree(temp_dir, ignore_errors=True)
+                    except:
+                        pass
                     if "Connection reset" in error_msg or "Connection aborted" in error_msg or "104" in error_msg:
                         logger.error(f"Git clone connection reset: {e}")
                         raise RuntimeError(f"Network connection was reset while cloning repository.\n"
@@ -495,15 +709,138 @@ class IngestionService:
             # 3. Load Source Files
             self._check_cancelled()
             self._update_status("running", 40, "Scanning source files...")
-            logger.info("📁 Scanning repository for Python files...")
-            loader = DirectoryLoader(actual_path, glob="**/*.py", loader_cls=TextLoader)
+            logger.info("📁 Scanning repository for code files...")
+            
+            # Comprehensive list of supported file extensions for ingestion
+            # Organized by category for better maintainability
+            CODE_EXTENSIONS = [
+                # Python
+                ".py", ".pyw", ".pyi", ".pyx",
+                # JavaScript/TypeScript
+                ".js", ".jsx", ".mjs", ".cjs",
+                ".ts", ".tsx", ".d.ts",
+                # Java/Kotlin/Scala
+                ".java", ".kt", ".kts", ".scala",
+                # C/C++
+                ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx", ".hh",
+                # C# / .NET
+                ".cs", ".csx",
+                # Go
+                ".go",
+                # Rust
+                ".rs",
+                # Ruby
+                ".rb", ".rake", ".rbw",
+                # PHP
+                ".php", ".phtml", ".php3", ".php4", ".php5",
+                # Swift
+                ".swift",
+                # Objective-C
+                ".m", ".mm", ".h",
+                # R
+                ".r", ".R",
+                # Lua
+                ".lua",
+                # Perl
+                ".pl", ".pm", ".t",
+                # Shell scripts
+                ".sh", ".bash", ".zsh", ".fish", ".ksh",
+                # PowerShell
+                ".ps1", ".psm1", ".psd1",
+                # Other languages
+                ".dart", ".elm", ".ex", ".exs", ".clj", ".cljs", ".hs", ".ml", ".mli",
+                ".vim", ".lisp", ".cl", ".scm", ".rkt", ".jl", ".nim", ".cr", ".d",
+                ".pas", ".p", ".pp", ".vb", ".vbs", ".v", ".sv", ".svh",
+            ]
+            
+            WEB_EXTENSIONS = [
+                ".html", ".htm", ".xhtml",
+                ".css", ".scss", ".sass", ".less", ".styl",
+                ".xml", ".xsl", ".xslt",
+                ".vue", ".svelte",
+            ]
+            
+            DATA_EXTENSIONS = [
+                ".json", ".json5", ".jsonc",
+                ".yaml", ".yml",
+                ".toml",
+                ".ini", ".cfg", ".conf",
+                ".csv", ".tsv",
+                ".xml",
+            ]
+            
+            DOCUMENTATION_EXTENSIONS = [
+                ".md", ".markdown", ".mdown", ".mkdn",
+                ".rst", ".txt", ".text",
+                ".adoc", ".asciidoc",
+            ]
+            
+            CONFIG_EXTENSIONS = [
+                ".dockerfile", ".dockerignore",
+                ".gitignore", ".gitattributes",
+                ".env", ".env.example",
+                ".makefile", ".mk",
+                ".cmake", ".cmake.in",
+                ".gradle", ".gradle.kts",
+                ".maven", ".pom",
+                ".package.json", ".package-lock.json",
+                ".requirements.txt", ".pip",
+                ".gemfile", ".gemfile.lock",
+                ".cargo.toml", ".cargo.lock",
+                ".composer.json", ".composer.lock",
+                ".pubspec.yaml", ".pubspec.lock",
+            ]
+            
+            # Combine all extensions
+            SUPPORTED_EXTENSIONS = (
+                CODE_EXTENSIONS + 
+                WEB_EXTENSIONS + 
+                DATA_EXTENSIONS + 
+                DOCUMENTATION_EXTENSIONS + 
+                CONFIG_EXTENSIONS
+            )
+            
+            raw_docs = []
+            file_counts = {}
+            
+            # Load files by extension type
+            for ext in SUPPORTED_EXTENSIONS:
+                try:
+                    loader = DirectoryLoader(actual_path, glob=f"**/*{ext}", loader_cls=TextLoader, silent_errors=True)
+                    docs = loader.load()
+                    if docs:
+                        raw_docs.extend(docs)
+                        file_counts[ext] = len(docs)
+                        logger.info(f"  📄 Found {len(docs)} {ext} files")
+                except Exception as e:
+                    logger.warning(f"⚠️  Error loading {ext} files: {e}")
+                    continue
+            
+            # Also try to load any text files that might not have extensions
             try:
-                raw_docs = loader.load()
-                logger.info(f"✅ Found {len(raw_docs)} Python files to process")
+                loader = DirectoryLoader(actual_path, glob="**/*", loader_cls=TextLoader, silent_errors=True)
+                all_docs = loader.load()
+                # Filter out files we already loaded and binary files
+                existing_paths = {doc.metadata.get('source', '') for doc in raw_docs}
+                for doc in all_docs:
+                    source_path = doc.metadata.get('source', '')
+                    if source_path and source_path not in existing_paths:
+                        # Check if it's likely a text file (not binary)
+                        try:
+                            content = doc.page_content
+                            # Skip if content is mostly non-printable characters (likely binary)
+                            if content and len([c for c in content[:1000] if c.isprintable() or c in '\n\r\t']) > len(content[:1000]) * 0.8:
+                                raw_docs.append(doc)
+                                file_counts.setdefault('other', 0)
+                                file_counts['other'] += 1
+                        except:
+                            pass
             except Exception as e:
-                logger.warning(f"⚠️  Error loading some files: {e}")
-                raw_docs = []
-                logger.info(f"📁 Loaded {len(raw_docs)} files (some may have been skipped)")
+                logger.warning(f"⚠️  Error loading additional files: {e}")
+            
+            logger.info(f"✅ Found {len(raw_docs)} total files to process")
+            if file_counts:
+                logger.info(f"📊 File breakdown: {', '.join([f'{count} {ext}' for ext, count in file_counts.items()])}")
 
             # --- PHASE 2: STREAM TO CLOUD (NEO4J) ---
             total_docs = len(raw_docs)
@@ -527,32 +864,91 @@ class IngestionService:
                 # Get extracted Git Metadata (Now includes bus_risk_score)
                 git_meta = file_stats.get(relative_path, {})
                 
-                # [NEW] Get Line-Level Blame (Ownership)
-                # We calculate this ON THE FLY for the current file
-                if i % 20 == 0:
-                    logger.info(f"  🔍 Getting git blame for: {relative_path}")
-                blame_map = self._get_file_blame(actual_path, relative_path)
+                # Determine file type
+                file_ext = os.path.splitext(relative_path)[1].lower()
+                is_code_file = file_ext in ['.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.cpp', '.c', '.h', '.hpp', '.go', '.rs', '.rb', '.php']
+                
+                # [NEW] Get Line-Level Blame (Ownership) - only for code files
+                blame_map = {}
+                if is_code_file:
+                    if i % 20 == 0:
+                        logger.info(f"  🔍 Getting git blame for: {relative_path}")
+                    try:
+                        blame_map = self._get_file_blame(actual_path, relative_path)
+                    except Exception as e:
+                        logger.warning(f"  ⚠️  Failed to get git blame for {relative_path}: {e}")
+                        blame_map = {}
                 
                 # PUSH TO NEO4J (Streaming)
                 # Pass the blame_map so GraphEngine can assign function owners
                 if i % 20 == 0:
-                    logger.info(f"  📊 Extracting AST and pushing to Neo4j: {relative_path}")
-                self.graph_engine.extract_and_build(
-                    file_content=doc.page_content, 
-                    file_path=relative_path, 
-                    repo_root=actual_path,
-                    git_metadata=git_meta,
-                    blame_map=blame_map
-                )
+                    file_type = "code" if is_code_file else "text"
+                    logger.info(f"  📊 Processing {file_type} file and pushing to Neo4j: {relative_path}")
+                
+                try:
+                    self.graph_engine.extract_and_build(
+                        file_content=doc.page_content, 
+                        file_path=relative_path, 
+                        repo_root=actual_path,
+                        git_metadata=git_meta,
+                        blame_map=blame_map
+                    )
+                except Exception as e:
+                    logger.warning(f"  ⚠️  Failed to process {relative_path}: {e}")
+                    # Still create a file node even if AST parsing fails
+                    try:
+                        self.graph_engine.upsert_node({
+                            "id": relative_path,
+                            "type": "file",
+                            "name": os.path.basename(relative_path),
+                            "val": 15,
+                            **git_meta
+                        })
+                    except:
+                        pass
+                    continue
             
             logger.info(f"✅ Neo4j streaming complete: {total_docs} files processed")
 
             # --- PHASE 3: VECTOR EMBEDDINGS (PostgreSQL/pgvector) ---
             self._check_cancelled()
             self._update_status("running", 80, "Generating semantic vectors...")
-            logger.info(f"🔪 Splitting {len(raw_docs)} documents into chunks...")
-            vector_chunks = self.splitter.split_documents(raw_docs)
+            logger.info(f"🔪 Splitting {len(raw_docs)} documents into chunks using language-specific splitters...")
+            
+            # Use language-specific splitters for better chunking
+            vector_chunks = []
+            chunk_stats = {}
+            
+            for doc in raw_docs:
+                file_path = doc.metadata.get('source', 'unknown')
+                relative_path = os.path.relpath(file_path, actual_path) if file_path != 'unknown' else 'unknown'
+                
+                # Get appropriate splitter for this file
+                splitter = self._get_splitter_for_file(relative_path)
+                file_ext = os.path.splitext(relative_path)[1].lower()
+                
+                try:
+                    chunks = splitter.split_documents([doc])
+                    vector_chunks.extend(chunks)
+                    
+                    # Track chunking stats
+                    if file_ext not in chunk_stats:
+                        chunk_stats[file_ext] = 0
+                    chunk_stats[file_ext] += len(chunks)
+                except Exception as e:
+                    logger.warning(f"⚠️  Error splitting {relative_path}: {e}")
+                    # Fallback to default splitter
+                    try:
+                        chunks = self.default_splitter.split_documents([doc])
+                        vector_chunks.extend(chunks)
+                    except:
+                        # If all else fails, add the document as a single chunk
+                        vector_chunks.append(doc)
+            
             logger.info(f"✅ Created {len(vector_chunks)} vector chunks from {len(raw_docs)} documents")
+            if chunk_stats:
+                top_extensions = sorted(chunk_stats.items(), key=lambda x: -x[1])[:5]
+                logger.info(f"📊 Top chunked file types: {', '.join([f'{count} chunks from {ext}' for ext, count in top_extensions])}")
             
             # Enhance chunks with filenames
             logger.info("📝 Enhancing chunks with metadata...")

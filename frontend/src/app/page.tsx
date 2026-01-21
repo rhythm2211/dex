@@ -165,6 +165,79 @@ const GlobalStyles = () => (
 );
 
 // -----------------------------------------------------------------------------
+// COMPONENT: TYPING ANIMATION (Natural & Gradual)
+// -----------------------------------------------------------------------------
+const TypingAnimation = ({ text, baseSpeed = 50, className = "" }: { text: string; baseSpeed?: number; className?: string }) => {
+  const [displayedText, setDisplayedText] = useState("");
+  const [isComplete, setIsComplete] = useState(false);
+
+  useEffect(() => {
+    setDisplayedText("");
+    setIsComplete(false);
+    
+    let currentIndex = 0;
+    let timeoutId: NodeJS.Timeout;
+
+    const typeNext = () => {
+      if (currentIndex >= text.length) {
+        setIsComplete(true);
+        return;
+      }
+
+      const char = text[currentIndex];
+      const prevChar = currentIndex > 0 ? text[currentIndex - 1] : '';
+      
+      // Add the next character
+      setDisplayedText(text.slice(0, currentIndex + 1));
+      currentIndex++;
+      
+      // Calculate natural delay based on character type and context
+      let delay = baseSpeed;
+      
+      // Longer pause after punctuation (more natural reading rhythm)
+      if (/[.,;:!?]/.test(prevChar)) {
+        delay = baseSpeed * 2.2;
+      }
+      // Slightly longer pause after commas
+      else if (prevChar === ',') {
+        delay = baseSpeed * 1.6;
+      }
+      // Faster for spaces (quick transition)
+      else if (char === ' ') {
+        delay = baseSpeed * 0.5;
+      }
+      // Slightly faster for common characters
+      else if (/[a-z0-9]/.test(char)) {
+        delay = baseSpeed + (Math.random() * 15 - 7); // Small random variation
+      }
+      // Slightly slower for capital letters and special chars
+      else {
+        delay = baseSpeed * 1.2 + (Math.random() * 10 - 5);
+      }
+      
+      // Ensure minimum delay for smoothness
+      timeoutId = setTimeout(typeNext, Math.max(25, delay));
+    };
+
+    // Start typing after a brief initial delay for better UX
+    timeoutId = setTimeout(typeNext, 400);
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [text, baseSpeed]);
+
+  return (
+    <span className={className}>
+      {displayedText}
+      {!isComplete && (
+        <span className="inline-block w-[2px] h-[1em] bg-indigo-400/90 ml-0.5 align-middle animate-[blink_1.2s_ease-in-out_infinite]"></span>
+      )}
+    </span>
+  );
+};
+
+// -----------------------------------------------------------------------------
 // COMPONENT: COMMAND PALETTE SIMULATOR (HERO)
 // -----------------------------------------------------------------------------
 const CommandPaletteSimulation = () => {
@@ -808,7 +881,10 @@ export default function HomePage() {
           </h1>
 
           <p className="animate-fade-in delay-200 max-w-2xl mx-auto text-base sm:text-lg leading-relaxed text-slate-400 font-light mb-6">
-            DEX indexes your repository into a semantic graph, allowing you to debug, refactor, and onboard 10x faster using context-aware AI.
+            <TypingAnimation 
+              text="DEX indexes your repository into a semantic graph, allowing you to debug, refactor, and onboard 10x faster using context-aware AI."
+              baseSpeed={45}
+            />
           </p>
           
           <p className="animate-fade-in delay-200 max-w-2xl mx-auto text-sm leading-relaxed text-slate-500 mb-6">

@@ -2,12 +2,22 @@ import os
 import ast
 import logging
 import time
+import re
 from collections import Counter
+from typing import Dict, List, Tuple, Optional
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, TransientError
 from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection, retry_on_connection_error
 
 logger = logging.getLogger("dex-core")
+
+# Try to import tree-sitter for multi-language parsing
+try:
+    from tree_sitter import Language as TreeSitterLanguage, Parser
+    TREE_SITTER_AVAILABLE = True
+except ImportError:
+    TREE_SITTER_AVAILABLE = False
+    logger.debug("tree-sitter not available, using Python AST and regex fallbacks")
 
 class CodeStructureVisitor(ast.NodeVisitor):
     """
@@ -68,11 +78,14 @@ class CodeStructureVisitor(ast.NodeVisitor):
                 self.edges.append({"source": self.filename, "target": target_file, "relation": "IMPORTS"})
 
     def process(self, source_code):
+        """Process source code - currently only supports Python AST parsing."""
         try:
             tree = ast.parse(source_code)
             self.visit(tree)
         except SyntaxError:
             pass
+        except Exception as e:
+            logger.debug(f"AST parsing failed: {e}")
         return self.nodes, self.edges
 
 class GraphEngine:
@@ -198,9 +211,148 @@ class GraphEngine:
         
         return top_owner, collaborators
 
+    def _detect_language(self, file_path: str) -> str:
+        """Detect programming language from file extension."""
+        ext = os.path.splitext(file_path)[1].lower()
+        language_map = {
+            '.py': 'python', '.js': 'javascript', '.jsx': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',
+            '.java': 'java', '.kt': 'kotlin', '.scala': 'scala',
+            '.c': 'c', '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.h': 'c', '.hpp': 'cpp',
+            '.cs': 'csharp', '.go': 'go', '.rs': 'rust', '.rb': 'ruby', '.php': 'php',
+            '.swift': 'swift', '.m': 'objective-c', '.mm': 'objective-cpp',
+            '.r': 'r', '.lua': 'lua', '.pl': 'perl', '.sh': 'bash', '.bash': 'bash',
+            '.dart': 'dart', '.elm': 'elm', '.ex': 'elixir', '.clj': 'clojure',
+            '.hs': 'haskell', '.ml': 'ocaml', '.vim': 'vim', '.lisp': 'lisp',
+            '.jl': 'julia', '.nim': 'nim', '.cr': 'crystal', '.d': 'd',
+            '.pas': 'pascal', '.vb': 'vb', '.v': 'verilog', '.sv': 'systemverilog',
+        }
+        return language_map.get(ext, 'unknown')
+    
+    def _extract_structure_regex(self, file_content: str, file_path: str, language: str) -> Tuple[List[dict], List[dict]]:
+        """Fallback regex-based structure extraction for non-Python languages."""
+        nodes = []
+        edges = []
+        lines = file_content.split('\n')
+        
+        # Common patterns for different languages
+        patterns = {
+            'javascript': {
+                'class': r'^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)',
+                'function': r'^\s*(?:export\s+)?(?:async\s+)?(?:function\s+)?(\w+)\s*[=\(]',
+                'method': r'^\s*(\w+)\s*[:\(]\s*function\s*\(|^\s*(\w+)\s*[:=]\s*\([^)]*\)\s*=>',
+                'import': r'import\s+(?:.*\s+from\s+)?[\'"]([^\'"]+)[\'"]|require\s*\([\'"]([^\'"]+)[\'"]',
+            },
+            'typescript': {
+                'class': r'^\s*(?:export\s+)?(?:abstract\s+)?(?:public\s+)?class\s+(\w+)',
+                'function': r'^\s*(?:export\s+)?(?:async\s+)?(?:function\s+)?(\w+)\s*[<\(:]',
+                'method': r'^\s*(?:public\s+|private\s+|protected\s+)?(\w+)\s*[\(:]',
+                'import': r'import\s+(?:.*\s+from\s+)?[\'"]([^\'"]+)[\'"]',
+            },
+            'java': {
+                'class': r'^\s*(?:public\s+|private\s+|protected\s+)?(?:abstract\s+)?(?:final\s+)?class\s+(\w+)',
+                'method': r'^\s*(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:[\w<>\[\]]+\s+)?(\w+)\s*\(',
+                'import': r'import\s+(?:static\s+)?([\w.]+)',
+            },
+            'cpp': {
+                'class': r'^\s*(?:class|struct)\s+(\w+)',
+                'function': r'^\s*(?:[\w:<>\[\]]+\s+)?(\w+)\s*\(',
+                'include': r'#include\s*[<"]([^>"]+)[>"]',
+            },
+            'go': {
+                'function': r'^\s*func\s+(?:\([^)]+\)\s+)?(\w+)\s*\(',
+                'type': r'^\s*type\s+(\w+)',
+                'import': r'import\s+[\'"]([^\'"]+)[\'"]',
+            },
+            'rust': {
+                'struct': r'^\s*(?:pub\s+)?struct\s+(\w+)',
+                'function': r'^\s*(?:pub\s+)?fn\s+(\w+)\s*\(',
+                'impl': r'^\s*impl\s+(\w+)',
+                'use': r'use\s+([\w:]+)',
+            },
+            'ruby': {
+                'class': r'^\s*class\s+(\w+)',
+                'module': r'^\s*module\s+(\w+)',
+                'def': r'^\s*def\s+(?:self\.)?(\w+)',
+                'require': r'require\s+[\'"]([^\'"]+)[\'"]',
+            },
+        }
+        
+        lang_patterns = patterns.get(language, {})
+        current_class = None
+        
+        for line_num, line in enumerate(lines, 1):
+            # Extract classes
+            if 'class' in lang_patterns:
+                match = re.search(lang_patterns['class'], line)
+                if match:
+                    class_name = match.group(1)
+                    full_name = f"{file_path}::{class_name}"
+                    nodes.append({
+                        "id": full_name,
+                        "type": "class",
+                        "name": class_name,
+                        "start_line": line_num,
+                        "end_line": line_num,  # Will be updated if we find closing brace
+                    })
+                    edges.append({"source": file_path, "target": full_name, "relation": "DEFINES"})
+                    current_class = full_name
+            
+            # Extract functions/methods
+            func_patterns = ['function', 'method', 'def', 'fn']
+            for pattern_key in func_patterns:
+                if pattern_key in lang_patterns:
+                    match = re.search(lang_patterns[pattern_key], line)
+                    if match:
+                        func_name = match.group(1) if match.lastindex >= 1 else match.group(2) if match.lastindex >= 2 else None
+                        if func_name:
+                            scope = current_class if current_class else file_path
+                            full_name = f"{scope}::{func_name}"
+                            nodes.append({
+                                "id": full_name,
+                                "type": "function",
+                                "name": func_name,
+                                "start_line": line_num,
+                                "end_line": line_num,
+                            })
+                            edges.append({"source": scope, "target": full_name, "relation": "CONTAINS"})
+                        break
+            
+            # Extract imports/dependencies
+            import_patterns = ['import', 'include', 'use', 'require']
+            for pattern_key in import_patterns:
+                if pattern_key in lang_patterns:
+                    match = re.search(lang_patterns[pattern_key], line)
+                    if match:
+                        import_path = match.group(1) if match.lastindex >= 1 else match.group(2) if match.lastindex >= 2 else None
+                        if import_path:
+                            # Resolve import path to file
+                            target_file = self._resolve_import_path(import_path, file_path, language)
+                            if target_file:
+                                edges.append({"source": file_path, "target": target_file, "relation": "IMPORTS"})
+                        break
+        
+        return nodes, edges
+    
+    def _resolve_import_path(self, import_path: str, current_file: str, language: str) -> Optional[str]:
+        """Resolve import path to actual file path."""
+        # This is a simplified version - could be enhanced with proper module resolution
+        if language == 'python':
+            return import_path.replace('.', '/') + '.py'
+        elif language in ['javascript', 'typescript']:
+            # Handle relative imports
+            if import_path.startswith('.'):
+                base_dir = os.path.dirname(current_file)
+                return os.path.normpath(os.path.join(base_dir, import_path.lstrip('.'))) + '.js'
+            return import_path + '.js'
+        elif language == 'java':
+            return import_path.replace('.', '/') + '.java'
+        # Add more language-specific resolution as needed
+        return None
+
     def extract_and_build(self, file_content: str, file_path: str, repo_root: str = "", git_metadata: dict = None, blame_map: dict = None):
         """
-        Now accepts 'blame_map' to assign ownership to Functions/Classes.
+        Extract code structure and build graph nodes/edges.
+        Supports Python (AST) and other languages (regex fallback).
         """
         file_meta = git_metadata or {}
         
@@ -213,9 +365,25 @@ class GraphEngine:
             **file_meta
         })
 
-        # 2. Parse AST
-        visitor = CodeStructureVisitor(file_path, repo_root)
-        nodes, edges = visitor.process(file_content)
+        # 2. Parse structure based on language
+        language = self._detect_language(file_path)
+        nodes = []
+        edges = []
+        
+        if language == 'python':
+            # Use Python AST parser
+            visitor = CodeStructureVisitor(file_path, repo_root)
+            nodes, edges = visitor.process(file_content)
+        elif language != 'unknown':
+            # Use regex-based extraction for other languages
+            try:
+                nodes, edges = self._extract_structure_regex(file_content, file_path, language)
+                logger.debug(f"  📊 Regex extraction for {language}: {len(nodes)} nodes, {len(edges)} edges")
+            except Exception as e:
+                logger.debug(f"  ⚠️  Regex extraction failed for {file_path}: {e}")
+        else:
+            # Unknown language - just create file node (already done above)
+            logger.debug(f"  📄 Unknown language for {file_path}, skipping structure extraction")
         
         if len(nodes) > 0 or len(edges) > 0:
             logger.debug(f"  📊 Neo4j: Extracted {len(nodes)} nodes, {len(edges)} edges from {os.path.basename(file_path)}")
