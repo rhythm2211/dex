@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 import logging
@@ -6,11 +7,19 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+# Fix HuggingFace tokenizers warning when using multiprocessing (uvicorn --reload)
+# Set this before any tokenizer imports
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 # Adjust path to ensure modules are discoverable
 sys.path.append(".")
 
 from backend.app.core.config import settings
 from backend.app.api.v1.router import api_router
+from backend.app.models.user import init_db
+
+# Initialize database on startup
+init_db()
 
 # Proprietary Structured Logging
 logging.basicConfig(

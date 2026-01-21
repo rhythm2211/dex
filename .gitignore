@@ -1,2 +1,4 @@
 app/.env
+app/.env.backup
+*.env.backup
 node_modules

@@ -1,6 +1,8 @@
 import logging
 import json
-from langchain_pinecone import PineconeVectorStore
+# Explicitly import pgvector before PGVector to ensure it's available
+import pgvector  # Required for LangChain's PGVector implementation
+from langchain_community.vectorstores import PGVector
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,10 +15,13 @@ class RAGService:
     def __init__(self):
         # Initialize Embeddings & Vector Store once
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        self.vector_store = PineconeVectorStore(
-            index_name=settings.PINECONE_INDEX_NAME,
-            embedding=self.embeddings,
-            pinecone_api_key=settings.PINECONE_API_KEY
+        
+        # Initialize PGVector store
+        self.vector_store = PGVector(
+            connection_string=settings.POSTGRES_CONNECTION_STRING,
+            embedding_function=self.embeddings,
+            collection_name=settings.POSTGRES_VECTOR_TABLE,
+            use_jsonb=True  # Use JSONB for metadata
         )
         
         # Initialize Retriever (loads graph into memory)
@@ -59,24 +64,28 @@ class RAGService:
             }
         
         # 4. Deep Tech Prompt (The "Architect" Persona)
+        # [UPDATED] Added specific instructions for Social/Risk data
         prompt = ChatPromptTemplate.from_template(
-            """You are a Senior Software Architect reviewing a codebase.
+            """You are a Senior Software Architect and Team Lead reviewing a codebase.
             
             I have retrieved two types of context for you:
             
             === PART 1: SOURCE CODE (Implementation) ===
             {code_context}
             
-            === PART 2: KNOWLEDGE GRAPH (Architecture) ===
+            === PART 2: KNOWLEDGE GRAPH (Architecture & Team Context) ===
             {graph_context}
             
             USER QUESTION: {question}
 
             INSTRUCTIONS:
             - Use PART 1 to explain *how* the specific logic works.
-            - Use PART 2 to explain *where* these components fit (imports, dependencies, hierarchy).
-            - Synthesize both into a coherent answer.
-            - Do not mention "Part 1" or "Part 2" in your final answer, just use the information.
+            - Use PART 2 to explain *where* these components fit (imports, dependencies).
+            - **CRITICAL:** Look at PART 2 for 'Owner' and 'Risk Score' metadata. 
+              - If an 'Owner' is listed, mention them (e.g., "This module is primarily maintained by Alice").
+              - If 'Risk Score' is high (>0.7), warn the user about stability issues.
+            - Synthesize all technical and social context into a coherent answer.
+            - Do not mention "Part 1" or "Part 2" in your final answer.
             
             Provide a technical, markdown-formatted response."""
         )

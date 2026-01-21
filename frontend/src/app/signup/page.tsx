@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
-import { Terminal, ArrowRight, Github, Lock, Mail, User, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
+import { Terminal, ArrowRight, Github, Lock, Mail, User, X, CheckCircle } from "lucide-react";
 
 // --- ICONS ---
 const GoogleIcon = () => (
@@ -63,6 +64,22 @@ const SpotlightCard = ({ children, className = "" }: { children: React.ReactNode
 };
 
 export default function SignupPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (status === "authenticated" && session?.user) {
+      router.push("/app");
+    }
+  }, [status, session, router]);
+
   // --- REAL AUTH LOGIC ---
   const handleSocialLogin = async (provider: string) => {
     console.log(`Starting sign up with ${provider}...`); 
@@ -70,7 +87,68 @@ export default function SignupPage() {
     // IMPORTANT: Map 'microsoft' to 'azure-ad' because that is the ID NextAuth uses internally
     const providerId = provider === 'microsoft' ? 'azure-ad' : provider;
     
-    await signIn(providerId, { callbackUrl: '/' });
+    // Redirect to onboarding after signup
+    await signIn(providerId, { callbackUrl: '/onboarding' });
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
+        const response = await fetch(`${apiUrl}/api/v1/users/signup`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+            name: name || null,
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ detail: "Signup failed" }));
+          const errorMessage = errorData.detail || "Signup failed";
+          
+          // Check if user already exists
+          if (errorMessage.toLowerCase().includes("already exists") || response.status === 400) {
+            setError("User already exists. Please try logging in instead.");
+            setLoading(false);
+            return;
+          }
+          
+          throw new Error(errorMessage);
+        }
+
+        setSuccess(true);
+        // Wait a moment to show success message, then redirect
+        setTimeout(() => {
+          router.push('/login?registered=true');
+        }, 1500);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error("Request timed out. Please check your connection and try again.");
+        }
+        throw fetchError;
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to create account. Please try again.");
+      setLoading(false);
+    }
   };
 
   return (
@@ -111,53 +189,92 @@ export default function SignupPage() {
                     <p className="text-sm text-slate-400">Start mapping your codebase today.</p>
                 </div>
 
-                <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-                    <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Full Name</label>
-                        <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                                <User size={16} />
+                {success ? (
+                    <div className="space-y-4 text-center py-8">
+                        <div className="flex justify-center">
+                            <div className="p-4 bg-emerald-500/20 rounded-full border border-emerald-500/30">
+                                <CheckCircle size={32} className="text-emerald-400" />
                             </div>
-                            <input 
-                                type="text" 
-                                placeholder="Jane Doe"
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
-                            />
                         </div>
+                        <h2 className="text-lg font-semibold text-white">User Registered!</h2>
+                        <p className="text-sm text-slate-400">Redirecting to sign in page...</p>
                     </div>
-
-                    <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Email</label>
-                        <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                                <Mail size={16} />
+                ) : (
+                    <form className="space-y-4" onSubmit={handleSignup}>
+                        {error && (
+                            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs space-y-2">
+                                <p>{error}</p>
+                                {error.toLowerCase().includes("already exists") && (
+                                    <Link 
+                                        href="/login" 
+                                        className="inline-block mt-2 text-indigo-400 hover:text-indigo-300 underline text-xs font-medium"
+                                    >
+                                        Go to Login Page →
+                                    </Link>
+                                )}
                             </div>
-                            <input 
-                                type="email" 
-                                placeholder="engineer@corp.com"
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Password</label>
-                        <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                                <Lock size={16} />
+                        )}
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Full Name</label>
+                            <div className="relative group">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                                    <User size={16} />
+                                </div>
+                                <input 
+                                    type="text" 
+                                    placeholder="Jane Doe"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
+                                />
                             </div>
-                            <input 
-                                type="password" 
-                                placeholder="Create a strong password"
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
-                            />
                         </div>
-                    </div>
 
-                    <button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] hover:-translate-y-0.5 flex items-center justify-center gap-2 mt-4 group">
-                        Get Started <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
-                    </button>
-                </form>
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Email</label>
+                            <div className="relative group">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                                    <Mail size={16} />
+                                </div>
+                                <input 
+                                    type="email" 
+                                    placeholder="engineer@corp.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Password</label>
+                            <div className="relative group">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                                    <Lock size={16} />
+                                </div>
+                                <input 
+                                    type="password" 
+                                    placeholder="Create a strong password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    minLength={6}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
+                                />
+                            </div>
+                        </div>
+
+                        <button 
+                            type="submit"
+                            disabled={loading}
+                            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] hover:-translate-y-0.5 flex items-center justify-center gap-2 mt-4 group"
+                        >
+                            {loading ? "Creating Account..." : "Get Started"} 
+                            {!loading && <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />}
+                        </button>
+                    </form>
+                )}
 
                 <div className="my-8 flex items-center gap-4">
                     <div className="h-px bg-white/10 flex-1" />

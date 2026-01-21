@@ -1,13 +1,33 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: dex-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=dex_password
+      - POSTGRES_DB=dex
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./app
       dockerfile: backend/Dockerfile
     container_name: dex-backend
     env_file:
-      - ./app/.env
+      - ./app/.env  # Backend API paths and configuration
     ports:
       - "8001:8000"
     networks:
@@ -16,8 +36,14 @@ services:
       - BACKEND_CORS_ORIGINS=["http://localhost:3001","http://localhost:3000","http://frontend:3000"]
       - ENVIRONMENT=production
       - DEBUG=false
+      # Override PostgreSQL connection for Docker (use service name)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
     volumes:
       - ./app/backend/data:/app/backend/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -32,28 +58,21 @@ services:
       dockerfile: Dockerfile
     container_name: dex-frontend
     env_file:
-      - ./app/.env             # 1. Backend variables (if needed)
-      - ./frontend/.env.local  # 2. Frontend AUTH variables (GitHub/Google keys)
+      - ./frontend/.env.local  # Frontend AUTH variables (GitHub/Google keys) and API paths
     ports:
-      - "3001:3000"
+      - "3000:3000"
     networks:
       - default
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8001
       - INTERNAL_API_URL=http://dex-backend:8000
-      - NEXTAUTH_URL=http://localhost:3001
-      # Auth variables - loaded from ./frontend/.env.local
-      - GITHUB_ID=${GITHUB_ID}
-      - GITHUB_SECRET=${GITHUB_SECRET}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - AZURE_AD_CLIENT_ID=${AZURE_AD_CLIENT_ID}
-      - AZURE_AD_CLIENT_SECRET=${AZURE_AD_CLIENT_SECRET}
-      - AZURE_AD_TENANT_ID=${AZURE_AD_TENANT_ID:-common}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=http://localhost:3000
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  postgres_data:
 
 networks:
   default:

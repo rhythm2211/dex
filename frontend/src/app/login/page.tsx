@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react"; 
 import { Terminal, ArrowRight, Github, Lock, Mail, X } from "lucide-react";
 
@@ -66,6 +66,57 @@ const SpotlightCard = ({ children, className = "" }: { children: React.ReactNode
 export default function LoginPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showRegisteredMessage, setShowRegisteredMessage] = useState(false);
+  
+  // Check for registration success message
+  useEffect(() => {
+    const registered = searchParams.get('registered') === 'true';
+    if (registered) {
+      setShowRegisteredMessage(true);
+      // Hide message after 3 seconds
+      const timer = setTimeout(() => {
+        setShowRegisteredMessage(false);
+        // Clean up URL without page reload
+        router.replace('/login', { scroll: false });
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [searchParams, router]);
+
+  // Check profile completion and redirect if needed
+  useEffect(() => {
+    const checkProfileAndRedirect = async () => {
+      if (status === "authenticated" && session?.user?.email) {
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+          const response = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`);
+          
+          if (response.ok) {
+            const userData = await response.json();
+            if (!userData.profile_completed) {
+              router.push("/onboarding");
+            } else {
+              router.push("/app");
+            }
+          } else {
+            // User doesn't exist, redirect to onboarding
+            router.push("/onboarding");
+          }
+        } catch (error) {
+          console.error("Failed to check profile:", error);
+          // On error, still redirect to onboarding to be safe
+          router.push("/onboarding");
+        }
+      }
+    };
+    
+    checkProfileAndRedirect();
+  }, [status, session, router]);
   
   // --- REAL AUTH LOGIC ---
   const handleSocialLogin = async (provider: string) => {
@@ -74,7 +125,32 @@ export default function LoginPage() {
     // IMPORTANT: Map 'microsoft' to 'azure-ad' because that is the ID NextAuth uses internally
     const providerId = provider === 'microsoft' ? 'azure-ad' : provider;
     
-    await signIn(providerId, { callbackUrl: '/' });
+    await signIn(providerId, { callbackUrl: '/onboarding' });
+  };
+
+  const handleCredentialsLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError('Invalid email or password');
+      } else if (result?.ok) {
+        // Success - the useEffect will handle redirect
+        router.push('/onboarding');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Get user's first name or username
@@ -130,52 +206,72 @@ export default function LoginPage() {
                         {isLoggedIn ? "You're already signed in. Continue to the app?" : "Enter your credentials to access the graph."}
                     </p>
                     {isLoggedIn && (
-                        <Link 
-                            href="/app" 
-                            className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 text-xs font-bold transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)]"
-                        >
-                            Go to App <ArrowRight size={14} />
-                        </Link>
+                        <div className="mt-4">
+                            <p className="text-xs text-slate-500 mb-3">Checking your profile...</p>
+                        </div>
                     )}
                 </div>
 
                 {!isLoggedIn && (
-                <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
-                    <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Email</label>
-                        <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                                <Mail size={16} />
+                <>
+                    {showRegisteredMessage && (
+                        <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs text-center">
+                            User registered successfully! Please sign in.
+                        </div>
+                    )}
+                    <form className="space-y-5" onSubmit={handleCredentialsLogin}>
+                        {error && (
+                            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+                                {error}
                             </div>
-                            <input 
-                                type="email" 
-                                placeholder="engineer@corp.com"
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-center ml-1">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Password</label>
-                            <a href="#" className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">Forgot?</a>
-                        </div>
-                        <div className="relative group">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                                <Lock size={16} />
+                        )}
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Email</label>
+                            <div className="relative group">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                                    <Mail size={16} />
+                                </div>
+                                <input 
+                                    type="email" 
+                                    placeholder="engineer@corp.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
+                                />
                             </div>
-                            <input 
-                                type="password" 
-                                placeholder="••••••••"
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
-                            />
                         </div>
-                    </div>
 
-                    <button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] hover:-translate-y-0.5 flex items-center justify-center gap-2 mt-6 group">
-                        Sign In <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
-                    </button>
-                </form>
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between items-center ml-1">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Password</label>
+                                <a href="#" className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">Forgot?</a>
+                            </div>
+                            <div className="relative group">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                                    <Lock size={16} />
+                                </div>
+                                <input 
+                                    type="password" 
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all shadow-inner"
+                                />
+                            </div>
+                        </div>
+
+                        <button 
+                            type="submit"
+                            disabled={loading}
+                            className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] hover:-translate-y-0.5 flex items-center justify-center gap-2 mt-6 group"
+                        >
+                            {loading ? "Signing In..." : "Sign In"} 
+                            {!loading && <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />}
+                        </button>
+                    </form>
+                </>
                 )}
 
                 {!isLoggedIn && (

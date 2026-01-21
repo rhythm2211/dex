@@ -8,8 +8,9 @@ import {
   RefreshCw, Zap, Search, Terminal, MessageSquare,
   Info, Folder, File, Box, Code, Database, FileCode,
   ChevronRight, ChevronDown, Move, LayoutTemplate,
-  Play, LogOut, User
+  Play, LogOut, User, X
 } from 'lucide-react';
+import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as d3 from 'd3';
@@ -173,10 +174,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [ragResult, setRagResult] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
-  const [repoUrl, setRepoUrl] = useState('https://github.com/rhythm2211/ai-analyst');
+  const [repoUrl, setRepoUrl] = useState('');
   const [ingesting, setIngesting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [step, setStep] = useState('');
+  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'assistant' | 'details'>('assistant');
@@ -212,15 +214,33 @@ export default function Dashboard() {
             const s = await dexApi.getIngestStatus();
             setProgress(s.progress);
             setStep(s.step);
-            if (s.state === 'completed') { clearInterval(i); setIngesting(false); loadGraph(); }
+            if (s.state === 'completed') { 
+                clearInterval(i); 
+                setIngesting(false); 
+                setPollInterval(null);
+                loadGraph(); 
+            }
+            if (s.state === 'cancelled') { 
+                clearInterval(i); 
+                setIngesting(false); 
+                setPollInterval(null);
+            }
+            if (s.state === 'error') { 
+                clearInterval(i); 
+                setIngesting(false); 
+                setPollInterval(null);
+            }
         } catch(e) {}
     }, 1000);
+    return i; // Return interval ID so we can clear it
   }, [loadGraph]);
 
   useEffect(() => {
     dexApi.getIngestStatus().then(s => {
         if(s.state === 'running') {
-            setIngesting(true); pollIngestion();
+            setIngesting(true); 
+            const interval = pollIngestion();
+            setPollInterval(interval);
         } else if(s.state === 'completed') {
             // Load graph data if ingestion is already completed
             loadGraph();
@@ -228,12 +248,58 @@ export default function Dashboard() {
     }).catch(() => {});
     // Also try to load graph data on mount in case there's existing data
     loadGraph();
+    
+    // Cleanup interval on unmount
+    return () => {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+        }
+    };
   }, [pollIngestion, loadGraph]);
 
   const handleIngest = async () => {
       setIngesting(true); setGraphData({ nodes: [], links: [] });
-      try { await dexApi.triggerIngestion(repoUrl); } catch (err) { setIngesting(false); }
-      pollIngestion();
+      try { 
+          await dexApi.triggerIngestion(repoUrl); 
+          const interval = pollIngestion();
+          setPollInterval(interval);
+      } catch (err: any) { 
+          console.error("Ingestion error:", err);
+          // If error is 409 (already running), try to reset and retry
+          if (err?.message?.includes("already running") || err?.response?.status === 409) {
+              try {
+                  console.log("Resetting stuck ingestion and retrying...");
+                  await dexApi.resetIngestionStatus();
+                  // Small delay before retry
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  await dexApi.triggerIngestion(repoUrl);
+                  const interval = pollIngestion();
+                  setPollInterval(interval);
+              } catch (retryErr: any) {
+                  console.error("Retry failed:", retryErr);
+                  setIngesting(false);
+                  alert(`Ingestion failed: ${retryErr?.message || "Unknown error"}`);
+              }
+          } else {
+              setIngesting(false);
+              alert(`Ingestion failed: ${err?.message || "Unknown error"}`);
+          }
+      }
+  };
+
+  const handleCancel = async () => {
+      try {
+          await dexApi.cancelIngestion();
+          if (pollInterval) {
+              clearInterval(pollInterval);
+              setPollInterval(null);
+          }
+          setIngesting(false);
+          setStep("Cancelled");
+      } catch (err: any) {
+          console.error("Cancel error:", err);
+          alert(`Failed to cancel ingestion: ${err?.message || "Unknown error"}`);
+      }
   };
 
   const handleExecute = async (manualQuery?: string) => {
@@ -494,7 +560,14 @@ export default function Dashboard() {
   if (!mounted) return null;
 
   return (
-    <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden">
+    <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden relative">
+      {/* Dynamic Background Effects */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-900/10 blur-[150px] rounded-full mix-blend-screen opacity-50"></div>
+        <div className="absolute top-[40%] right-[-10%] w-[40%] h-[40%] bg-emerald-900/5 blur-[120px] rounded-full mix-blend-screen opacity-40"></div>
+        <div className="absolute bottom-[-20%] left-[20%] w-[60%] h-[40%] bg-violet-900/10 blur-[150px] rounded-full mix-blend-screen opacity-30"></div>
+        <div className="absolute inset-0 cyber-grid"></div>
+      </div>
 
       <style dangerouslySetInnerHTML={{__html: `
         .link-base {
@@ -517,23 +590,63 @@ export default function Dashboard() {
         .node text {
             text-shadow: 0 1px 3px rgba(0,0,0,0.8);
         }
+        
+        /* Custom Scrollbar - Matching Home Page Theme */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #050505;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+        
+        /* Firefox Scrollbar */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #333 #050505;
+        }
+        
+        /* Glass Effects */
+        .glass-panel {
+            background: rgba(10, 10, 10, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        /* Cyber Grid Background */
+        .cyber-grid {
+            background-size: 50px 50px;
+            background-image: linear-gradient(to right, rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+                            linear-gradient(to bottom, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+            mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+        }
       `}} />
 
       {/* --- SIDEBAR --- */}
-      <aside className="w-[400px] min-w-[400px] flex flex-col border-r border-white/5 bg-[#0a0a0a] z-20 shadow-2xl">
-        <div className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-black/20 shrink-0">
-            <div className="flex items-center gap-3">
-                <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20"><Terminal className="text-indigo-500" size={16} /></div>
+      <aside className="w-[400px] min-w-[400px] flex flex-col border-r border-white/5 bg-[#0a0a0a]/80 backdrop-blur-xl z-20 shadow-2xl relative">
+        <div className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-black/20 shrink-0 backdrop-blur-md">
+            <Link href="/" className="flex items-center gap-3 group hover:opacity-80 transition-opacity" title="Go to Homepage">
+                <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.2)] group-hover:border-indigo-500/40 transition-colors"><Terminal className="text-indigo-500" size={16} /></div>
                 <h1 className="text-sm font-bold text-white tracking-widest leading-none">DEX</h1>
-            </div>
+            </Link>
             <div className="flex items-center gap-2">
                 {session?.user && (
-                    <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                    <Link
+                        href="/profile"
+                        className="flex items-center gap-2 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all cursor-pointer"
+                        title="View Profile"
+                    >
                         <User size={12} className="text-indigo-400" />
                         <span className="text-[10px] text-indigo-300 font-medium max-w-[100px] truncate">
                             {session.user.name || session.user.email}
                         </span>
-                    </div>
+                    </Link>
                 )}
                 <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-emerald-500/5 border border-emerald-500/10">
                     <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
@@ -551,53 +664,141 @@ export default function Dashboard() {
             </div>
         </div>
 
-        <div className="flex border-b border-white/5 bg-[#0a0a0a]">
-            <button onClick={() => setActiveTab('assistant')} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'assistant' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
-                <div className="flex items-center justify-center gap-2"><MessageSquare size={12} /> Assistant</div>
+        <div className="flex border-b border-white/5 bg-[#0a0a0a]/50 backdrop-blur-sm">
+            <button onClick={() => setActiveTab('assistant')} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 relative ${activeTab === 'assistant' ? 'border-indigo-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/2'}`}>
+                <div className="flex items-center justify-center gap-2">
+                    <MessageSquare size={12} /> Assistant
+                </div>
             </button>
-            <button onClick={() => setActiveTab('details')} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 ${activeTab === 'details' ? 'border-emerald-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
-                <div className="flex items-center justify-center gap-2"><Info size={12} /> Details</div>
+            <button onClick={() => setActiveTab('details')} className={`flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 relative ${activeTab === 'details' ? 'border-emerald-500 text-white bg-white/5' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/2'}`}>
+                <div className="flex items-center justify-center gap-2">
+                    <Info size={12} /> Details
+                </div>
             </button>
         </div>
 
         {activeTab === 'assistant' && (
             <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-left-4 duration-300">
-                <div className="p-5 border-b border-white/5 bg-[#0a0a0a]/50 shrink-0 space-y-3">
+                <div className="p-5 border-b border-white/5 bg-[#0a0a0a]/50 backdrop-blur-sm shrink-0 space-y-3">
                     <div className="flex justify-between items-baseline">
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Repository URL</label>
                         {step && ingesting && <span className="text-[10px] text-indigo-400 animate-pulse font-mono">{step}</span>}
                     </div>
                     <div className="flex gap-2">
-                        <input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50 transition-all font-mono" />
-                        <button onClick={handleIngest} disabled={ingesting} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 rounded-lg transition-all flex items-center justify-center shrink-0">
+                        <input 
+                            value={repoUrl} 
+                            onChange={(e) => setRepoUrl(e.target.value)} 
+                            className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all font-mono shadow-inner" 
+                            placeholder="Enter GitHub repository URL"
+                        />
+                        <button 
+                            onClick={handleIngest} 
+                            disabled={ingesting} 
+                            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-3 rounded-lg transition-all flex items-center justify-center shrink-0 shadow-lg hover:shadow-indigo-500/50"
+                        >
                             {ingesting ? <RefreshCw className="animate-spin" size={14}/> : <RefreshCw size={14}/>}
                         </button>
                     </div>
-                    {/* lightweight progress bar (keeps existing UX theme) */}
+                    {/* Enhanced progress bar */}
                     {ingesting && (
                       <div className="space-y-1">
-                        <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                          <span>Ingesting…</span>
-                          <span>{Math.min(100, Math.max(0, progress))}%</span>
-                        </div>
-                        <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                          <div className="h-full bg-indigo-500/60" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
+                        <div className="flex justify-between items-center gap-2">
+                          <div className="flex-1">
+                            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                              <span>Ingesting…</span>
+                              <span>{Math.min(100, Math.max(0, progress))}%</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden shadow-inner mt-1">
+                              <div 
+                                  className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 transition-all duration-300 shadow-[0_0_8px_rgba(99,102,241,0.5)]" 
+                                  style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} 
+                              />
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleCancel}
+                            className="bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 px-2 py-1.5 rounded-lg transition-all flex items-center justify-center shrink-0 border border-red-500/30 hover:border-red-500/50"
+                            title="Cancel ingestion"
+                          >
+                            <X size={14} />
+                          </button>
                         </div>
                       </div>
                     )}
                 </div>
-                <div className="flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-thumb-white/10 bg-[#0c0c0c]">
-                    {ragResult ? (
-                        <div className="prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed font-light text-sm"><ReactMarkdown remarkPlugins={[remarkGfm]}>{ragResult}</ReactMarkdown></div>
-                    ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-800 gap-3 opacity-60"><MessageSquare size={28} /><p className="text-[10px] uppercase tracking-widest">Ready to analyze</p></div>
-                    )}
-                </div>
-                <div className="p-5 border-t border-white/5 bg-[#0a0a0a] shrink-0">
-                    <div className="relative group">
-                        <textarea value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ask about structure..." className="w-full bg-[#111] border border-white/10 rounded-xl p-4 pr-12 text-xs text-white focus:border-indigo-500/50 outline-none resize-none h-24 shadow-inner transition-all focus:bg-[#151515]" />
-                        <button onClick={() => handleExecute()} disabled={loading || !query} className="absolute right-3 bottom-3 p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all shadow-lg">{loading ? <RefreshCw className="animate-spin" size={14}/> : <Play size={14} fill="currentColor"/>}</button>
+                {/* Enhanced Chat Space - Inspired by Home Page */}
+                <div className="flex-1 flex flex-col min-h-0 bg-[#080808] border-b border-white/5">
+                    {/* Chat Header */}
+                    <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-white/[0.02] shrink-0 backdrop-blur-sm">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981] animate-pulse"></div>
+                            <span className="text-xs font-bold text-slate-300 tracking-wide">DEX ASSISTANT</span>
+                        </div>
+                        <Terminal size={12} className="text-slate-600" />
                     </div>
+                    
+                    {/* Messages Area */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+                        {ragResult ? (
+                            <div className="space-y-4">
+                                {/* User Message */}
+                                {query && (
+                                    <div className="flex justify-end">
+                                        <div className="bg-indigo-600/20 border border-indigo-500/30 text-indigo-100 px-3 py-2 rounded-l-lg rounded-tr-lg max-w-[85%] shadow-lg">
+                                            <p className="text-xs font-medium">{query}</p>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* AI Response */}
+                                <div className="flex justify-start relative">
+                                    <div className="absolute -left-2 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500 to-transparent opacity-50"></div>
+                                    <div className="pl-3 text-slate-300 max-w-[90%] space-y-2">
+                                        <div className="prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed font-light text-xs">
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{ragResult}</ReactMarkdown>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-700 gap-3 opacity-60">
+                                <MessageSquare size={32} className="text-slate-600" />
+                                <p className="text-[10px] uppercase tracking-widest font-medium">Ready to analyze</p>
+                                <p className="text-[9px] text-slate-600 text-center max-w-[200px]">Ask questions about your codebase structure, dependencies, or specific files</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                
+                {/* Enhanced Input Area */}
+                <div className="p-5 border-t border-white/5 bg-[#0a0a0a]/80 backdrop-blur-sm shrink-0">
+                    <div className="relative group">
+                        <textarea 
+                            value={query} 
+                            onChange={(e) => setQuery(e.target.value)} 
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    if (query && !loading) handleExecute();
+                                }
+                            }}
+                            placeholder="Ask about structure, dependencies, or code..." 
+                            className="w-full bg-[#111] border border-white/10 rounded-xl p-4 pr-12 text-xs text-white focus:border-indigo-500/50 outline-none resize-none h-24 shadow-inner transition-all focus:bg-[#151515] focus:ring-1 focus:ring-indigo-500/20" 
+                        />
+                        <button 
+                            onClick={() => handleExecute()} 
+                            disabled={loading || !query} 
+                            className="absolute right-3 bottom-3 p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-lg hover:shadow-indigo-500/50"
+                        >
+                            {loading ? <RefreshCw className="animate-spin" size={14}/> : <Play size={14} fill="currentColor"/>}
+                        </button>
+                    </div>
+                    {loading && (
+                        <div className="mt-2 flex items-center gap-2 text-[10px] text-indigo-400">
+                            <RefreshCw className="animate-spin" size={10} />
+                            <span>Analyzing codebase...</span>
+                        </div>
+                    )}
                 </div>
             </div>
         )}
@@ -608,27 +809,27 @@ export default function Dashboard() {
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Search size={12}/> Inspector</div>
                     {selectedNode ? (
                         <div className="space-y-4">
-                            <div className="p-4 rounded-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 shadow-sm">
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 shadow-lg backdrop-blur-sm glass-panel">
                                 <div className="text-[9px] text-indigo-400 font-bold mb-2 uppercase tracking-wider">Active Node</div>
                                 <div className="text-sm font-mono text-white break-all">{selectedNode.name || selectedNode.id}</div>
                             </div>
-                            <div className="p-3 rounded-lg bg-[#111] border border-white/5">
+                            <div className="p-3 rounded-lg bg-[#111] border border-white/5 backdrop-blur-sm">
                                 <div className="text-[9px] text-slate-500 mb-1 uppercase">Node Type</div>
                                 <div className="text-xs font-bold text-white capitalize flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full" style={{backgroundColor: selectedNode.branchColor || '#fff'}}></div>
+                                    <div className="w-2 h-2 rounded-full shadow-[0_0_4px_currentColor]" style={{backgroundColor: (NODE_CONFIG[selectedNode.type]?.color || NODE_CONFIG.default.color)}}></div>
                                     {selectedNode.type}
                                 </div>
                             </div>
                             <div className="flex gap-2">
                                 <button
                                   onClick={() => handleNodeChat(selectedNode)}
-                                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2"
+                                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-indigo-500/20"
                                 >
                                     <Zap size={12} className="text-yellow-400" fill="currentColor"/> Chat About Node
                                 </button>
                                 <button
                                   onClick={() => { setSelectedNode(null); setPathSet(new Set()); }}
-                                  className="px-3 py-3 bg-[#111] hover:bg-[#1f2933] border border-white/10 text-slate-400 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all"
+                                  className="px-3 py-3 bg-[#111] hover:bg-[#1f2933] border border-white/10 text-slate-400 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all hover:border-white/20"
                                 >
                                     Clear
                                 </button>
@@ -642,17 +843,20 @@ export default function Dashboard() {
                     )}
                 </div>
 
-                <div className="h-[20%] flex flex-col bg-[#0a0a0a] border-t border-white/5 p-4">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Structure Key</div>
+                <div className="h-[20%] flex flex-col bg-[#0a0a0a]/80 backdrop-blur-sm border-t border-white/5 p-4">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <LayoutTemplate size={12} />
+                        Structure Key
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                         {Object.entries(NODE_CONFIG).map(([key, config]: any) => (
-                             <div key={key} className="flex items-center gap-2 text-[11px] text-slate-500">
+                             <div key={key} className="flex items-center gap-2 text-[11px] text-slate-400 hover:text-slate-300 transition-colors p-1.5 rounded hover:bg-white/5">
                                  <span
-                                   className="w-2 h-2 rounded-full"
+                                   className="w-2 h-2 rounded-full shadow-[0_0_4px_currentColor]"
                                    style={{ backgroundColor: config.color }}
                                  />
-                                 <config.icon size={10} />
-                                 <span>{config.label}</span>
+                                 <config.icon size={10} className="text-slate-500" />
+                                 <span className="font-medium">{config.label}</span>
                              </div>
                         ))}
                     </div>
@@ -664,12 +868,12 @@ export default function Dashboard() {
       {/* --- GRAPH AREA --- */}
       <main className="flex-1 min-w-0 relative bg-[#050505] cursor-move overflow-hidden" ref={treeContainer}>
         {/* Graph Controls */}
-        <div className="absolute top-6 left-6 z-10 flex gap-2">
-            <div className="p-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 flex gap-2">
-                <button onClick={() => setTreeOrientation('vertical')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'vertical' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ChevronDown size={12} /> Vert</button>
-                <button onClick={() => setTreeOrientation('horizontal')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'horizontal' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}><ChevronRight size={12} /> Horz</button>
+        <div className="absolute top-6 left-6 z-10 flex gap-3">
+            <div className="p-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/10 shadow-xl flex gap-1 glass-panel">
+                <button onClick={() => setTreeOrientation('vertical')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'vertical' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><ChevronDown size={12} /> Vert</button>
+                <button onClick={() => setTreeOrientation('horizontal')} className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${treeOrientation === 'horizontal' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><ChevronRight size={12} /> Horz</button>
                 <div className="w-px h-full bg-white/10 mx-1"></div>
-                <button onClick={centerTree} className="px-3 py-1.5 text-slate-400 hover:text-white transition-colors flex items-center gap-2" title="Center Tree"><Move size={12} /> Center</button>
+                <button onClick={centerTree} className="px-3 py-1.5 text-slate-400 hover:text-white hover:bg-white/5 transition-all rounded-md flex items-center gap-2" title="Center Tree"><Move size={12} /> Center</button>
             </div>
         </div>
 
@@ -684,9 +888,17 @@ export default function Dashboard() {
                     <g ref={wrapperRef} />
                 </svg>
             ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-700 animate-pulse gap-4">
-                    <LayoutTemplate size={48} strokeWidth={1} />
-                    <span className="uppercase tracking-widest text-xs">Waiting for Repository...</span>
+                <div className="flex flex-col items-center justify-center h-full text-slate-700 gap-4 relative">
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl"></div>
+                    </div>
+                    <div className="relative z-10 flex flex-col items-center gap-4">
+                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
+                            <LayoutTemplate size={48} strokeWidth={1} className="text-slate-600" />
+                        </div>
+                        <span className="uppercase tracking-widest text-xs text-slate-500 font-medium">Waiting for Repository...</span>
+                        <p className="text-[10px] text-slate-600 text-center max-w-xs">Enter a repository URL above to begin visualization</p>
+                    </div>
                 </div>
             )}
         </div>

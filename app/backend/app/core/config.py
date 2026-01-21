@@ -15,8 +15,8 @@ BACKEND_DIR = CONFIG_DIR.parent.parent        # backend
 ROOT_DIR = BACKEND_DIR.parent                 # app (root)
 
 env_paths = [
+    ROOT_DIR / ".env",           # app/.env (your backend .env)
     BACKEND_DIR / ".env",
-    ROOT_DIR / ".env",
     Path(os.getcwd()) / ".env"
 ]
 
@@ -49,11 +49,22 @@ class Settings(BaseSettings):
         raise ValueError(v)
 
     # --- AI & Vector DB Keys ---
-    PINECONE_API_KEY: str
-    PINECONE_INDEX_NAME: str
-    GROQ_API_KEY: str
+    # PostgreSQL + pgvector configuration
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = ""
+    POSTGRES_DB: str = "dex"
+    POSTGRES_VECTOR_TABLE: str = "document_vectors"  # Table name for vector storage
+    
+    GROQ_API_KEY: str = ""
     GITHUB_TOKEN: str = "" 
-    OPENAI_API_KEY: str = "" 
+    OPENAI_API_KEY: str = ""
+    
+    @property
+    def POSTGRES_CONNECTION_STRING(self) -> str:
+        """Generate PostgreSQL connection string for pgvector"""
+        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
 
     # --- Neo4j Graph DB Config (New) ---
     # We make these Optional so the app doesn't crash if you just want to run unit tests
@@ -61,8 +72,17 @@ class Settings(BaseSettings):
     NEO4J_URI: Optional[str] = None
     NEO4J_USERNAME: Optional[str] = None
     NEO4J_PASSWORD: Optional[str] = None
+    
+    # --- Email Service (Resend) ---
+    RESEND_API_KEY: Optional[str] = None
+    RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
+    RESEND_FROM_NAME: str = "DEX"
+    FRONTEND_URL: str = "http://localhost:3000"
 
-    DATABASE_URL: str = "sqlite:///./dex.db" 
+    @property
+    def DATABASE_URL(self) -> str:
+        """Generate PostgreSQL connection string for SQLAlchemy (user storage)"""
+        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,17 +1,20 @@
 import os
 import json
 import logging
-from typing import List
-from langchain_pinecone import PineconeVectorStore
+from typing import List, Union
+from langchain_community.vectorstores import PGVector
+from langchain_core.vectorstores import VectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from neo4j import GraphDatabase
+from neo4j.exceptions import ServiceUnavailable, TransientError
 from backend.app.core.config import settings
+from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection, retry_on_connection_error
 
 logger = logging.getLogger("dex-core")
 
 class HybridRetriever:
-    def __init__(self, vector_store: PineconeVectorStore):
+    def __init__(self, vector_store: Union[PGVector, VectorStore]):
         self.vector_store = vector_store
         self.llm = ChatGroq(
             model_name="llama-3.3-70b-versatile",
@@ -26,7 +29,10 @@ class HybridRetriever:
         password = settings.NEO4J_PASSWORD
         
         if uri and user and password:
-            self.driver = GraphDatabase.driver(uri, auth=(user, password))
+            # Use connection utility with proper configuration
+            self.driver = create_neo4j_driver(uri, user, password)
+            if not self.driver:
+                logger.error("❌ Neo4j driver creation failed in Retriever. Graph context will be empty.")
         else:
             logger.error("❌ Neo4j Credentials missing in Retriever. Graph context will be empty.")
             self.driver = None
@@ -48,7 +54,7 @@ class HybridRetriever:
         1. Find the code (Vector Search)
         2. Find the context (Graph Lookup via Neo4j)
         """
-        # Step 1: Semantic Search (Pinecone)
+        # Step 1: Semantic Search (PGVector)
         try:
             docs = self.vector_store.similarity_search(query, k=k_vectors)
         except Exception as e:
@@ -104,30 +110,34 @@ class HybridRetriever:
         relevant_info = set()
         
         try:
-            with self.driver.session() as session:
-                result = session.run(query, anchors=file_anchors)
-                
-                for record in result:
-                    n = record["n"]
-                    r = record["r"]
-                    m = record["m"]
+            @retry_on_connection_error(max_retries=3, delay=1.0)
+            def _execute_query():
+                with self.driver.session() as session:
+                    return session.run(query, anchors=file_anchors)
+            
+            result = _execute_query()
+            
+            for record in result:
+                n = record["n"]
+                r = record["r"]
+                m = record["m"]
 
-                    # 1. Format Node Metadata (Git Blame / Time Travel info)
-                    meta_str = ""
-                    if n.get("last_author"):
-                        meta_str = f" [Author: {n.get('last_author')}, Mod: {n.get('last_modified')}]"
+                # 1. Format Node Metadata (Git Blame / Time Travel info)
+                meta_str = ""
+                if n.get("last_author"):
+                    meta_str = f" [Author: {n.get('last_author')}, Mod: {n.get('last_modified')}]"
 
-                    # 2. Format Relationship
-                    # If we found a relationship, format it: A -[REL]-> B
-                    if r and m:
-                        rel_type = r.type
-                        # Direction check (simplified for context string)
-                        # We just want to know A relates to B
-                        info_str = f"{n['id']} --[{rel_type}]--> {m['id']}{meta_str}"
-                        relevant_info.add(info_str)
-                    else:
-                        # Isolated node (just file info)
-                        relevant_info.add(f"Node: {n['id']}{meta_str}")
+                # 2. Format Relationship
+                # If we found a relationship, format it: A -[REL]-> B
+                if r and m:
+                    rel_type = r.type
+                    # Direction check (simplified for context string)
+                    # We just want to know A relates to B
+                    info_str = f"{n['id']} --[{rel_type}]--> {m['id']}{meta_str}"
+                    relevant_info.add(info_str)
+                else:
+                    # Isolated node (just file info)
+                    relevant_info.add(f"Node: {n['id']}{meta_str}")
 
         except Exception as e:
             logger.error(f"Neo4j Context Query Failed: {e}")
