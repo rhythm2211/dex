@@ -14,11 +14,13 @@ class User(Base):
     
     id = Column(String, primary_key=True)  # NextAuth user ID (email or provider ID)
     email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=True)  # Hashed password for credentials auth
     name = Column(String, nullable=True)
     age = Column(Integer, nullable=True)
     company = Column(String, nullable=True)
     role = Column(String, nullable=True)
     bio = Column(String, nullable=True)
+    github_username = Column(String, nullable=True, index=True)  # GitHub username for fetching contributions
     profile_completed = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True, index=True)  # User account active status
     last_login = Column(DateTime, nullable=True, index=True)  # Last login timestamp
@@ -34,6 +36,7 @@ class User(Base):
             "company": self.company,
             "role": self.role,
             "bio": self.bio,
+            "github_username": self.github_username,
             "profile_completed": self.profile_completed,
             "is_active": self.is_active,
             "last_login": self.last_login.isoformat() if self.last_login else None,
@@ -70,6 +73,24 @@ def init_db():
                 conn.execute(text("""
                     ALTER TABLE users 
                     ADD COLUMN IF NOT EXISTS last_login TIMESTAMP
+                """))
+                conn.commit()
+            except Exception:
+                pass  # Column may already exist
+            
+            try:
+                conn.execute(text("""
+                    ALTER TABLE users 
+                    ADD COLUMN IF NOT EXISTS password_hash VARCHAR
+                """))
+                conn.commit()
+            except Exception:
+                pass  # Column may already exist
+            
+            try:
+                conn.execute(text("""
+                    ALTER TABLE users 
+                    ADD COLUMN IF NOT EXISTS github_username VARCHAR
                 """))
                 conn.commit()
             except Exception:

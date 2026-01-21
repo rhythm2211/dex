@@ -8,7 +8,7 @@ import {
   Quote, Network, Play, LogOut, Code, FileText, 
   Cpu, Search, CheckCircle, Command, Lock, Layers, 
   ChevronRight, Database, Github, Activity, Users, TrendingUp, Flame,
-  GitCommit, MessageSquare, TreePine, GitMerge, Rocket
+  GitCommit, MessageSquare, TreePine, GitMerge, Rocket, User
 } from "lucide-react";
 import { dexApi, ActiveZonesResponse, TeamTopologyResponse, ZoneData } from "@/lib/api";
 
@@ -752,10 +752,20 @@ export default function HomePage() {
           </div>
           <div className="flex items-center gap-4">
             {session?.user ? (
-              <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
-                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                 <span className="text-xs text-slate-300 max-w-[100px] truncate">{session.user.email}</span>
-                 <button onClick={() => signOut()} className="text-slate-500 hover:text-white ml-1"><LogOut size={12} /></button>
+              <div className="flex items-center gap-3">
+                 <Link 
+                   href="/profile" 
+                   className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all"
+                   title="View Profile"
+                 >
+                   <User size={14} className="text-indigo-400" />
+                   <span className="text-xs text-indigo-300 font-medium">Profile</span>
+                 </Link>
+                 <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
+                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                   <span className="text-xs text-slate-300 max-w-[100px] truncate">{session.user.email}</span>
+                   <button onClick={() => signOut()} className="text-slate-500 hover:text-white ml-1"><LogOut size={12} /></button>
+                 </div>
               </div>
             ) : (
               <div className="flex items-center gap-3">
@@ -805,29 +815,45 @@ export default function HomePage() {
             Connect your GitHub repository, watch DEX build a comprehensive dependency tree, and interact with an AI assistant that understands your entire codebase structure—not just isolated snippets.
           </p>
 
-          <p className="animate-fade-in delay-200 max-w-2xl mx-auto text-xs leading-relaxed text-slate-600 mb-10">
-            <span className="text-indigo-400 font-semibold">Sign up</span> for the best experience with full access to all features.
-          </p>
+          {!session?.user && (
+            <>
+              <p className="animate-fade-in delay-200 max-w-2xl mx-auto text-xs leading-relaxed text-slate-600 mb-10">
+                <span className="text-indigo-400 font-semibold">Sign up</span> for the best experience with full access to all features.
+              </p>
 
-          <div className="animate-fade-in delay-300 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/app" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-indigo-600 text-white px-8 py-3.5 transition-all hover:bg-indigo-500 hover:shadow-[0_0_40px_rgba(99,102,241,0.4)] hover:scale-105">
-              <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
-                <Rocket size={14} className="group-hover:scale-110 transition-transform" />
-                Launch App
-                <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-            </Link>
-            <Link href="/signup" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-white text-black px-8 py-3.5 transition-all hover:bg-slate-200 hover:shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:scale-105">
-              <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
-                Start for free <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-            </Link>
-            <Link href="#demo" className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-8 py-3.5 text-xs font-bold uppercase tracking-widest text-slate-300 hover:bg-white/10 hover:text-white hover:border-indigo-500/30 transition-all backdrop-blur-sm hover:scale-105">
-              <Github size={14} className="group-hover:rotate-12 transition-transform" /> Connect GitHub
-            </Link>
-          </div>
+              <div className="animate-fade-in delay-300 flex flex-col sm:flex-row items-center justify-center gap-4">
+                <Link href="/app" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-indigo-600 text-white px-8 py-3.5 transition-all hover:bg-indigo-500 hover:shadow-[0_0_40px_rgba(99,102,241,0.4)] hover:scale-105">
+                  <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
+                    <Rocket size={14} className="group-hover:scale-110 transition-transform" />
+                    Launch App
+                    <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                </Link>
+                <Link href="/signup" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-white text-black px-8 py-3.5 transition-all hover:bg-slate-200 hover:shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:scale-105">
+                  <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
+                    Start for free <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                </Link>
+                <Link href="#demo" className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-8 py-3.5 text-xs font-bold uppercase tracking-widest text-slate-300 hover:bg-white/10 hover:text-white hover:border-indigo-500/30 transition-all backdrop-blur-sm hover:scale-105">
+                  <Github size={14} className="group-hover:rotate-12 transition-transform" /> Connect GitHub
+                </Link>
+              </div>
+            </>
+          )}
+          {session?.user && (
+            <div className="animate-fade-in delay-300 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link href="/app" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-indigo-600 text-white px-8 py-3.5 transition-all hover:bg-indigo-500 hover:shadow-[0_0_40px_rgba(99,102,241,0.4)] hover:scale-105">
+                <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
+                  <Rocket size={14} className="group-hover:scale-110 transition-transform" />
+                  Go to Dashboard
+                  <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                </span>
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+              </Link>
+            </div>
+          )}
         </section>
 
         <TechTicker />
@@ -1136,12 +1162,20 @@ export default function HomePage() {
                </p>
                
                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                   <Link href="/signup" className="group/btn inline-flex items-center justify-center gap-2 rounded-xl bg-white text-black px-8 py-4 text-xs font-bold uppercase tracking-widest hover:bg-slate-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.15)] hover:shadow-[0_0_40px_rgba(255,255,255,0.25)] hover:scale-105 w-full sm:w-auto">
-                     Get Started <ArrowRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
-                   </Link>
-                   <Link href="mailto:sales@dex.ai" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-8 py-4 text-xs font-bold uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:border-indigo-500/30 transition-all hover:scale-105 w-full sm:w-auto">
-                     Contact Sales
-                   </Link>
+                   {!session?.user ? (
+                     <>
+                       <Link href="/signup" className="group/btn inline-flex items-center justify-center gap-2 rounded-xl bg-white text-black px-8 py-4 text-xs font-bold uppercase tracking-widest hover:bg-slate-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.15)] hover:shadow-[0_0_40px_rgba(255,255,255,0.25)] hover:scale-105 w-full sm:w-auto">
+                         Get Started <ArrowRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
+                       </Link>
+                       <Link href="mailto:sales@dex.ai" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-8 py-4 text-xs font-bold uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:border-indigo-500/30 transition-all hover:scale-105 w-full sm:w-auto">
+                         Contact Sales
+                       </Link>
+                     </>
+                   ) : (
+                     <Link href="/app" className="group/btn inline-flex items-center justify-center gap-2 rounded-xl bg-white text-black px-8 py-4 text-xs font-bold uppercase tracking-widest hover:bg-slate-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.15)] hover:shadow-[0_0_40px_rgba(255,255,255,0.25)] hover:scale-105 w-full sm:w-auto">
+                       Go to Dashboard <ArrowRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
+                     </Link>
+                   )}
                </div>
             </div>
           </div>

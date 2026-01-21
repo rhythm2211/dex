@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     NEO4J_URI: Optional[str] = None
     NEO4J_USERNAME: Optional[str] = None
     NEO4J_PASSWORD: Optional[str] = None
+    
+    # --- Email Service (Resend) ---
+    RESEND_API_KEY: Optional[str] = None
+    RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
+    RESEND_FROM_NAME: str = "DEX"
+    FRONTEND_URL: str = "http://localhost:3000"
 
     @property
     def DATABASE_URL(self) -> str:

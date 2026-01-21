@@ -10,6 +10,7 @@ import {
   ChevronRight, ChevronDown, Move, LayoutTemplate,
   Play, LogOut, User, X
 } from 'lucide-react';
+import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as d3 from 'd3';
@@ -173,7 +174,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [ragResult, setRagResult] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
-  const [repoUrl, setRepoUrl] = useState('https://github.com/rhythm2211/ai-analyst');
+  const [repoUrl, setRepoUrl] = useState('');
   const [ingesting, setIngesting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [step, setStep] = useState('');
@@ -630,18 +631,22 @@ export default function Dashboard() {
       {/* --- SIDEBAR --- */}
       <aside className="w-[400px] min-w-[400px] flex flex-col border-r border-white/5 bg-[#0a0a0a]/80 backdrop-blur-xl z-20 shadow-2xl relative">
         <div className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-black/20 shrink-0 backdrop-blur-md">
-            <div className="flex items-center gap-3">
-                <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.2)]"><Terminal className="text-indigo-500" size={16} /></div>
+            <Link href="/" className="flex items-center gap-3 group hover:opacity-80 transition-opacity" title="Go to Homepage">
+                <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.2)] group-hover:border-indigo-500/40 transition-colors"><Terminal className="text-indigo-500" size={16} /></div>
                 <h1 className="text-sm font-bold text-white tracking-widest leading-none">DEX</h1>
-            </div>
+            </Link>
             <div className="flex items-center gap-2">
                 {session?.user && (
-                    <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                    <Link
+                        href="/profile"
+                        className="flex items-center gap-2 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all cursor-pointer"
+                        title="View Profile"
+                    >
                         <User size={12} className="text-indigo-400" />
                         <span className="text-[10px] text-indigo-300 font-medium max-w-[100px] truncate">
                             {session.user.name || session.user.email}
                         </span>
-                    </div>
+                    </Link>
                 )}
                 <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-emerald-500/5 border border-emerald-500/10">
                     <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
@@ -684,7 +689,7 @@ export default function Dashboard() {
                             value={repoUrl} 
                             onChange={(e) => setRepoUrl(e.target.value)} 
                             className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all font-mono shadow-inner" 
-                            placeholder="https://github.com/..."
+                            placeholder="Enter GitHub repository URL"
                         />
                         <button 
                             onClick={handleIngest} 
