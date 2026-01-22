@@ -8,7 +8,7 @@ import {
   RefreshCw, Zap, Search, Terminal, MessageSquare,
   Info, Folder, File, Box, Code, Database, FileCode,
   ChevronRight, ChevronDown, Move, LayoutTemplate,
-  Play, LogOut, User, X
+  Play, LogOut, User, X, HelpCircle, MousePointerClick, Network
 } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
@@ -182,9 +182,29 @@ export default function Dashboard() {
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'assistant' | 'details'>('assistant');
+  const [showHelpGuide, setShowHelpGuide] = useState(false);
 
   const [pathSet, setPathSet] = useState<Set<string>>(new Set());
   const [treeOrientation, setTreeOrientation] = useState<'vertical' | 'horizontal'>('horizontal');
+  
+  // Lazy loading state
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [loadedChildren, setLoadedChildren] = useState<Map<string, GraphData>>(new Map());
+  const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
+  const [nodeChildCounts, setNodeChildCounts] = useState<Map<string, number>>(new Map());
+  
+  // Refs for synchronous checks in event handlers
+  const loadedChildrenRef = useRef<Map<string, GraphData>>(new Map());
+  const loadingNodesRef = useRef<Set<string>>(new Set());
+  
+  // Keep refs in sync with state
+  useEffect(() => {
+    loadedChildrenRef.current = loadedChildren;
+  }, [loadedChildren]);
+  
+  useEffect(() => {
+    loadingNodesRef.current = loadingNodes;
+  }, [loadingNodes]);
 
   // D3 Refs
   const svgRef = useRef<SVGSVGElement>(null);
@@ -197,11 +217,128 @@ export default function Dashboard() {
   // ---------------------------------------------------------------------------
   useEffect(() => { setMounted(true); }, []);
 
-  const hierarchyData = useMemo(() => buildHierarchy(graphData.nodes, graphData.links), [graphData]);
+  // Build hierarchy with lazy loading support
+  const hierarchyData = useMemo(() => {
+    // Merge lazy-loaded nodes into main graph data
+    const allNodes = [...graphData.nodes];
+    const allLinks = [...graphData.links];
+    
+    // Add lazy-loaded nodes and links
+    loadedChildren.forEach((childrenData, nodeId) => {
+      // Add children nodes that aren't already in the graph
+      childrenData.nodes.forEach((childNode: any) => {
+        if (!allNodes.find((n: any) => n.id === childNode.id)) {
+          allNodes.push(childNode);
+        }
+      });
+      // Add children links
+      childrenData.links.forEach((link: any) => {
+        if (!allLinks.find((l: any) => l.source === link.source && l.target === link.target)) {
+          allLinks.push(link);
+        }
+      });
+    });
+    
+    const hierarchy = buildHierarchy(allNodes, allLinks);
+    
+    // Return early if hierarchy is null/undefined
+    if (!hierarchy) {
+      return null;
+    }
+    
+    // Enhance hierarchy with child counts and mark collapsed nodes
+    const enhanceNode = (node: any): any => {
+      // Handle null/undefined nodes
+      if (!node) return null;
+      
+      // Handle both d3.hierarchy structure (node.data) and our custom structure (node.attributes)
+      const nodeData = node.data || node;
+      const nodeId = nodeData?.attributes?.id || nodeData?.id;
+      if (!nodeId) return node;
+      
+      // Ensure node.data exists for d3.hierarchy structure
+      if (!node.data) {
+        node.data = nodeData;
+      }
+      
+      // Mark as collapsed if not expanded (but has children)
+      if (!expandedNodes.has(nodeId) && node.children && node.children.length > 0) {
+        node._children = node.children;
+        node.children = null;
+      }
+      
+      // Add child count metadata
+      const childCount = nodeChildCounts.get(nodeId);
+      if (childCount !== undefined) {
+        node.data._childCount = childCount;
+      } else if (node.children) {
+        node.data._childCount = node.children.length;
+      } else if (node._children) {
+        node.data._childCount = node._children.length;
+      }
+      
+      // Recursively enhance children (filter out nulls)
+      if (node.children && Array.isArray(node.children)) {
+        node.children = node.children
+          .map(enhanceNode)
+          .filter((n: any) => n !== null && n !== undefined);
+      }
+      if (node._children && Array.isArray(node._children)) {
+        node._children = node._children
+          .map(enhanceNode)
+          .filter((n: any) => n !== null && n !== undefined);
+      }
+      
+      return node;
+    };
+    
+    return enhanceNode(hierarchy);
+  }, [graphData, expandedNodes, loadedChildren, nodeChildCounts]);
+  
   const parentMap = useMemo(
     () => buildParentMapFromHierarchy(hierarchyData),
     [hierarchyData]
   );
+  
+  // Load children for a node
+  const loadNodeChildren = useCallback(async (nodeId: string) => {
+    // Check if already loading or loaded (using refs for synchronous check)
+    if (loadingNodesRef.current.has(nodeId) || loadedChildrenRef.current.has(nodeId)) {
+      return; // Already loading or loaded
+    }
+    
+    // Mark as loading
+    setLoadingNodes(prev => new Set(prev).add(nodeId));
+    loadingNodesRef.current.add(nodeId);
+    
+    try {
+      const childrenData = await dexApi.expandGraphNode(nodeId);
+      setLoadedChildren(prev => {
+        const newMap = new Map(prev);
+        newMap.set(nodeId, childrenData);
+        loadedChildrenRef.current = newMap; // Update ref
+        return newMap;
+      });
+      
+      // Update child count
+      if (childrenData.nodes.length > 0) {
+        setNodeChildCounts(prev => {
+          const newMap = new Map(prev);
+          newMap.set(nodeId, childrenData.nodes.length);
+          return newMap;
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to load children for node ${nodeId}:`, error);
+    } finally {
+      setLoadingNodes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(nodeId);
+        loadingNodesRef.current = newSet; // Update ref
+        return newSet;
+      });
+    }
+  }, []); // No dependencies needed - using functional updates
 
   // ---------------------------------------------------------------------------
   // API
@@ -403,14 +540,35 @@ export default function Dashboard() {
                     ? `translate(${y},${x})`
                     : `translate(${x},${y})`;
             })
-            .on("click", (event, d: any) => {
+            .on("click", async (event, d: any) => {
                 event.stopPropagation();
+                const nodeId = d.data.attributes?.id || d.data.id;
+                
                 if (d.children) {
+                    // Collapse: hide children
                     d._children = d.children;
                     d.children = null;
+                    setExpandedNodes(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(nodeId);
+                        return newSet;
+                    });
                 } else {
+                    // Expand: show children
                     d.children = d._children;
                     d._children = null;
+                    
+                    // Mark as expanded
+                    setExpandedNodes(prev => {
+                        const newSet = new Set(prev);
+                        newSet.add(nodeId);
+                        return newSet;
+                    });
+                    
+                    // Lazy load children if not already loaded
+                    if (nodeId) {
+                        loadNodeChildren(nodeId);
+                    }
                 }
                 update(d);
             });
@@ -428,11 +586,106 @@ export default function Dashboard() {
             .transition().duration(500)
             .attr("r", (d: any) => d.data.attributes.type === 'root' ? 8 : 5);
 
+        // Add Expand/Collapse Indicator (Chevron)
+        const hasChildren = (d: any) => d.children || d._children || d.data._childCount > 0;
+        const isExpanded = (d: any) => d.children && d.children.length > 0;
+        
+        nodeEnter.filter(hasChildren)
+            .append("text")
+            .attr("class", "expand-indicator")
+            .attr("dy", "0.31em")
+            .attr("x", (d: any) => {
+                const offset = treeOrientation === 'horizontal' ? -25 : -15;
+                return offset;
+            })
+            .attr("text-anchor", "middle")
+            .text((d: any) => isExpanded(d) ? "▼" : "▶")
+            .style("fill", "#64748b")
+            .style("font-size", "10px")
+            .style("font-family", "system-ui")
+            .style("pointer-events", "none")
+            .style("fill-opacity", 0)
+            .transition().duration(500)
+            .style("fill-opacity", 1);
+        
+        // Add Child Count Badge for nodes with many children
+        nodeEnter.filter((d: any) => {
+            const count = d.data._childCount || (d.children ? d.children.length : 0);
+            return count > 5; // Show badge if more than 5 children
+        })
+            .append("circle")
+            .attr("class", "child-count-badge")
+            .attr("r", 8)
+            .attr("cx", (d: any) => {
+                const offset = treeOrientation === 'horizontal' ? -35 : -25;
+                return offset;
+            })
+            .attr("cy", 0)
+            .attr("fill", "#3b82f6")
+            .attr("stroke", "#1e40af")
+            .attr("stroke-width", 1)
+            .style("opacity", 0)
+            .transition().duration(500)
+            .style("opacity", 0.8);
+        
+        nodeEnter.filter((d: any) => {
+            const count = d.data._childCount || (d.children ? d.children.length : 0);
+            return count > 5;
+        })
+            .append("text")
+            .attr("class", "child-count-text")
+            .attr("x", (d: any) => {
+                const offset = treeOrientation === 'horizontal' ? -35 : -25;
+                return offset;
+            })
+            .attr("y", 4)
+            .attr("text-anchor", "middle")
+            .text((d: any) => {
+                const count = d.data._childCount || (d.children ? d.children.length : 0);
+                return count > 99 ? "99+" : count.toString();
+            })
+            .style("fill", "#fff")
+            .style("font-size", "8px")
+            .style("font-weight", "bold")
+            .style("font-family", "system-ui")
+            .style("pointer-events", "none")
+            .style("opacity", 0)
+            .transition().duration(500)
+            .style("opacity", 1);
+        
+        // Add Loading Indicator
+        nodeEnter.filter((d: any) => {
+            const nodeId = d.data.attributes?.id || d.data.id;
+            return loadingNodes.has(nodeId);
+        })
+            .append("circle")
+            .attr("class", "loading-indicator")
+            .attr("r", 3)
+            .attr("cx", (d: any) => {
+                const offset = treeOrientation === 'horizontal' ? -25 : -15;
+                return offset;
+            })
+            .attr("cy", 0)
+            .attr("fill", "#10b981")
+            .style("opacity", 0.6);
+        
+        // Update loading indicators for existing nodes
+        nodeGroup.merge(nodeEnter as any).selectAll(".loading-indicator")
+            .style("opacity", (d: any) => {
+                const nodeId = d.data.attributes?.id || d.data.id;
+                return loadingNodes.has(nodeId) ? 0.6 : 0;
+            });
+        
         // Add Text
         nodeEnter.append("text")
             .attr("dy", "0.31em")
-            .attr("x", (d: any) => d.children || d._children ? -10 : 10)
-            .attr("text-anchor", (d: any) => d.children || d._children ? "end" : "start")
+            .attr("x", (d: any) => {
+                if (hasChildren(d)) {
+                    return treeOrientation === 'horizontal' ? 10 : 15;
+                }
+                return treeOrientation === 'horizontal' ? 10 : 15;
+            })
+            .attr("text-anchor", "start")
             .text((d: any) => d.data.name)
             .style("fill-opacity", 0)
             .style("font-size", "12px")
@@ -548,13 +801,13 @@ export default function Dashboard() {
         }
     };
 
-    // Initial Update
-    if(root) {
+    // Initial Update (only if root exists and is valid)
+    if(root && root.data) {
         centerTree();
         update(root);
     }
 
-  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeClick, centerTree]);
+  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeClick, centerTree, loadNodeChildren, loadingNodes]);
 
 
   if (!mounted) return null;
@@ -625,6 +878,29 @@ export default function Dashboard() {
             background-image: linear-gradient(to right, rgba(99, 102, 241, 0.03) 1px, transparent 1px),
                             linear-gradient(to bottom, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
             mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+        }
+        
+        /* Help Guide Animations */
+        @keyframes fade-in {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        @keyframes fade-in-scale {
+            0% { opacity: 0; transform: scale(0.95); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+        .animate-fade-in {
+            animation: fade-in 0.3s ease-out forwards;
+        }
+        .animate-fade-in-scale {
+            animation: fade-in-scale 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+        .animate-pulse-glow {
+            animation: pulse-glow 3s ease-in-out infinite;
         }
       `}} />
 
@@ -864,6 +1140,155 @@ export default function Dashboard() {
             </div>
         )}
       </aside>
+
+      {/* Help Guide Button - Floating */}
+      <button
+        onClick={() => setShowHelpGuide(true)}
+        className="fixed bottom-6 right-6 z-50 group"
+        title="Show Help Guide"
+      >
+        <div className="relative">
+          {/* Glow effect */}
+          <div className="absolute inset-0 bg-indigo-500/30 rounded-full blur-xl group-hover:bg-indigo-500/50 transition-all animate-pulse-glow"></div>
+          {/* Button */}
+          <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-indigo-600/90 to-purple-600/90 border-2 border-indigo-400/50 shadow-[0_0_20px_rgba(99,102,241,0.5)] flex items-center justify-center hover:scale-110 transition-all duration-300 hover:shadow-[0_0_30px_rgba(99,102,241,0.8)] backdrop-blur-sm">
+            <HelpCircle size={24} className="text-white group-hover:rotate-12 transition-transform" />
+          </div>
+          {/* Pulse ring */}
+          <div className="absolute inset-0 rounded-full border-2 border-indigo-400/30 animate-ping"></div>
+        </div>
+      </button>
+
+      {/* Help Guide Modal */}
+      {showHelpGuide && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+          onClick={() => setShowHelpGuide(false)}
+        >
+          <div 
+            className="relative w-full max-w-2xl rounded-2xl border border-indigo-500/30 bg-[#0a0a0a]/95 backdrop-blur-xl shadow-2xl overflow-hidden animate-fade-in-scale"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="relative px-6 py-4 border-b border-indigo-500/20 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 backdrop-blur-sm">
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/5 to-transparent"></div>
+              <div className="relative flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+                    <HelpCircle size={20} className="text-indigo-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Interactive Guide</h2>
+                    <p className="text-xs text-slate-400">Learn how to navigate the codebase</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowHelpGuide(false)}
+                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white transition-all"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {/* Expand/Collapse Section */}
+              <div className="p-5 rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-500/5 to-transparent hover:border-indigo-500/40 transition-all group">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
+                    <ChevronRight size={24} className="text-indigo-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                      <MousePointerClick size={16} className="text-indigo-400" />
+                      Expand & Collapse Nodes
+                    </h3>
+                    <p className="text-sm text-slate-300 leading-relaxed mb-3">
+                      Click on any node in the dependency tree to expand or collapse it. Nodes with children show a chevron indicator (▶ for collapsed, ▼ for expanded).
+                    </p>
+                    <div className="mt-3 p-3 rounded-lg bg-black/40 border border-white/5 font-mono text-xs text-slate-400">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-indigo-400">▶</span>
+                        <span>Collapsed node (click to expand)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-indigo-400">▼</span>
+                        <span>Expanded node (click to collapse)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Inspect Node Section */}
+              <div className="p-5 rounded-xl border border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-transparent hover:border-purple-500/40 transition-all group">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-lg bg-purple-500/20 flex items-center justify-center border border-purple-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
+                    <Network size={24} className="text-purple-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                      <Search size={16} className="text-purple-400" />
+                      Inspect Node & View Path
+                    </h3>
+                    <p className="text-sm text-slate-300 leading-relaxed mb-3">
+                      Click on any node to select it and view its details. The selected node will be highlighted, and its complete path from the root will be displayed in the dependency tree.
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      <div className="p-3 rounded-lg bg-black/40 border border-white/5">
+                        <div className="text-xs text-slate-400 mb-1">What happens when you click:</div>
+                        <ul className="text-xs text-slate-300 space-y-1 ml-4 list-disc">
+                          <li>Node is highlighted with a white border</li>
+                          <li>Path to root is illuminated in the tree</li>
+                          <li>Node details appear in the "Details" tab</li>
+                          <li>You can chat about the node using "Chat About Node"</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Additional Tips */}
+              <div className="p-5 rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-transparent">
+                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                  <Zap size={14} className="text-emerald-400" />
+                  Pro Tips
+                </h3>
+                <div className="space-y-2 text-xs text-slate-300">
+                  <div className="flex items-start gap-2">
+                    <span className="text-emerald-400 mt-0.5">•</span>
+                    <span>Use the <span className="text-white font-mono">Center</span> button to reset the tree view</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-emerald-400 mt-0.5">•</span>
+                    <span>Switch between <span className="text-white font-mono">Vertical</span> and <span className="text-white font-mono">Horizontal</span> tree orientations</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-emerald-400 mt-0.5">•</span>
+                    <span>Click on empty space to deselect nodes and clear the path</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-emerald-400 mt-0.5">•</span>
+                    <span>Use the <span className="text-white font-mono">Assistant</span> tab to ask questions about your codebase</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-indigo-500/20 bg-[#0a0a0a]/50 backdrop-blur-sm">
+              <button
+                onClick={() => setShowHelpGuide(false)}
+                className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold uppercase tracking-wider transition-all shadow-lg hover:shadow-indigo-500/50"
+              >
+                Got it!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- GRAPH AREA --- */}
       <main className="flex-1 min-w-0 relative bg-[#050505] cursor-move overflow-hidden" ref={treeContainer}>

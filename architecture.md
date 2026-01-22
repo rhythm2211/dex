@@ -106,18 +106,34 @@ DEX (Developer Experience) is a codebase intelligence platform that combines sem
 
 ### 3. **Ingestion Service** (`/app/backend/app/services/ingestion_service.py`)
 - **Purpose**: Process repositories and build knowledge base
+- **Key Features**:
+  - **Multi-Language Support**: Processes 80+ file types across major programming languages
+  - **Language-Aware Chunking**: Uses language-specific text splitters for optimal code segmentation
+  - **Intelligent Cloning**: Timeout detection, progress tracking, and stuck operation handling
+  - **Git Integration**: Full history analysis with bus factor risk scoring and line-level blame
 - **Workflow**:
-  1. **Clone Repository**: If URL provided, clone to temp directory
-  2. **Git History Analysis**: Extract commit timeline and file metadata
-  3. **AST Parsing**: For each Python file:
-     - Extract classes, functions, imports
-     - Build dependency graph
+  1. **Clone Repository**: 
+     - If URL provided, clone to temp directory with full history
+     - Progress tracking with timeout detection (10 min total, 2 min progress timeout)
+     - Git configuration for network timeouts and large repositories
+     - Automatic cleanup on errors/timeouts
+  2. **Git History Analysis**: 
+     - Extract commit timeline across all branches
+     - Calculate bus factor risk scores per file
+     - Track file-level metadata (authors, commit counts, last modified)
+     - Generate ownership and collaboration patterns
+  3. **Multi-Language Code Parsing**: 
+     - **Python**: Full AST parsing for classes, functions, imports
+     - **Other Languages**: Regex-based structure extraction (JavaScript, TypeScript, Java, C/C++, Go, Rust, Ruby, PHP, etc.)
+     - Extract classes, functions, methods, imports/dependencies
+     - Build dependency graph with language-specific import resolution
      - Stream nodes/edges to Neo4j
-  4. **Vector Embedding**: 
-     - Split code into chunks
-     - Generate embeddings (HuggingFace)
-     - Index in PostgreSQL (pgvector)
-  5. **Status Updates**: Progress tracking for frontend polling
+  4. **Language-Specific Vector Embedding**: 
+     - Use appropriate text splitter for each file type
+     - Split code into semantically meaningful chunks
+     - Generate embeddings (HuggingFace sentence-transformers/all-MiniLM-L6-v2)
+     - Index in PostgreSQL (pgvector) with file type metadata
+  5. **Status Updates**: Real-time progress tracking for frontend polling with detailed breakdowns
 
 ### 4. **RAG Service** (`/app/backend/app/services/rag_service.py`)
 - **Purpose**: Answer natural language queries about codebase
@@ -130,11 +146,20 @@ DEX (Developer Experience) is a codebase intelligence platform that combines sem
   4. **Response Format**: Markdown-formatted technical explanation
 
 ### 5. **Graph Engine** (`/app/backend/app/domain/graph_engine.py`)
-- **Purpose**: Manage Neo4j graph database operations
+- **Purpose**: Manage Neo4j graph database operations with multi-language support
+- **Key Features**:
+  - **Language Detection**: Automatic language detection from file extensions
+  - **Multi-Language Parsing**: Python AST + regex-based extraction for other languages
+  - **Ownership Tracking**: Line-level git blame integration for function/class ownership
+  - **Collaboration Analysis**: Track multiple authors per code unit
 - **Key Operations**:
-  - `extract_and_build()`: Parse AST and create nodes/edges
-  - `upsert_node()`: Stream node to Neo4j
-  - `upsert_edge()`: Create relationships (DEPENDS_ON, CONTAINS, etc.)
+  - `extract_and_build()`: Parse code structure (AST for Python, regex for others) and create nodes/edges
+  - `_detect_language()`: Identify programming language from file extension
+  - `_extract_structure_regex()`: Extract classes, functions, imports using language-specific patterns
+  - `_resolve_import_path()`: Resolve import paths for different languages
+  - `_calculate_function_owner()`: Determine function ownership from git blame data
+  - `upsert_node()`: Stream node to Neo4j with ownership and metadata
+  - `upsert_edge()`: Create relationships (DEPENDS_ON, CONTAINS, DEFINES, IMPORTS)
   - `get_full_graph()`: Fetch graph for visualization
   - `get_impact_subgraph()`: Find upstream dependencies
   - `get_neighbors()`: Lazy load node children
@@ -167,14 +192,39 @@ Background Task: run_ingestion_sequence()
     ├─► IngestionService.process_repository()
     │   │
     │   ├─► Clone repo (if URL)
+    │   │   ├─► Validate repository URL
+    │   │   ├─► Clone with progress tracking
+    │   │   ├─► Timeout detection (10 min total, 2 min progress)
+    │   │   └─► Git config for network timeouts
+    │   │
     │   ├─► Analyze Git history → repo_history.json
-    │   ├─► For each Python file:
-    │   │   ├─► Parse AST (CodeStructureVisitor)
-    │   │   ├─► Extract nodes (files, classes, functions)
-    │   │   ├─► Extract edges (imports, contains)
-    │   │   └─► Stream to Neo4j (GraphEngine.upsert_node/edge)
+    │   │   ├─► Process all branches and refs
+    │   │   ├─► Calculate bus factor risk scores
+    │   │   ├─► Track file-level metadata (authors, commits, dates)
+    │   │   └─► Generate collaboration patterns
+    │   │
+    │   ├─► Scan repository for code files
+    │   │   ├─► Support 80+ file extensions
+    │   │   ├─► Code files: Python, JS/TS, Java, C/C++, Go, Rust, Ruby, PHP, etc.
+    │   │   ├─► Web files: HTML, CSS, Vue, Svelte
+    │   │   ├─► Data files: JSON, YAML, TOML
+    │   │   ├─► Documentation: Markdown, RST, Text
+    │   │   └─► Config files: Docker, Git, package managers
+    │   │
+    │   ├─► For each file:
+    │   │   ├─► Detect language from extension
+    │   │   ├─► Parse structure:
+    │   │   │   ├─► Python: AST parsing (CodeStructureVisitor)
+    │   │   │   └─► Others: Regex-based extraction
+    │   │   ├─► Get git blame (for code files)
+    │   │   ├─► Extract nodes (files, classes, functions, methods)
+    │   │   ├─► Extract edges (imports, contains, defines)
+    │   │   └─► Stream to Neo4j with ownership metadata
     │   │
     │   └─► Generate embeddings → PostgreSQL/pgvector
+    │       ├─► Use language-specific text splitter
+    │       ├─► Create semantically meaningful chunks
+    │       └─► Batch insert with metadata
     │
     └─► RAGService.reload_knowledge_base()
         └─► HybridRetriever.reload_graph() (no-op for Neo4j)
@@ -258,17 +308,22 @@ GraphEngine.get_impact_subgraph()
 ## Data Stores
 
 ### 1. **Neo4j (Graph Database)**
-- **Purpose**: Store code structure and dependencies
+- **Purpose**: Store code structure and dependencies with ownership tracking
 - **Schema**:
   - **Nodes**: `CodeNode` with properties:
     - `id`: Unique identifier (file path or `file::class::function`)
     - `name`: Display name
     - `type`: file, class, function, module
-    - `last_author`: Git blame metadata
+    - `last_author`: Git blame metadata (most recent author)
     - `last_modified`: Timestamp
     - `commit_count`: Churn metric
+    - `bus_risk_score`: Risk score (0.0-1.0) indicating single-author dependency
+    - `top_owner`: Primary author (highest commit count)
+    - `collaborators`: List of all authors who contributed
+    - `start_line`, `end_line`: Line numbers for functions/classes (for blame mapping)
   - **Relationships**:
-    - `DEPENDS_ON`: Import relationships
+    - `DEPENDS_ON`: Import/dependency relationships (cross-language support)
+    - `IMPORTS`: Direct import relationships
     - `CONTAINS`: File contains class/function
     - `DEFINES`: Scope hierarchy
 
@@ -316,12 +371,13 @@ GraphEngine.get_impact_subgraph()
 
 ### Backend
 - **FastAPI**: Python web framework
-- **LangChain**: LLM orchestration
+- **LangChain**: LLM orchestration with language-specific text splitters
 - **Groq**: LLM provider (Llama 3.3 70B)
-- **HuggingFace**: Embedding models
-- **PostgreSQL + pgvector**: Vector database (replaces Pinecone)
-- **Neo4j**: Graph database
-- **GitPython**: Repository cloning
+- **HuggingFace**: Embedding models (sentence-transformers/all-MiniLM-L6-v2)
+- **PostgreSQL + pgvector**: Vector database with HNSW indexing
+- **Neo4j**: Graph database (cloud or self-hosted)
+- **GitPython**: Repository cloning with progress tracking
+- **tree-sitter** (optional): Multi-language parsing (fallback to regex)
 - **SQLAlchemy**: ORM for SQLite
 - **psycopg**: PostgreSQL adapter for Python
 
@@ -382,16 +438,99 @@ INTERNAL_API_URL=http://dex-backend:8000  # Docker internal
 1. **Streaming**: Graph nodes streamed to Neo4j (no RAM accumulation)
 2. **Lazy Loading**: Graph expansion on-demand (`/graph/expand`)
 3. **Pagination**: Graph queries limited to 2000-2500 nodes
-4. **Background Tasks**: Ingestion runs asynchronously
+4. **Background Tasks**: Ingestion runs asynchronously with progress tracking
 5. **Caching**: Vector store and graph DB serve as caches
 6. **Batch Processing**: Vector embeddings uploaded in batches of 100
 7. **pgvector Indexing**: HNSW index enables fast approximate nearest neighbor search
+8. **Language-Specific Splitting**: Optimal chunking per language improves retrieval quality
+9. **Timeout Management**: Prevents hanging operations with configurable timeouts
+10. **Progress Monitoring**: Real-time progress updates with file type breakdowns
+11. **Efficient File Scanning**: Parallel file type detection and loading
+
+## Supported Languages & File Types
+
+### Programming Languages (80+ file types)
+- **Python**: `.py`, `.pyw`, `.pyi`, `.pyx`
+- **JavaScript/TypeScript**: `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.d.ts`
+- **Java Ecosystem**: `.java`, `.kt`, `.kts`, `.scala`
+- **C/C++**: `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hxx`, `.hh`
+- **C#**: `.cs`, `.csx`
+- **Go**: `.go`
+- **Rust**: `.rs`
+- **Ruby**: `.rb`, `.rake`, `.rbw`
+- **PHP**: `.php`, `.phtml`, `.php3`, `.php4`, `.php5`
+- **Swift**: `.swift`
+- **Objective-C**: `.m`, `.mm`
+- **R**: `.r`, `.R`
+- **Lua**: `.lua`
+- **Perl**: `.pl`, `.pm`, `.t`
+- **Shell**: `.sh`, `.bash`, `.zsh`, `.fish`, `.ksh`
+- **SQL**: `.sql`
+- **Other**: Dart, Elm, Elixir, Clojure, Haskell, OCaml, Vim, Lisp, Julia, Nim, Crystal, D, Pascal, VB, Verilog, SystemVerilog
+
+### Web Technologies
+- **HTML**: `.html`, `.htm`, `.xhtml`
+- **CSS**: `.css`, `.scss`, `.sass`, `.less`, `.styl`
+- **Frameworks**: `.vue`, `.svelte`
+- **XML**: `.xml`, `.xsl`, `.xslt`
+
+### Data Formats
+- **JSON**: `.json`, `.json5`, `.jsonc`
+- **YAML**: `.yaml`, `.yml`
+- **TOML**: `.toml`
+- **Config**: `.ini`, `.cfg`, `.conf`
+- **Data**: `.csv`, `.tsv`
+
+### Documentation
+- **Markdown**: `.md`, `.markdown`, `.mdown`, `.mkdn`
+- **Text**: `.txt`, `.text`
+- **RST**: `.rst`
+- **AsciiDoc**: `.adoc`, `.asciidoc`
+
+### Configuration Files
+- **Docker**: `.dockerfile`, `.dockerignore`
+- **Git**: `.gitignore`, `.gitattributes`
+- **Environment**: `.env`, `.env.example`
+- **Build Systems**: `.makefile`, `.mk`, `.cmake`, `.gradle`, `.maven`, `.pom`
+- **Package Managers**: `.package.json`, `.package-lock.json`, `.requirements.txt`, `.gemfile`, `.cargo.toml`, `.composer.json`, `.pubspec.yaml`
+
+## Language-Specific Features
+
+### Python
+- Full AST parsing for accurate structure extraction
+- Complete import resolution
+- Class and function hierarchy tracking
+
+### JavaScript/TypeScript
+- Class and function extraction
+- ES6+ syntax support (arrow functions, async/await)
+- Import/require statement tracking
+- Module system support (CommonJS, ES modules)
+
+### Java/Kotlin/Scala
+- Class and method extraction
+- Package import resolution
+- Access modifier awareness
+
+### C/C++
+- Class/struct extraction
+- Function and method detection
+- Include dependency tracking
+
+### Other Languages
+- Regex-based structure extraction
+- Language-specific import/dependency patterns
+- Fallback to generic text processing for unknown languages
 
 ## Future Enhancements
 
-1. **Multi-language Support**: Currently Python-only, expand to TypeScript, Go, etc.
+1. **Tree-sitter Integration**: Full AST parsing for all supported languages (currently regex fallback)
 2. **Incremental Updates**: Support partial re-indexing on file changes
 3. **Webhook Integration**: Auto-trigger ingestion on GitHub pushes
 4. **Multi-repository**: Support multiple repos per user
 5. **Collaboration**: Share graphs and queries with team
 6. **Advanced Analytics**: Code quality metrics, dependency health scores
+7. **Language-Specific Optimizations**: Custom parsing strategies per language
+8. **Real-time Updates**: WebSocket-based progress updates
+9. **Repository Templates**: Pre-configured ingestion profiles for common project types
+10. **Code Quality Scoring**: Automated code quality and maintainability metrics

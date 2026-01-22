@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from backend.app.services.ingestion_service import IngestionService
 from backend.app.services.rag_service import RAGService
 from backend.app.api.v1.endpoints.users import router as users_router
+from backend.app.api.v1.endpoints.health import router as health_router
 
 logger = logging.getLogger("dex-core")
 
@@ -17,6 +18,9 @@ api_router = APIRouter()
 
 # Include user routes
 api_router.include_router(users_router, tags=["users"])
+
+# Include health routes
+api_router.include_router(health_router, prefix="/health", tags=["health"])
 
 # --- Singleton Services (Lazy Initialization) ---
 # Initialize services lazily to avoid blocking on startup
@@ -132,6 +136,19 @@ def get_impact_graph(file_id: str = Query(..., description="The file ID (path) t
         return ingestion_service.graph_engine.get_impact_subgraph(file_id)
     except Exception as e:
         logger.error(f"Neo4j Impact Query Error: {e}")
+        return {"nodes": [], "links": []}
+
+@api_router.get("/graph/expand")
+def expand_graph_node(node_id: str = Query(..., description="The node ID to expand and load children for")):
+    """
+    LAZY LOADING: Fetches immediate children/neighbors of a node.
+    Used when a user expands a node in the graph visualization.
+    """
+    try:
+        ingestion_service = get_ingestion_service()
+        return ingestion_service.graph_engine.get_neighbors(node_id)
+    except Exception as e:
+        logger.error(f"Neo4j Expand Query Error: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/git/history")

@@ -64,7 +64,7 @@ class RAGService:
             }
         
         # 4. Deep Tech Prompt (The "Architect" Persona)
-        # [UPDATED] Added specific instructions for Social/Risk data
+        # [UPDATED] Added specific instructions for Social/Risk data and Person queries
         prompt = ChatPromptTemplate.from_template(
             """You are a Senior Software Architect and Team Lead reviewing a codebase.
             
@@ -84,8 +84,16 @@ class RAGService:
             - **CRITICAL:** Look at PART 2 for 'Owner' and 'Risk Score' metadata. 
               - If an 'Owner' is listed, mention them (e.g., "This module is primarily maintained by Alice").
               - If 'Risk Score' is high (>0.7), warn the user about stability issues.
+            - **PERSON QUERIES:** If the question is about what a person is working on:
+              - Focus on PART 2 which contains detailed information about their contributions
+              - List the specific files, modules, or components they own or contribute to
+              - Mention their role (PRIMARY OWNER, LAST AUTHOR, or COLLABORATOR) for each item
+              - Include commit counts and last modified dates when available
+              - Summarize their main areas of work and responsibilities
+              - If PART 2 shows "No work found", say so clearly instead of making up information
             - Synthesize all technical and social context into a coherent answer.
             - Do not mention "Part 1" or "Part 2" in your final answer.
+            - If you don't have enough information, say so clearly rather than speculating.
             
             Provide a technical, markdown-formatted response."""
         )

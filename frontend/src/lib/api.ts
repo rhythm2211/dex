@@ -96,6 +96,38 @@ export interface ActiveZonesResponse {
   msg?: string;
 }
 
+// [NEW] Health Dashboard Interfaces
+export interface CycleDetected {
+  cycle_path: string[];
+  depth: number;
+}
+
+export interface GodObject {
+  name: string;
+  fan_in: number;
+  fan_out: number;
+  complexity_score: number;
+  type?: string;
+  bus_risk_score?: number;
+}
+
+export interface OrphanNode {
+  name: string;
+  path?: string;
+  last_modified?: string;
+  type?: string;
+}
+
+export interface HealthSummary {
+  score: number; // 0-100
+  total_files: number;
+  critical_issues: number;
+  cycles_count: number;
+  god_objects_count: number;
+  orphans_count: number;
+  bus_factor_risk: number; // Average bus risk score
+}
+
 // --- The Singleton Client ---
 class DexClient {
   private client: AxiosInstance;
@@ -270,6 +302,64 @@ class DexClient {
     } catch (error: any) {
       console.error("Active Zones Failure:", error?.message);
       return { zones: [] };
+    }
+  }
+
+  // [NEW] 11. Health Dashboard APIs
+  public async getHealthSummary(): Promise<HealthSummary> {
+    try {
+      const res: AxiosResponse<HealthSummary> = await this.client.get('/health/summary', {
+        timeout: 60000, // 60 seconds for health analysis (optimized queries should be faster)
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("Health Summary Failure:", error?.message);
+      // Return default values on error
+      return {
+        score: 0,
+        total_files: 0,
+        critical_issues: 0,
+        cycles_count: 0,
+        god_objects_count: 0,
+        orphans_count: 0,
+        bus_factor_risk: 0.0,
+      };
+    }
+  }
+
+  public async getCircularDependencies(): Promise<CycleDetected[]> {
+    try {
+      const res: AxiosResponse<CycleDetected[]> = await this.client.get('/health/cycles', {
+        timeout: 60000,
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("Circular Dependencies Failure:", error?.message);
+      return [];
+    }
+  }
+
+  public async getGodObjects(): Promise<GodObject[]> {
+    try {
+      const res: AxiosResponse<GodObject[]> = await this.client.get('/health/risks', {
+        timeout: 60000,
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("God Objects Failure:", error?.message);
+      return [];
+    }
+  }
+
+  public async getOrphanNodes(): Promise<OrphanNode[]> {
+    try {
+      const res: AxiosResponse<OrphanNode[]> = await this.client.get('/health/orphans', {
+        timeout: 60000,
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("Orphan Nodes Failure:", error?.message);
+      return [];
     }
   }
 }

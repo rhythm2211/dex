@@ -29,6 +29,10 @@ const GlobalStyles = () => (
       0% { transform: translate3d(0, 0, 0); } 
       100% { transform: translate3d(-50%, 0, 0); } 
     }
+    @keyframes marquee { 
+      0% { transform: translate3d(0, 0, 0); } 
+      100% { transform: translate3d(-50%, 0, 0); } 
+    }
     @keyframes scan-line { 
       0% { transform: translate3d(0, 0%, 0); opacity: 0; } 
       10% { opacity: 1; } 
@@ -68,6 +72,23 @@ const GlobalStyles = () => (
       0% { transform: scaleY(0); opacity: 0; }
       100% { transform: scaleY(1); opacity: 1; }
     }
+    @keyframes rotate-slow {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes float-shape {
+      0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+      33% { transform: translate3d(20px, -20px, 0) rotate(120deg); }
+      66% { transform: translate3d(-20px, 20px, 0) rotate(240deg); }
+    }
+    @keyframes pulse-shape {
+      0%, 100% { transform: scale(1); opacity: 0.4; }
+      50% { transform: scale(1.2); opacity: 0.8; }
+    }
+    @keyframes glow-pulse {
+      0%, 100% { opacity: 0.3; filter: blur(40px); }
+      50% { opacity: 0.6; filter: blur(60px); }
+    }
     
     .animate-fade-in { 
       animation: fade-in-up 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards; 
@@ -81,6 +102,11 @@ const GlobalStyles = () => (
     }
     .animate-scroll-left { 
       animation: scroll-left 40s linear infinite;
+      will-change: transform;
+      transform: translate3d(0, 0, 0);
+    }
+    .animate-marquee {
+      animation: marquee 30s linear infinite;
       will-change: transform;
       transform: translate3d(0, 0, 0);
     }
@@ -1214,10 +1240,178 @@ export default function HomePage() {
         </section>
 
         {/* ===========================================================================
-            ZONE 4: FINAL CTA
+            ZONE 3.6: GITHUB SHAPE EMERGING FROM LEFT
         ============================================================================ */}
-        <section className="mx-auto max-w-4xl px-6 pb-24 pt-10">
-          <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#0F0F10] p-12 text-center group hover-lift">
+        <section className="mx-auto max-w-6xl px-6 py-16 relative overflow-hidden">
+          <div className="relative">
+            {/* GitHub Shape Emerging from Left */}
+            <div className="relative flex items-center gap-8">
+              {/* GitHub Octocat Shape (Left Side) */}
+              <div className="flex-shrink-0 relative z-10">
+                <div className="relative w-32 h-32 md:w-40 md:h-40 lg:w-48 lg:h-48">
+                  {/* GitHub Octocat SVG Shape */}
+                  <svg 
+                    viewBox="0 0 24 24" 
+                    className="w-full h-full text-slate-200 opacity-90"
+                    fill="currentColor"
+                  >
+                    {/* Simplified GitHub Octocat shape */}
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                  
+                  {/* Glow effect */}
+                  <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full -z-10 animate-pulse-glow"></div>
+                  
+                  {/* Animated particles around GitHub */}
+                  <div className="absolute -top-2 -right-2 w-3 h-3 bg-indigo-400 rounded-full animate-pulse"></div>
+                  <div className="absolute -bottom-2 -left-2 w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-300"></div>
+                  <div className="absolute top-1/2 -left-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse delay-500"></div>
+                </div>
+              </div>
+
+              {/* Content Area */}
+              <div className="flex-1 relative z-10">
+                <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-sm p-8 md:p-10">
+                  {/* Header */}
+                  <div className="flex items-center gap-3 mb-6">
+                    <Github size={20} className="text-indigo-400" />
+                    <h3 className="text-2xl font-semibold text-white">Seamless GitHub Integration</h3>
+                  </div>
+
+                  {/* Content Grid */}
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                          <GitBranch size={16} className="text-indigo-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-white mb-1">Branch Tracking</h4>
+                          <p className="text-xs text-slate-400">Monitor all branches, track merges, and visualize your repository structure in real-time.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                          <GitCommit size={16} className="text-emerald-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-white mb-1">Commit Analysis</h4>
+                          <p className="text-xs text-slate-400">Analyze commit patterns, identify hotspots, and understand code evolution over time.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                          <GitMerge size={16} className="text-purple-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-white mb-1">Merge Intelligence</h4>
+                          <p className="text-xs text-slate-400">Detect merge conflicts, track PR status, and visualize code changes before merging.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                        <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                          <Code size={16} className="text-yellow-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-white mb-1">Code Insights</h4>
+                          <p className="text-xs text-slate-400">Get AI-powered insights on code quality, dependencies, and potential improvements.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stats Bar */}
+                  <div className="mt-8 pt-6 border-t border-white/5 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-6">
+                      <div>
+                        <div className="text-xs text-slate-500 mb-1">Repositories</div>
+                        <div className="text-xl font-bold text-white">24</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 mb-1">Total Commits</div>
+                        <div className="text-xl font-bold text-white">1.2K</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 mb-1">Active PRs</div>
+                        <div className="text-xl font-bold text-white">8</div>
+                      </div>
+                    </div>
+                    <Link 
+                      href="/app" 
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors"
+                    >
+                      Connect Repository
+                      <ArrowRight size={14} />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Background Decoration - Extending from left */}
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -z-0"></div>
+            <div className="absolute left-20 top-1/2 -translate-y-1/2 w-48 h-48 bg-purple-500/10 rounded-full blur-2xl -z-0"></div>
+          </div>
+        </section>
+
+        {/* ===========================================================================
+            ZONE 4: FINAL CTA WITH ANIMATED BACKGROUND
+        ============================================================================ */}
+        <section className="mx-auto max-w-4xl px-6 pb-24 pt-10 relative">
+          {/* Animated Background Effects - Behind Container */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
+            {/* Large Glowing Orbs */}
+            <div className="absolute top-1/2 left-1/4 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl animate-[glow-pulse_4s_ease-in-out_infinite]" style={{ transform: 'translate(-50%, -50%)' }}></div>
+            <div className="absolute top-1/2 right-1/4 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl animate-[glow-pulse_5s_ease-in-out_infinite_1s]" style={{ transform: 'translate(50%, -50%)' }}></div>
+            <div className="absolute top-1/2 left-1/2 w-72 h-72 bg-pink-500/15 rounded-full blur-3xl animate-[glow-pulse_6s_ease-in-out_infinite_2s]" style={{ transform: 'translate(-50%, -50%)' }}></div>
+            
+            {/* Animated Geometric Shapes */}
+            {/* Hexagon */}
+            <div className="absolute top-1/4 left-1/3 w-32 h-32 opacity-20" style={{ animation: 'rotate-slow 20s linear infinite' }}>
+              <svg viewBox="0 0 100 100" className="w-full h-full text-indigo-400">
+                <polygon points="50,5 90,25 90,75 50,95 10,75 10,25" fill="currentColor" opacity="0.3" />
+              </svg>
+            </div>
+            
+            {/* Rotating Circle */}
+            <div className="absolute bottom-1/4 right-1/3 w-24 h-24 border-2 border-purple-400/30 rounded-full animate-[pulse-shape_3s_ease-in-out_infinite]"></div>
+            
+            {/* Floating Triangle */}
+            <div className="absolute top-1/3 right-1/4 w-20 h-20 opacity-20" style={{ animation: 'float-shape 8s ease-in-out infinite' }}>
+              <svg viewBox="0 0 100 100" className="w-full h-full text-pink-400">
+                <polygon points="50,10 90,90 10,90" fill="currentColor" opacity="0.3" />
+              </svg>
+            </div>
+            
+            {/* Pulsing Diamond */}
+            <div className="absolute bottom-1/3 left-1/4 w-16 h-16 opacity-20" style={{ animation: 'pulse-shape 4s ease-in-out infinite 1s' }}>
+              <svg viewBox="0 0 100 100" className="w-full h-full text-emerald-400">
+                <polygon points="50,0 100,50 50,100 0,50" fill="currentColor" opacity="0.3" />
+              </svg>
+            </div>
+            
+            {/* Rotating Square */}
+            <div className="absolute top-1/2 left-1/5 w-28 h-28 opacity-15" style={{ animation: 'rotate-slow 15s linear infinite reverse' }}>
+              <svg viewBox="0 0 100 100" className="w-full h-full text-indigo-400">
+                <rect x="20" y="20" width="60" height="60" fill="currentColor" opacity="0.3" />
+              </svg>
+            </div>
+            
+            {/* Small Floating Circles */}
+            <div className="absolute top-1/4 right-1/5 w-3 h-3 bg-indigo-400/40 rounded-full animate-[pulse-shape_2s_ease-in-out_infinite]"></div>
+            <div className="absolute bottom-1/4 left-1/5 w-2 h-2 bg-purple-400/40 rounded-full animate-[pulse-shape_2.5s_ease-in-out_infinite_0.5s]"></div>
+            <div className="absolute top-1/2 right-1/6 w-2.5 h-2.5 bg-pink-400/40 rounded-full animate-[pulse-shape_3s_ease-in-out_infinite_1s]"></div>
+          </div>
+
+          {/* Main CTA Container - Hovering Above */}
+          <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#0F0F10] p-12 text-center group hover-lift" style={{ zIndex: 10, transform: 'translate3d(0, 0, 0)' }}>
             
             {/* Hover Glow */}
             <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
