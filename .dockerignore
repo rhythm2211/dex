@@ -1,0 +1,77 @@
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+dist
+build
+.venv
+venv/
+env/
+ENV/
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov
+*.log
+.tox
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+*.txt
+!requirements.txt
+!README.md
+
+# Data files
+*.db
+*.sqlite
+*.sqlite3
+data/
+*.json
+!package.json
+!package-lock.json
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend (not needed for backend build)
+frontend/
+node_modules/
+
+# Backend specific
+app/backend/venv/
+app/backend/.pytest_cache/
+app/backend/data/
+app/backend/*.log
+
+# CI/CD
+.github/
+*.yml
+!docker-compose.yml
+
+# Other
+*.zip
+*.tar.gz
+.cache

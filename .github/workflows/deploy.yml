@@ -43,9 +43,14 @@ jobs:
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
             cd /opt/dex
-            docker compose pull
-            docker compose up -d
-            docker compose ps
+            # Login to GitHub Container Registry
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin || true
+            # Pull latest images
+            docker compose -f docker-compose.prod.yml pull || docker compose pull
+            # Start/restart services
+            docker compose -f docker-compose.prod.yml up -d || docker compose up -d
+            # Show status
+            docker compose -f docker-compose.prod.yml ps || docker compose ps
       
       - name: Health check
         run: |
@@ -72,10 +77,17 @@ jobs:
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
           script: |
             cd /opt/dex
-            docker compose pull
-            docker compose down
-            docker compose up -d
-            docker compose ps
+            # Login to GitHub Container Registry
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin || true
+            # Pull latest images
+            docker compose -f docker-compose.prod.yml pull || docker compose pull
+            # Stop and remove old containers
+            docker compose -f docker-compose.prod.yml down || docker compose down
+            # Start new containers
+            docker compose -f docker-compose.prod.yml up -d || docker compose up -d
+            # Show status
+            docker compose -f docker-compose.prod.yml ps || docker compose ps
+            # Clean up unused images
             docker system prune -f
       
       - name: Health check

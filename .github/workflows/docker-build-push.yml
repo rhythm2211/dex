@@ -84,6 +84,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+          sbom: false
+          provenance: false
       
       - name: Build and push frontend
         if: matrix.image == 'frontend'
@@ -101,6 +103,8 @@ jobs:
             INTERNAL_API_URL=${{ secrets.INTERNAL_API_URL || 'http://backend:8000' }}
             NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL || 'http://localhost:3000' }}
           platforms: linux/amd64,linux/arm64
+          sbom: false
+          provenance: false
       
       # SBOM generation disabled due to disk space issues on GitHub Actions runners
       # Can be enabled later if needed - SBOM is optional and not critical for CI/CD

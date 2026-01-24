@@ -1,0 +1,102 @@
+# Production Docker Compose configuration
+# Uses images from GitHub Container Registry instead of building locally
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: dex-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dex_password}
+      - POSTGRES_DB=${POSTGRES_DB:-dex}
+    ports:
+      - "127.0.0.1:5435:5432"  # Only accessible from localhost
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  backend:
+    # Replace YOUR_USERNAME with your GitHub username
+    image: ghcr.io/YOUR_USERNAME/dex-backend:main
+    container_name: dex-backend
+    env_file:
+      - ./app/.env
+    ports:
+      - "127.0.0.1:8001:8000"  # Only accessible from localhost (Nginx will proxy)
+    networks:
+      - default
+    environment:
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["https://dex.net.in","https://www.dex.net.in"]}
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+    volumes:
+      - ./app/backend/data:/app/backend/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  frontend:
+    # Replace YOUR_USERNAME with your GitHub username
+    image: ghcr.io/YOUR_USERNAME/dex-frontend:main
+    container_name: dex-frontend
+    env_file:
+      - ./frontend/.env.local
+    ports:
+      - "127.0.0.1:3000:3000"  # Only accessible from localhost (Nginx will proxy)
+    networks:
+      - default
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://dex.net.in/api}
+      - INTERNAL_API_URL=${INTERNAL_API_URL:-http://backend:8000}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-https://dex.net.in}
+    depends_on:
+      - backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: dex-network
