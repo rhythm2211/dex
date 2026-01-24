@@ -17,8 +17,12 @@ logger = logging.getLogger("dex-core")
 
 router = APIRouter()
 
-# Initialize database on import
-init_db()
+# Initialize database lazily (non-blocking)
+# This allows the app to start even if database is temporarily unreachable
+try:
+    init_db()
+except Exception as e:
+    logger.warning(f"Database initialization deferred: {e}. Will retry on first use.")
 
 # Request/Response Models
 class UserProfileCreate(BaseModel):

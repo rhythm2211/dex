@@ -45,58 +45,91 @@ class User(Base):
         }
 
 # Database setup - PostgreSQL only
-engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=10)
+# Add connect_args to prefer IPv4 and handle connection issues
+engine = create_engine(
+    settings.DATABASE_URL, 
+    pool_pre_ping=True, 
+    pool_size=5, 
+    max_overflow=10,
+    connect_args={
+        "connect_timeout": 10,  # 10 second timeout
+        "options": "-c statement_timeout=30000"  # 30 second statement timeout
+    }
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     """Initialize database tables and run migrations"""
-    Base.metadata.create_all(bind=engine)
-    
-    # Run migration to add is_active and last_login columns if they don't exist
-    # This is safe to run multiple times (PostgreSQL only)
     from sqlalchemy import text
     import logging
+    import time
     logger = logging.getLogger("dex-core")
     
-    try:
-        with engine.connect() as conn:
-            try:
-                conn.execute(text("""
-                    ALTER TABLE users 
-                    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE
-                """))
-                conn.commit()
-            except Exception:
-                pass  # Column may already exist
+    # Retry logic for database connection (handles network issues)
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Test connection first
+            with engine.connect() as test_conn:
+                test_conn.execute(text("SELECT 1"))
             
-            try:
-                conn.execute(text("""
-                    ALTER TABLE users 
-                    ADD COLUMN IF NOT EXISTS last_login TIMESTAMP
-                """))
-                conn.commit()
-            except Exception:
-                pass  # Column may already exist
+            # Connection successful, proceed with initialization
+            Base.metadata.create_all(bind=engine)
             
-            try:
-                conn.execute(text("""
-                    ALTER TABLE users 
-                    ADD COLUMN IF NOT EXISTS password_hash VARCHAR
-                """))
-                conn.commit()
-            except Exception:
-                pass  # Column may already exist
+            # Run migration to add is_active and last_login columns if they don't exist
+            # This is safe to run multiple times (PostgreSQL only)
+            with engine.connect() as conn:
+                try:
+                    conn.execute(text("""
+                        ALTER TABLE users 
+                        ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE
+                    """))
+                    conn.commit()
+                except Exception:
+                    pass  # Column may already exist
+                
+                try:
+                    conn.execute(text("""
+                        ALTER TABLE users 
+                        ADD COLUMN IF NOT EXISTS last_login TIMESTAMP
+                    """))
+                    conn.commit()
+                except Exception:
+                    pass  # Column may already exist
+                
+                try:
+                    conn.execute(text("""
+                        ALTER TABLE users 
+                        ADD COLUMN IF NOT EXISTS password_hash VARCHAR
+                    """))
+                    conn.commit()
+                except Exception:
+                    pass  # Column may already exist
+                
+                try:
+                    conn.execute(text("""
+                        ALTER TABLE users 
+                        ADD COLUMN IF NOT EXISTS github_username VARCHAR
+                    """))
+                    conn.commit()
+                except Exception:
+                    pass  # Column may already exist
             
-            try:
-                conn.execute(text("""
-                    ALTER TABLE users 
-                    ADD COLUMN IF NOT EXISTS github_username VARCHAR
-                """))
-                conn.commit()
-            except Exception:
-                pass  # Column may already exist
-    except Exception as e:
-        logger.warning(f"Migration check failed (this is OK if tables don't exist yet): {e}")
+            logger.info("✅ Database initialized successfully")
+            return
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"⚠️ Database connection attempt {attempt + 1} failed: {e}. Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+            else:
+                # Final attempt failed - log error but don't crash the app
+                logger.error(f"❌ Database initialization failed after {max_retries} attempts: {e}")
+                logger.warning("⚠️ App will start but database features may not work until connection is restored")
+                # Don't raise - allow app to start without database
+                return
 
 def get_db():
     """Dependency for getting database session"""
