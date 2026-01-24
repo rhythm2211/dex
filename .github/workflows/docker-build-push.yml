@@ -28,6 +28,7 @@ jobs:
     strategy:
       matrix:
         image: [backend, frontend]
+      fail-fast: false
     
     steps:
       - name: Checkout code

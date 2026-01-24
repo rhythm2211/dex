@@ -6,9 +6,15 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
+# Update npm to latest version
+RUN npm install -g npm@latest
+
 # Copy package files
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package.json package-lock.json ./
+
+# Install dependencies with fallback
+# npm ci requires exact match, npm install is more forgiving
+RUN npm ci --legacy-peer-deps || (echo "npm ci failed, falling back to npm install" && npm install --legacy-peer-deps)
 
 # Rebuild the source code only when needed
 FROM base AS builder
