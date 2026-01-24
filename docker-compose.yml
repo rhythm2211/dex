@@ -43,9 +43,10 @@ services:
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:3001","http://localhost:3000","http://frontend:3000"]}
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - DEBUG=${DEBUG:-false}
-      # Override PostgreSQL connection for Docker (use service name)
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
+      # PostgreSQL connection: Use .env file values (Supabase) or override for local postgres service
+      # If POSTGRES_HOST is not set in .env, it will use the local postgres service
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
     volumes:
       - ./app/backend/data:/app/backend/data
     depends_on:

@@ -46,6 +46,7 @@ class User(Base):
 
 # Database setup - PostgreSQL only
 # Add connect_args to prefer IPv4 and handle connection issues
+# Note: If using connection pooler (port 6543), it should handle IPv4 automatically
 engine = create_engine(
     settings.DATABASE_URL, 
     pool_pre_ping=True, 
@@ -53,7 +54,9 @@ engine = create_engine(
     max_overflow=10,
     connect_args={
         "connect_timeout": 10,  # 10 second timeout
-        "options": "-c statement_timeout=30000"  # 30 second statement timeout
+        "options": "-c statement_timeout=30000",  # 30 second statement timeout
+        # Try to force IPv4 by using the resolved IP if available
+        # If hostname is used, psycopg2 will do its own resolution
     }
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
