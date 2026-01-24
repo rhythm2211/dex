@@ -1,5 +1,6 @@
 import os
 import logging
+import socket
 from typing import List, Union, Optional
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -78,13 +79,32 @@ class Settings(BaseSettings):
             warnings.warn("GROQ_API_KEY is not set. RAG queries will fail!")
         return v
     
+    def _resolve_ipv4_host(self, hostname: str) -> str:
+        """Resolve hostname to IPv4 address to avoid IPv6 issues"""
+        try:
+            # Force IPv4 resolution using getaddrinfo with AF_INET
+            # This ensures we only get IPv4 addresses, not IPv6
+            addrinfo = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+            if addrinfo:
+                ipv4_address = addrinfo[0][4][0]  # Get first IPv4 address
+                logger.info(f"Resolved {hostname} to IPv4: {ipv4_address}")
+                return ipv4_address
+            else:
+                logger.warning(f"No IPv4 address found for {hostname}, using hostname")
+                return hostname
+        except (socket.gaierror, OSError) as e:
+            logger.warning(f"Failed to resolve {hostname} to IPv4, using hostname: {e}")
+            return hostname  # Fallback to hostname
+    
     @property
     def POSTGRES_CONNECTION_STRING(self) -> str:
         """Generate PostgreSQL connection string for pgvector"""
         # URL-encode password to handle special characters like @, [, ], etc.
         encoded_password = quote_plus(self.POSTGRES_PASSWORD)
         encoded_user = quote_plus(self.POSTGRES_USER)
-        return f"postgresql://{encoded_user}:{encoded_password}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
+        # Resolve to IPv4 to avoid IPv6 connection issues
+        resolved_host = self._resolve_ipv4_host(self.POSTGRES_HOST)
+        return f"postgresql://{encoded_user}:{encoded_password}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
 
     # --- Neo4j Graph DB Config (New) ---
     # We make these Optional so the app doesn't crash if you just want to run unit tests
@@ -105,7 +125,9 @@ class Settings(BaseSettings):
         # URL-encode password to handle special characters like @, [, ], etc.
         encoded_password = quote_plus(self.POSTGRES_PASSWORD)
         encoded_user = quote_plus(self.POSTGRES_USER)
-        return f"postgresql://{encoded_user}:{encoded_password}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
+        # Resolve to IPv4 to avoid IPv6 connection issues
+        resolved_host = self._resolve_ipv4_host(self.POSTGRES_HOST)
+        return f"postgresql://{encoded_user}:{encoded_password}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
 
     model_config = SettingsConfigDict(
         env_file=".env",
