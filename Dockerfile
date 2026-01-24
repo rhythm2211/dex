@@ -13,8 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
-COPY app/requirements.txt /app/requirements.txt
+# Copy production requirements (excludes test/dev dependencies, uses CPU-only PyTorch)
+COPY app/requirements-prod.txt /app/requirements.txt
+
+# Install CPU-only PyTorch first (saves ~3GB by excluding CUDA libraries)
+# This must be done before sentence-transformers to avoid pulling CUDA dependencies
+RUN pip install --no-cache-dir --user --extra-index-url https://download.pytorch.org/whl/cpu torch==2.10.0+cpu
+
+# Install remaining dependencies
 RUN pip install --no-cache-dir --user -r /app/requirements.txt
 
 # Production stage
