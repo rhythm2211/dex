@@ -33,7 +33,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Deploy to staging server
         uses: appleboy/ssh-action@v1.0.0
@@ -62,7 +62,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Deploy to production server
         uses: appleboy/ssh-action@v1.0.0
@@ -110,7 +110,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
