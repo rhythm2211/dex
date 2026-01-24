@@ -2,6 +2,7 @@ import os
 import logging
 from typing import List, Union, Optional
 from pathlib import Path
+from urllib.parse import quote_plus
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import AnyHttpUrl, field_validator
 from dotenv import load_dotenv
@@ -80,7 +81,10 @@ class Settings(BaseSettings):
     @property
     def POSTGRES_CONNECTION_STRING(self) -> str:
         """Generate PostgreSQL connection string for pgvector"""
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
+        # URL-encode password to handle special characters like @, [, ], etc.
+        encoded_password = quote_plus(self.POSTGRES_PASSWORD)
+        encoded_user = quote_plus(self.POSTGRES_USER)
+        return f"postgresql://{encoded_user}:{encoded_password}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
 
     # --- Neo4j Graph DB Config (New) ---
     # We make these Optional so the app doesn't crash if you just want to run unit tests
@@ -98,7 +102,10 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         """Generate PostgreSQL connection string for SQLAlchemy (user storage)"""
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
+        # URL-encode password to handle special characters like @, [, ], etc.
+        encoded_password = quote_plus(self.POSTGRES_PASSWORD)
+        encoded_user = quote_plus(self.POSTGRES_USER)
+        return f"postgresql://{encoded_user}:{encoded_password}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
 
     model_config = SettingsConfigDict(
         env_file=".env",
