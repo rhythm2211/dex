@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Dex Cognitive Engine"
     VERSION: str = "2.1.0"
     API_V1_STR: str = "/api/v1"
-    ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
@@ -60,6 +60,22 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GITHUB_TOKEN: str = "" 
     OPENAI_API_KEY: str = ""
+    
+    @field_validator("POSTGRES_PASSWORD", mode="before")
+    def validate_postgres_password(cls, v):
+        """Warn if PostgreSQL password is missing in production."""
+        if not v and os.getenv("ENVIRONMENT") == "production":
+            import warnings
+            warnings.warn("POSTGRES_PASSWORD is not set in production environment!")
+        return v
+    
+    @field_validator("GROQ_API_KEY", mode="before")
+    def validate_groq_key(cls, v):
+        """Warn if GROQ_API_KEY is missing."""
+        if not v:
+            import warnings
+            warnings.warn("GROQ_API_KEY is not set. RAG queries will fail!")
+        return v
     
     @property
     def POSTGRES_CONNECTION_STRING(self) -> str:

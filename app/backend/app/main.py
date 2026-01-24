@@ -6,6 +6,8 @@ import sys
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi import HTTPException
 
 # Fix HuggingFace tokenizers warning when using multiprocessing (uvicorn --reload)
 # Set this before any tokenizer imports
@@ -22,8 +24,10 @@ from backend.app.models.user import init_db
 init_db()
 
 # Proprietary Structured Logging
+# Set log level based on environment
+log_level = logging.WARNING if settings.ENVIRONMENT == "production" else logging.INFO
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "service": "dex-engine", "trace_id": "%(process)d", "message": "%(message)s"}',
     datefmt='%Y-%m-%dT%H:%M:%SZ'
 )
@@ -84,25 +88,88 @@ async def request_interceptor(request: Request, call_next):
         return response
         
     except Exception as error:
-        logger.error(f"System Failure | ID: {request_id} | Error: {str(error)}")
+        logger.error(f"System Failure | ID: {request_id} | Error: {str(error)}", exc_info=True)
+        # Don't expose internal error details in production
+        error_message = "Internal System Error" if settings.ENVIRONMENT == "production" else str(error)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": "Internal System Error", "request_id": request_id}
+            content={"error": error_message, "request_id": request_id}
         )
+
+# --- Global Exception Handlers ---
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors with proper formatting."""
+    logger.warning(f"Validation error on {request.url.path}: {exc.errors()}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"error": "Validation Error", "details": exc.errors()}
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle HTTP exceptions consistently."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail}
+    )
 
 # --- Router Registration ---
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/health", tags=["System"])
 async def health_probe():
-    return {
+    """
+    Production-grade health check endpoint.
+    Checks database connectivity and service status.
+    """
+    health_status = {
         "status": "active",
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
-        "cors_allowed": origins
     }
+    
+    # Check PostgreSQL connection
+    try:
+        from sqlalchemy import text, create_engine
+        from backend.app.core.config import settings
+        engine = create_engine(settings.DATABASE_URL)
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        health_status["postgres"] = "connected"
+    except Exception as e:
+        logger.error(f"PostgreSQL health check failed: {e}")
+        health_status["postgres"] = "disconnected"
+        health_status["status"] = "degraded"
+    
+    # Check Neo4j connection (if configured)
+    if settings.NEO4J_URI:
+        try:
+            from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection
+            from neo4j import GraphDatabase
+            driver = GraphDatabase.driver(
+                settings.NEO4J_URI,
+                auth=(settings.NEO4J_USERNAME, settings.NEO4J_PASSWORD)
+            )
+            if verify_neo4j_connection(driver):
+                health_status["neo4j"] = "connected"
+            else:
+                health_status["neo4j"] = "disconnected"
+                health_status["status"] = "degraded"
+            driver.close()
+        except Exception as e:
+            logger.error(f"Neo4j health check failed: {e}")
+            health_status["neo4j"] = "disconnected"
+            health_status["status"] = "degraded"
+    else:
+        health_status["neo4j"] = "not_configured"
+    
+    # Return appropriate status code
+    status_code = 200 if health_status["status"] == "active" else 503
+    return JSONResponse(content=health_status, status_code=status_code)
 
 if __name__ == "__main__":
     import uvicorn
-    # Reload=True is great for dev, but consider turning off for prod
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
+    # Disable reload in production for better performance and stability
+    reload = settings.ENVIRONMENT != "production"
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=reload)

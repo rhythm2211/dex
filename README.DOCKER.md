@@ -65,9 +65,10 @@ curl -fsS http://localhost:8001/health
 
 This repo is configured to avoid common local port conflicts:
 
-- **Frontend**: `http://localhost:3001` (host `3001` → container `3000`)
+- **Frontend**: `http://localhost:3000` (host `3000` → container `3000`)
 - **Backend API**: `http://localhost:8001` (host `8001` → container `8000`)
 - **Backend docs**: `http://localhost:8001/api/v1/docs`
+- **PostgreSQL**: `localhost:5435` (host `5435` → container `5432`)
 
 ## Docker Commands
 
@@ -113,7 +114,7 @@ docker compose --env-file app/.env up --build
 
 ### Frontend
 - **Internal port**: 3000
-- **Host port**: 3001
+- **Host port**: 3000
 - **Build Context**: `./frontend`
 - **Dockerfile**: `./frontend/Dockerfile`
 
@@ -176,9 +177,9 @@ ss -ltnp | grep ':3000'
 
 ### CORS errors
 The backend is configured to allow requests from:
-- `http://localhost:3001` (current frontend host port)
-- `http://localhost:3000` (if you run frontend locally)
-- `http://frontend:3000` (Docker service name)
+- `http://localhost:3000` (current frontend host port)
+- `http://localhost:3001` (alternative frontend port)
+- `http://frontend:3000` (Docker service name for internal communication)
 - Any origins specified in `BACKEND_CORS_ORIGINS` environment variable
 
 ### Environment variables not loading

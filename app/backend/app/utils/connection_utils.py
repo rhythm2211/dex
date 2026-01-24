@@ -63,14 +63,16 @@ def retry_on_connection_error(
     return decorator
 
 
-def create_neo4j_driver(uri: str, user: str, password: str, **kwargs) -> Optional[Any]:
+def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo4j", **kwargs) -> Optional[Any]:
     """
     Create a Neo4j driver with proper connection configuration.
+    Optimized for Neo4j Aura cloud instances.
     
     Args:
         uri: Neo4j connection URI
         user: Username
         password: Password
+        database: Database name (default: "neo4j")
         **kwargs: Additional driver configuration
         
     Returns:
@@ -82,13 +84,22 @@ def create_neo4j_driver(uri: str, user: str, password: str, **kwargs) -> Optiona
         # Only set 'encrypted' for 'neo4j://' or 'bolt://' schemes
         uri_lower = uri.lower()
         use_encrypted_param = uri_lower.startswith(('neo4j://', 'bolt://'))
+        is_aura = 'databases.neo4j.io' in uri_lower or 'neo4j.io' in uri_lower
+        
+        # For Neo4j Aura, use longer timeouts and try bolt+s:// if neo4j+s:// fails
+        if is_aura:
+            connection_timeout = kwargs.get("connection_timeout", 60)  # 60 seconds for Aura
+            connection_acquisition_timeout = kwargs.get("connection_acquisition_timeout", 120)  # 2 minutes for Aura
+        else:
+            connection_timeout = kwargs.get("connection_timeout", 30)
+            connection_acquisition_timeout = kwargs.get("connection_acquisition_timeout", 60)
         
         # Configure connection with timeouts and retry settings
         config = {
-            "connection_timeout": kwargs.get("connection_timeout", 30),  # 30 seconds
+            "connection_timeout": connection_timeout,
             "max_connection_lifetime": kwargs.get("max_connection_lifetime", 3600),  # 1 hour
             "max_connection_pool_size": kwargs.get("max_connection_pool_size", 50),
-            "connection_acquisition_timeout": kwargs.get("connection_acquisition_timeout", 60),  # 60 seconds
+            "connection_acquisition_timeout": connection_acquisition_timeout,
             **kwargs
         }
         
@@ -96,26 +107,52 @@ def create_neo4j_driver(uri: str, user: str, password: str, **kwargs) -> Optiona
         if use_encrypted_param:
             config["encrypted"] = True
         
-        driver = GraphDatabase.driver(uri, auth=(user, password), **config)
-        
-        # Verify connection works
-        with driver.session() as session:
-            session.run("RETURN 1")
-        
-        logger.info("✅ Neo4j driver created and verified")
-        return driver
+        # Try creating driver with original URI first
+        driver = None
+        try:
+            driver = GraphDatabase.driver(uri, auth=(user, password), **config)
+            
+            # Verify connection works with database name specified
+            with driver.session(database=database) as session:
+                result = session.run("RETURN 1")
+                result.consume()  # Consume the result to ensure query executed
+            
+            logger.info("✅ Neo4j driver created and verified")
+            return driver
+        except Exception as e:
+            # If neo4j+s:// fails for Aura, try bolt+s://
+            if is_aura and uri_lower.startswith('neo4j+s://'):
+                logger.warning(f"neo4j+s:// connection failed, trying bolt+s://: {e}")
+                bolt_uri = uri.replace('neo4j+s://', 'bolt+s://')
+                try:
+                    driver = GraphDatabase.driver(bolt_uri, auth=(user, password), **config)
+                    with driver.session(database=database) as session:
+                        result = session.run("RETURN 1")
+                        result.consume()
+                    logger.info("✅ Neo4j driver created with bolt+s:// and verified")
+                    return driver
+                except Exception as e2:
+                    logger.error(f"❌ Both neo4j+s:// and bolt+s:// failed: {e2}")
+                    if driver:
+                        driver.close()
+                    raise e2
+            else:
+                if driver:
+                    driver.close()
+                raise e
         
     except Exception as e:
         logger.error(f"❌ Failed to create Neo4j driver: {e}")
         return None
 
 
-def verify_neo4j_connection(driver) -> bool:
+def verify_neo4j_connection(driver, database: str = "neo4j") -> bool:
     """
     Verify that a Neo4j driver connection is still alive.
     
     Args:
         driver: Neo4j driver instance
+        database: Database name (default: "neo4j")
         
     Returns:
         True if connection is alive, False otherwise
@@ -124,7 +161,7 @@ def verify_neo4j_connection(driver) -> bool:
         return False
     
     try:
-        with driver.session() as session:
+        with driver.session(database=database) as session:
             result = session.run("RETURN 1")
             result.consume()  # Consume the result to ensure query executed
         return True

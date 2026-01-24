@@ -1,25 +1,32 @@
-version: '3.8'
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: dex-postgres
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=dex_password
-      - POSTGRES_DB=dex
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dex_password}
+      - POSTGRES_DB=${POSTGRES_DB:-dex}
     ports:
-      - "5435:5432"
+      - "${POSTGRES_PORT:-5435}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - default
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    # Production resource limits (adjust based on your infrastructure)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   backend:
     build:
@@ -29,13 +36,13 @@ services:
     env_file:
       - ./app/.env  # Backend API paths and configuration
     ports:
-      - "8001:8000"
+      - "${BACKEND_PORT:-8001}:8000"
     networks:
       - default
     environment:
-      - BACKEND_CORS_ORIGINS=["http://localhost:3001","http://localhost:3000","http://frontend:3000"]
-      - ENVIRONMENT=production
-      - DEBUG=false
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:3001","http://localhost:3000","http://frontend:3000"]}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-false}
       # Override PostgreSQL connection for Docker (use service name)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -51,25 +58,47 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    # Production resource limits (adjust based on your infrastructure)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 1G
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+        - INTERNAL_API_URL=${INTERNAL_API_URL:-http://backend:8000}
+        - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
     container_name: dex-frontend
     env_file:
       - ./frontend/.env.local  # Frontend AUTH variables (GitHub/Google keys) and API paths
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     networks:
       - default
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8001
-      - INTERNAL_API_URL=http://dex-backend:8000
-      - NEXTAUTH_URL=http://localhost:3000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+      - INTERNAL_API_URL=${INTERNAL_API_URL:-http://backend:8000}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
     depends_on:
       - backend
     restart: unless-stopped
+    # Production resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
 volumes:
   postgres_data:

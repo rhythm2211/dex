@@ -93,10 +93,11 @@ class GraphEngine:
         uri = os.getenv("NEO4J_URI")
         user = os.getenv("NEO4J_USERNAME")
         password = os.getenv("NEO4J_PASSWORD")
+        self.database = os.getenv("NEO4J_DATABASE", "neo4j")
         
         if uri and user and password:
             # Use connection utility with proper configuration
-            self.driver = create_neo4j_driver(uri, user, password)
+            self.driver = create_neo4j_driver(uri, user, password, database=self.database)
             if self.driver:
                 self._create_indices()
             else:
@@ -124,11 +125,11 @@ class GraphEngine:
             raise RuntimeError("Neo4j driver not initialized")
         
         # Verify connection before use
-        if not verify_neo4j_connection(self.driver):
+        if not verify_neo4j_connection(self.driver, database=self.database):
             logger.warning("Neo4j connection lost, attempting to reconnect...")
             # Driver will attempt to reconnect automatically on next query
         
-        with self.driver.session() as session:
+        with self.driver.session(database=self.database) as session:
             return session.run(query, **params)
 
     def wipe_graph(self):
@@ -418,7 +419,7 @@ class GraphEngine:
         if not self.driver:
             return False
         try:
-            with self.driver.session() as session:
+            with self.driver.session(database=self.database) as session:
                 session.run("RETURN 1").single()
             return True
         except Exception as e:
@@ -451,7 +452,7 @@ class GraphEngine:
             # Use retry wrapper for connection resilience
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
-                with self.driver.session() as session:
+                with self.driver.session(database=self.database) as session:
                     # First, get all nodes (up to limit)
                     # Optimized: Get nodes first, then relationships separately
                     nodes_query = """
@@ -527,7 +528,7 @@ class GraphEngine:
         nodes_map = {}
         links = []
         
-        with self.driver.session() as session:
+        with self.driver.session(database=self.database) as session:
             result = session.run(query, id=node_id)
             for record in result:
                 p = dict(record["p"])
@@ -562,7 +563,7 @@ class GraphEngine:
         nodes_map = {target_id: {"id": target_id, "type": "file", "val": 20}} # Ensure target exists
         links = []
         
-        with self.driver.session() as session:
+        with self.driver.session(database=self.database) as session:
             # We first fetch the target node details to be safe
             target_res = session.run("MATCH (n:CodeNode {id: $id}) RETURN n", id=target_id)
             for rec in target_res:

@@ -2,3 +2,19 @@ app/.env
 app/.env.backup
 *.env.backup
 node_modules
+
+# CI/CD
+.github/workflows/*.local.yml
+coverage/
+.nyc_output/
+*.lcov
+
+# Test results
+test-results/
+playwright-report/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+.hypothesis/

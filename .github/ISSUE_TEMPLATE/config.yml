@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/your-org/dex#readme
+    about: Check the documentation for answers
+  - name: Discussions
+    url: https://github.com/your-org/dex/discussions
+    about: Ask questions and discuss ideas

@@ -4,12 +4,13 @@ import logging
 from datetime import datetime, timedelta
 from collections import Counter
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # --- Service Imports ---
 from backend.app.services.ingestion_service import IngestionService
 from backend.app.services.rag_service import RAGService
 from backend.app.api.v1.endpoints.users import router as users_router
+from backend.app.api.v1.endpoints.health import router as health_router
 
 logger = logging.getLogger("dex-core")
 
@@ -17,6 +18,9 @@ api_router = APIRouter()
 
 # Include user routes
 api_router.include_router(users_router, tags=["users"])
+
+# Include health routes
+api_router.include_router(health_router, prefix="/health", tags=["health"])
 
 # --- Singleton Services (Lazy Initialization) ---
 # Initialize services lazily to avoid blocking on startup
@@ -57,11 +61,33 @@ def get_rag_service():
     return _rag_service
 
 # --- Data Models ---
+from pydantic import field_validator
+
 class IngestRequest(BaseModel):
     repo_path: str
+    
+    @field_validator("repo_path")
+    @classmethod
+    def validate_repo_path(cls, v: str) -> str:
+        """Validate repository path for security."""
+        if not v or not v.strip():
+            raise ValueError("Repository path cannot be empty")
+        if len(v) > 2048:
+            raise ValueError("Repository path is too long (max 2048 characters)")
+        return v.strip()
 
 class HybridRAGRequest(BaseModel):
     query: str
+    
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, v: str) -> str:
+        """Validate query input for security and length."""
+        if not v or not v.strip():
+            raise ValueError("Query cannot be empty")
+        if len(v) > 10000:  # Reasonable limit for LLM queries
+            raise ValueError("Query is too long (max 10000 characters)")
+        return v.strip()
 
 # --- Background Task Wrapper ---
 def run_ingestion_sequence(repo_path: str):
@@ -132,6 +158,19 @@ def get_impact_graph(file_id: str = Query(..., description="The file ID (path) t
         return ingestion_service.graph_engine.get_impact_subgraph(file_id)
     except Exception as e:
         logger.error(f"Neo4j Impact Query Error: {e}")
+        return {"nodes": [], "links": []}
+
+@api_router.get("/graph/expand")
+def expand_graph_node(node_id: str = Query(..., description="The node ID to expand and load children for")):
+    """
+    LAZY LOADING: Fetches immediate children/neighbors of a node.
+    Used when a user expands a node in the graph visualization.
+    """
+    try:
+        ingestion_service = get_ingestion_service()
+        return ingestion_service.graph_engine.get_neighbors(node_id)
+    except Exception as e:
+        logger.error(f"Neo4j Expand Query Error: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/git/history")
@@ -281,6 +320,21 @@ async def trigger_ingestion(request: IngestRequest, background_tasks: Background
     Use /ingest/status to check progress.
     """
     try:
+        # Input validation and sanitization
+        repo_path = request.repo_path.strip()
+        if not repo_path:
+            raise HTTPException(status_code=400, detail="Repository path cannot be empty")
+        
+        # Security: Limit URL length to prevent DoS
+        if len(repo_path) > 2048:
+            raise HTTPException(status_code=400, detail="Repository path is too long (max 2048 characters)")
+        
+        # Security: Basic URL validation to prevent SSRF-like attacks
+        if repo_path.startswith(("http://", "https://", "git@")):
+            # Additional validation for URLs
+            if ".." in repo_path or "//" in repo_path.replace("://", ""):
+                raise HTTPException(status_code=400, detail="Invalid repository path format")
+        
         # Check status without initializing the full service (lazy check)
         current_status = get_ingestion_status_lightweight()
         
@@ -289,12 +343,12 @@ async def trigger_ingestion(request: IngestRequest, background_tasks: Background
 
         # Start background task - this should return immediately
         # Service initialization will happen in the background task, not here
-        background_tasks.add_task(run_ingestion_sequence, request.repo_path)
+        background_tasks.add_task(run_ingestion_sequence, repo_path)
         
-        logger.info(f"Ingestion request accepted for: {request.repo_path}")
+        logger.info(f"Ingestion request accepted for: {repo_path}")
         return {
             "status": "accepted",
-            "message": f"Ingestion started for {request.repo_path}. Check /ingest/status for progress."
+            "message": f"Ingestion started for {repo_path}. Check /ingest/status for progress."
         }
     except HTTPException:
         raise
