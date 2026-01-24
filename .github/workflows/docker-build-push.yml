@@ -102,17 +102,24 @@ jobs:
             NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL || 'http://localhost:3000' }}
           platforms: linux/amd64,linux/arm64
       
-      - name: Generate SBOM
+      - name: Wait for image availability
+        if: matrix.image == 'backend' && github.event_name != 'pull_request'
+        run: sleep 10
+      
+      - name: Generate SBOM (backend)
+        if: matrix.image == 'backend' && github.event_name != 'pull_request'
+        continue-on-error: true
         uses: anchore/sbom-action@v0
         with:
-          image: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image == 'backend' && env.BACKEND_IMAGE || env.FRONTEND_IMAGE }}:${{ github.sha }}
+          image: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.BACKEND_IMAGE }}:${{ github.ref_name }}
           format: spdx-json
-          output-file: sbom-${{ matrix.image }}.spdx.json
-        if: matrix.image == 'backend' && github.event_name != 'pull_request'
+          output-file: sbom-backend.spdx.json
       
       - name: Upload SBOM
+        if: matrix.image == 'backend' && github.event_name != 'pull_request'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-${{ matrix.image }}
-          path: sbom-${{ matrix.image }}.spdx.json
-        if: matrix.image == 'backend' && github.event_name != 'pull_request'
+          name: sbom-backend
+          path: sbom-backend.spdx.json
+          if-no-files-found: ignore
