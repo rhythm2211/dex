@@ -8,7 +8,7 @@ pydantic-settings
 python-multipart
 email-validator
 requests>=2.31.0
-isodate==0.6.1  # Pinned to resolve dbt-common conflict
+isodate==0.7.2  # Pinned to resolve dbt-common conflict
 
 # --- AI Orchestration (LangChain) ---
 langchain
