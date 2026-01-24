@@ -23,3 +23,19 @@ env/
 htmlcov
 .DS_Store
 *.log
+# Exclude data directories that might be large
+data/
+*.json
+!package.json
+# Exclude test files
+tests/
+test_*.py
+*_test.py
+# Exclude scripts that aren't needed in production
+scripts/
+*.sh
+# Exclude IDE files
+.vscode
+.idea
+*.swp
+*.swo
