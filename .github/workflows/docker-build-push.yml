@@ -102,24 +102,11 @@ jobs:
             NEXTAUTH_URL=${{ secrets.NEXTAUTH_URL || 'http://localhost:3000' }}
           platforms: linux/amd64,linux/arm64
       
-      - name: Wait for image availability
+      # SBOM generation disabled due to disk space issues on GitHub Actions runners
+      # Can be enabled later if needed - SBOM is optional and not critical for CI/CD
+      - name: SBOM Generation (Skipped)
         if: matrix.image == 'backend' && github.event_name != 'pull_request'
-        run: sleep 10
-      
-      - name: Generate SBOM (backend)
-        if: matrix.image == 'backend' && github.event_name != 'pull_request'
-        continue-on-error: true
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.BACKEND_IMAGE }}:${{ github.ref_name }}
-          format: spdx-json
-          output-file: sbom-backend.spdx.json
-      
-      - name: Upload SBOM
-        if: matrix.image == 'backend' && github.event_name != 'pull_request'
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom-backend
-          path: sbom-backend.spdx.json
-          if-no-files-found: ignore
+        run: |
+          echo "SBOM generation skipped - optional feature"
+          echo "To enable: Uncomment SBOM steps in workflow file"
+          echo "Note: Requires sufficient disk space on runner"
