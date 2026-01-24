@@ -474,7 +474,6 @@ export default function HealthDashboardPage() {
                     <Treemap
                       data={treemapData}
                       dataKey="value"
-                      ratio={4/3}
                       stroke="rgba(255, 255, 255, 0.05)"
                     >
                       {treemapData.map((entry, index) => (

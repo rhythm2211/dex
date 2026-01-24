@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import SpriteText from 'three-spritetext';
+import * as THREE from 'three';
 
 // Dynamic Import for 3D Graph
 const ForceGraph3D = dynamic(() => import('react-force-graph-3d'), { ssr: false });
@@ -140,6 +141,23 @@ export default function EvolutionPage() {
     setSelectedNode(null);
   };
 
+  // Node three object function - must always return Object3D
+  const getNodeThreeObject = useCallback((node: any): THREE.Object3D => {
+    const shouldShowLabel = node.type === 'folder' || node.val > 10 || (currentCommit?.files.some(f => node.id.includes(f)));
+    
+    if (shouldShowLabel) {
+      const sprite = new SpriteText(node.name);
+      sprite.color = getNodeColor(node);
+      sprite.textHeight = 4;
+      // Type assertion: SpriteText extends THREE.Sprite which has position
+      (sprite as any).position.set(0, -12, 0);
+      return sprite as THREE.Object3D;
+    }
+    
+    // Always return an Object3D - use empty group when label is not needed
+    return new THREE.Group();
+  }, [currentCommit, getNodeColor]);
+
   return (
     <div className="flex h-screen w-full bg-[#050505] text-slate-200 overflow-hidden font-sans">
       
@@ -259,16 +277,7 @@ export default function EvolutionPage() {
                 onNodeClick={handleNodeClick}
                 
                 // Labels (Only show important ones to reduce clutter)
-                nodeThreeObject={(node: any) => {
-                    if (node.type === 'folder' || node.val > 10 || (currentCommit?.files.some(f => node.id.includes(f)))) {
-                        const sprite = new SpriteText(node.name);
-                        sprite.color = getNodeColor(node);
-                        sprite.textHeight = 4;
-                        // Type assertion: SpriteText extends THREE.Sprite which has position
-                        (sprite as any).position.set(0, -12, 0);
-                        return sprite;
-                    }
-                }}
+                nodeThreeObject={getNodeThreeObject}
             />
         </div>
 

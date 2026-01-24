@@ -150,6 +150,17 @@ class DexClient {
     });
   }
 
+  // Helper to check if error is an aborted/cancelled request (expected behavior)
+  private isAbortError(error: any): boolean {
+    return (
+      error?.code === 'ERR_CANCELED' ||
+      error?.message === 'Request aborted' ||
+      error?.message?.includes('aborted') ||
+      error?.name === 'CanceledError' ||
+      axios.isCancel(error)
+    );
+  }
+
   // 1. Health Check (Note: Hits root /health, not /api/v1/health)
   public async checkHealth(): Promise<boolean> {
     try {
@@ -181,7 +192,7 @@ class DexClient {
       // Ingestion should return immediately (uses background tasks)
       // Increased timeout to handle any initialization delays
       const res: AxiosResponse<IngestResponse> = await this.client.post('/ingest', { repo_path: repoUrl }, {
-        timeout: 30000, // 30 seconds to handle service initialization if needed
+        timeout: 120000, // 120 seconds to handle service initialization if needed
       });
       return res.data;
     } catch (error: any) {
@@ -287,7 +298,10 @@ class DexClient {
       const res: AxiosResponse<TeamTopologyResponse> = await this.client.get('/onboarding/team-topology');
       return res.data;
     } catch (error: any) {
-      console.error("Team Topology Failure:", error?.message);
+      // Don't log abort errors - they're expected when components unmount or requests are cancelled
+      if (!this.isAbortError(error)) {
+        console.error("Team Topology Failure:", error?.message);
+      }
       return { nodes: [], links: [] };
     }
   }
@@ -300,7 +314,10 @@ class DexClient {
       });
       return res.data;
     } catch (error: any) {
-      console.error("Active Zones Failure:", error?.message);
+      // Don't log abort errors - they're expected when components unmount or requests are cancelled
+      if (!this.isAbortError(error)) {
+        console.error("Active Zones Failure:", error?.message);
+      }
       return { zones: [] };
     }
   }

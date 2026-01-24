@@ -27,10 +27,11 @@ class HybridRetriever:
         uri = settings.NEO4J_URI
         user = settings.NEO4J_USERNAME
         password = settings.NEO4J_PASSWORD
+        self.database = os.getenv("NEO4J_DATABASE", "neo4j")
         
         if uri and user and password:
             # Use connection utility with proper configuration
-            self.driver = create_neo4j_driver(uri, user, password)
+            self.driver = create_neo4j_driver(uri, user, password, database=self.database)
             if not self.driver:
                 logger.error("❌ Neo4j driver creation failed in Retriever. Graph context will be empty.")
         else:
@@ -178,7 +179,7 @@ Person name:"""
         try:
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
-                with self.driver.session() as session:
+                with self.driver.session(database=self.database) as session:
                     return session.run(query, person_name=person_lower)
             
             result = _execute_query()
@@ -301,7 +302,7 @@ Person name:"""
         try:
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
-                with self.driver.session() as session:
+                with self.driver.session(database=self.database) as session:
                     return session.run(query, anchors=file_anchors)
             
             result = _execute_query()

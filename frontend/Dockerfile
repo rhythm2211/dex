@@ -19,6 +19,16 @@ COPY . .
 # Set environment variable for build
 ENV NEXT_TELEMETRY_DISABLED 1
 
+# Accept build arguments for Next.js public environment variables
+ARG NEXT_PUBLIC_API_URL=http://localhost:8001
+ARG INTERNAL_API_URL=http://backend:8000
+ARG NEXTAUTH_URL=http://localhost:3000
+
+# Set as environment variables for the build
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
+ENV NEXTAUTH_URL=$NEXTAUTH_URL
+
 # Build the application
 RUN npm run build
 

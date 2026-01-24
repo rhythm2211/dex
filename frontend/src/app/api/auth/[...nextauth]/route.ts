@@ -108,8 +108,8 @@ const handler = NextAuth({
             // User doesn't exist, create new profile
             // Extract GitHub username if logging in with GitHub
             let githubUsername = null;
-            if (account?.provider === "github" && profile?.login) {
-              githubUsername = profile.login;
+            if (account?.provider === "github" && profile && 'login' in profile) {
+              githubUsername = (profile as any).login;
             }
             
             const createResponse = await fetch(`${apiUrl}/api/v1/users`, {
@@ -141,7 +141,7 @@ const handler = NextAuth({
             }
           } else {
             // User exists - update GitHub username if logging in with GitHub
-            if (account?.provider === "github" && profile?.login) {
+            if (account?.provider === "github" && profile && 'login' in profile) {
               const userData = await checkResponse.json();
               // Update GitHub username if not set
               if (!userData.github_username) {
@@ -151,7 +151,7 @@ const handler = NextAuth({
                     "Content-Type": "application/json",
                   },
                   body: JSON.stringify({
-                    github_username: profile.login,
+                    github_username: (profile as any).login,
                   }),
                 }).catch(() => {
                   console.log("Failed to update GitHub username");

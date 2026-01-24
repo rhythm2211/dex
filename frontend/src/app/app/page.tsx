@@ -8,12 +8,13 @@ import {
   RefreshCw, Zap, Search, Terminal, MessageSquare,
   Info, Folder, File, Box, Code, Database, FileCode,
   ChevronRight, ChevronDown, Move, LayoutTemplate,
-  Play, LogOut, User, X, HelpCircle, MousePointerClick, Network
+  Play, LogOut, User, X, HelpCircle, MousePointerClick, Network, Download
 } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as d3 from 'd3';
+import { jsPDF } from 'jspdf';
 
 // -----------------------------------------------------------------------------
 // Visual Config & Color Palette
@@ -173,6 +174,7 @@ export default function Dashboard() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [ragResult, setRagResult] = useState<string | null>(null);
+  const [chatHistory, setChatHistory] = useState<Array<{query: string, answer: string, timestamp: Date}>>([]);
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [repoUrl, setRepoUrl] = useState('');
   const [ingesting, setIngesting] = useState(false);
@@ -445,8 +447,25 @@ export default function Dashboard() {
       if(manualQuery) setQuery(manualQuery);
 
       setLoading(true);
-      const res = await dexApi.queryRAG(text);
-      setRagResult(res.answer); setLoading(false); setActiveTab('assistant');
+      try {
+        const res = await dexApi.queryRAG(text);
+        const timestamp = new Date();
+        
+        // Add to chat history
+        setChatHistory(prev => [...prev, {
+          query: text,
+          answer: res.answer,
+          timestamp
+        }]);
+        
+        setRagResult(res.answer);
+        setQuery(''); // Clear input after successful query
+      } catch (error) {
+        console.error('Query failed:', error);
+      } finally {
+        setLoading(false);
+        setActiveTab('assistant');
+      }
   };
 
   // ---------------------------------------------------------------------------
@@ -472,6 +491,295 @@ export default function Dashboard() {
       handleExecute(prompt);
   }, [handleNodeClick]);
 
+  const handleDownloadChat = () => {
+    if (chatHistory.length === 0) {
+      alert('No chat history to download');
+      return;
+    }
+
+    const sessionDate = new Date().toISOString().split('T')[0];
+    
+    // Create PDF with logo matching the app design
+    const createPDF = () => {
+      const doc = new jsPDF();
+      
+      // Dark theme colors matching the app
+      const darkBg = [10, 10, 10]; // #0A0A0A
+      const darkerBg = [5, 5, 5]; // #050505
+      const indigoColor = [99, 102, 241]; // Indigo-500
+      const indigoLight = [129, 140, 248]; // Indigo-400
+      const emeraldColor = [16, 185, 129]; // Emerald-500
+      const slateColor = [148, 163, 184]; // Slate-400
+      const slateDark = [100, 116, 139]; // Slate-500
+      const whiteColor = [255, 255, 255];
+      const borderColor = [255, 255, 255, 0.1]; // white/10
+      
+      // Get username from session
+      const userName = session?.user?.name || session?.user?.email?.split('@')[0] || 'User';
+      
+      // Helper function to strip markdown and convert to plain text
+      const stripMarkdown = (text: string): string => {
+      return text
+        .replace(/#{1,6}\s+/g, '') // Remove headers
+        .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold
+        .replace(/\*(.*?)\*/g, '$1') // Remove italic
+        .replace(/`([^`]+)`/g, '$1') // Remove inline code
+        .replace(/```[\s\S]*?```/g, (match) => {
+          // Preserve code blocks but format them
+          return match.replace(/```[\w]*\n?/g, '').trim();
+        })
+        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1') // Remove links, keep text
+        .replace(/\n{3,}/g, '\n\n') // Remove excessive newlines
+        .trim();
+      };
+
+      // Helper function to split text into lines that fit the page width
+      const splitText = (text: string, maxWidth: number): string[] => {
+      const lines: string[] = [];
+      const paragraphs = text.split('\n\n');
+      
+      paragraphs.forEach((paragraph, pIndex) => {
+        if (paragraph.trim() === '') {
+          if (pIndex < paragraphs.length - 1) {
+            lines.push('');
+          }
+          return;
+        }
+        
+        const words = paragraph.trim().split(/\s+/);
+        let currentLine = '';
+
+        words.forEach(word => {
+          const testLine = currentLine + (currentLine ? ' ' : '') + word;
+          const testWidth = doc.getTextWidth(testLine);
+          
+          if (testWidth > maxWidth && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        });
+        
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        
+        // Add spacing between paragraphs (except last)
+        if (pIndex < paragraphs.length - 1 && paragraph.trim()) {
+          lines.push('');
+        }
+      });
+      
+      return lines;
+    };
+
+    // Page dimensions
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    const contentWidth = pageWidth - (margin * 2);
+    const lineHeight = 6;
+    const sectionSpacing = 8;
+    let yPosition = margin;
+
+    // Set dark background for entire page
+    doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    // Header section with logo area
+    const headerHeight = 60;
+    doc.setFillColor(darkerBg[0], darkerBg[1], darkerBg[2]);
+    doc.rect(0, 0, pageWidth, headerHeight, 'F');
+    
+    // DEX text logo
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(whiteColor[0], whiteColor[1], whiteColor[2]);
+    doc.text('DEX', margin, 32);
+    
+    // Personalized greeting
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
+    doc.text(`Hi ${userName},`, margin + 35, 42);
+    
+    doc.setFontSize(9);
+    doc.text('here is the transcript from your last session', margin + 35, 48);
+    
+    // Session info on the right
+    doc.setFontSize(8);
+    doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
+    doc.text(`Session: ${sessionDate}`, pageWidth - margin, 25, { align: 'right' });
+    const messageCountText = `${chatHistory.length} ${chatHistory.length === 1 ? 'message' : 'messages'}`;
+    doc.text(messageCountText, pageWidth - margin, 32, { align: 'right' });
+    
+    yPosition = 70;
+
+    // Content
+    chatHistory.forEach((entry, index) => {
+      const queryText = stripMarkdown(entry.query);
+      const answerText = stripMarkdown(entry.answer);
+      const timestamp = entry.timestamp.toLocaleString();
+
+      // Check if we need a new page before starting a new message
+      if (yPosition > pageHeight - 80) {
+        doc.addPage();
+        // Set dark background for new page
+        doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
+        yPosition = margin;
+      }
+
+      // Message number and timestamp header
+      doc.setFontSize(8);
+      doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
+      doc.setFont('helvetica', 'italic');
+      const headerText = `Message ${index + 1} • ${timestamp}`;
+      doc.text(headerText, margin, yPosition);
+      yPosition += sectionSpacing;
+
+      // Question section with dark theme styling
+      if (yPosition > pageHeight - 60) {
+        doc.addPage();
+        doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
+        yPosition = margin;
+      }
+
+      const questionHeaderHeight = 8;
+      // Dark background with indigo border
+      doc.setFillColor(darkerBg[0], darkerBg[1], darkerBg[2]);
+      doc.setGState(doc.GState({ opacity: 0.6 }));
+      doc.roundedRect(margin, yPosition - 2, contentWidth, questionHeaderHeight, 2, 2, 'F');
+      doc.setGState(doc.GState({ opacity: 1 }));
+      
+      // Indigo border
+      doc.setDrawColor(indigoColor[0], indigoColor[1], indigoColor[2]);
+      doc.setLineWidth(0.5);
+      doc.roundedRect(margin, yPosition - 2, contentWidth, questionHeaderHeight, 2, 2);
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(indigoLight[0], indigoLight[1], indigoLight[2]);
+      doc.text('Question', margin + 4, yPosition + 4);
+      
+      yPosition += questionHeaderHeight + 2;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(whiteColor[0], whiteColor[1], whiteColor[2]);
+      
+      const queryLines = splitText(queryText, contentWidth - 8);
+      queryLines.forEach(line => {
+        if (yPosition > pageHeight - 50) {
+          doc.addPage();
+          doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+          doc.rect(0, 0, pageWidth, pageHeight, 'F');
+          yPosition = margin;
+        }
+        if (line.trim() || line === '') {
+          doc.text(line || ' ', margin + 4, yPosition);
+          yPosition += lineHeight;
+        }
+      });
+
+      yPosition += sectionSpacing;
+
+      // Answer section with dark theme styling
+      if (yPosition > pageHeight - 60) {
+        doc.addPage();
+        doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
+        yPosition = margin;
+      }
+
+      const answerHeaderHeight = 8;
+      // Dark background with emerald border
+      doc.setFillColor(darkerBg[0], darkerBg[1], darkerBg[2]);
+      doc.setGState(doc.GState({ opacity: 0.6 }));
+      doc.roundedRect(margin, yPosition - 2, contentWidth, answerHeaderHeight, 2, 2, 'F');
+      doc.setGState(doc.GState({ opacity: 1 }));
+      
+      // Emerald border
+      doc.setDrawColor(emeraldColor[0], emeraldColor[1], emeraldColor[2]);
+      doc.setLineWidth(0.5);
+      doc.roundedRect(margin, yPosition - 2, contentWidth, answerHeaderHeight, 2, 2);
+      
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(emeraldColor[0], emeraldColor[1], emeraldColor[2]);
+      doc.text('Answer', margin + 4, yPosition + 4);
+      
+      yPosition += answerHeaderHeight + 2;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(slateColor[0], slateColor[1], slateColor[2]);
+      
+      const answerLines = splitText(answerText, contentWidth - 8);
+      answerLines.forEach(line => {
+        if (yPosition > pageHeight - 50) {
+          doc.addPage();
+          doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+          doc.rect(0, 0, pageWidth, pageHeight, 'F');
+          yPosition = margin;
+        }
+        if (line.trim() || line === '') {
+          doc.text(line || ' ', margin + 4, yPosition);
+          yPosition += lineHeight;
+        }
+      });
+
+      // Separator line with subtle styling
+      yPosition += sectionSpacing;
+      if (yPosition > pageHeight - 50) {
+        doc.addPage();
+        doc.setFillColor(darkBg[0], darkBg[1], darkBg[2]);
+        doc.rect(0, 0, pageWidth, pageHeight, 'F');
+        yPosition = margin;
+      } else {
+        doc.setDrawColor(slateDark[0], slateDark[1], slateDark[2]);
+        doc.setLineWidth(0.2);
+        doc.setGState(doc.GState({ opacity: 0.3 }));
+        doc.line(margin, yPosition, pageWidth - margin, yPosition);
+        doc.setGState(doc.GState({ opacity: 1 }));
+        yPosition += sectionSpacing;
+      }
+    });
+
+      // Footer on all pages with dark theme
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        
+        // Footer background
+        doc.setFillColor(darkerBg[0], darkerBg[1], darkerBg[2]);
+        doc.rect(0, pageHeight - 15, pageWidth, 15, 'F');
+        
+        // Footer text
+        doc.setFontSize(7);
+        doc.setTextColor(slateDark[0], slateDark[1], slateDark[2]);
+        doc.setFont('helvetica', 'normal');
+        doc.text(
+          `Page ${i} of ${pageCount} • Generated by DEX`,
+          pageWidth / 2,
+          pageHeight - 8,
+          { align: 'center' }
+        );
+      }
+
+      // Save the PDF
+      doc.save(`dex-chat-history-${sessionDate}.pdf`);
+    };
+    
+    // Execute the PDF creation
+    try {
+      createPDF();
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // Custom D3 Implementation
   // ---------------------------------------------------------------------------
@@ -494,14 +802,76 @@ export default function Dashboard() {
     const { width, height } = svgRef.current.getBoundingClientRect();
     void width; void height;
 
-    // 1. Setup Zoom
+    // Track spacebar state for panning
+    let isSpacePressed = false;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat) {
+        isSpacePressed = true;
+        svg.style("cursor", "grab");
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        isSpacePressed = false;
+        svg.style("cursor", "default");
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    // 1. Setup Zoom - Only allow panning on right-click, middle mouse button, or spacebar+drag
     const zoom = d3.zoom()
         .scaleExtent([0.1, 3])
+        .filter((event) => {
+            // Allow zoom with wheel
+            if (event.type === 'wheel') return true;
+            
+            // For mouse events, allow panning with:
+            // - Right-click (button 2)
+            // - Middle mouse button (button 1)
+            // - Left-click (button 0) when spacebar is pressed
+            if (event.sourceEvent) {
+                const mouseEvent = event.sourceEvent as MouseEvent;
+                if (mouseEvent.type === 'mousedown' || mouseEvent.type === 'mousemove') {
+                    // button: 0 = left, 1 = middle, 2 = right
+                    return mouseEvent.button === 2 || mouseEvent.button === 1 || (mouseEvent.button === 0 && isSpacePressed);
+                }
+            }
+            
+            // Allow other events (like touch events) by default
+            return true;
+        })
         .on("zoom", (event) => {
             g.attr("transform", event.transform);
+        })
+        .on("start", () => {
+            // Change cursor when panning starts
+            svg.style("cursor", "grabbing");
+        })
+        .on("end", () => {
+            // Reset cursor when panning ends (or show grab if spacebar is still pressed)
+            svg.style("cursor", isSpacePressed ? "grab" : "default");
         });
 
     svg.call(zoom as any);
+    
+    // Update cursor on mouse enter/leave based on spacebar state
+    svg.on("mouseenter", () => {
+        if (isSpacePressed) {
+            svg.style("cursor", "grab");
+        }
+    });
+    
+    svg.on("mouseleave", () => {
+        if (!isSpacePressed) {
+            svg.style("cursor", "default");
+        }
+    });
+    
+    // Prevent context menu on right-click since we use it for panning
+    svg.on("contextmenu", (event) => {
+        event.preventDefault();
+    });
     // Clicking on empty space should clear selection & lineage
     svg.on("click", () => {
         setSelectedNode(null);
@@ -531,6 +901,39 @@ export default function Dashboard() {
         const nodeGroup = g.selectAll(".node")
             .data(nodes, (d: any) => d.data.attributes?.id || d.data.id || d.id);
 
+        // Helper function to handle expand/collapse
+        const handleNodeExpandCollapse = async (d: any) => {
+            const nodeId = d.data.attributes?.id || d.data.id;
+            
+            if (d.children) {
+                // Collapse: hide children
+                d._children = d.children;
+                d.children = null;
+                setExpandedNodes(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(nodeId);
+                    return newSet;
+                });
+            } else {
+                // Expand: show children
+                d.children = d._children;
+                d._children = null;
+                
+                // Mark as expanded
+                setExpandedNodes(prev => {
+                    const newSet = new Set(prev);
+                    newSet.add(nodeId);
+                    return newSet;
+                });
+                
+                // Lazy load children if not already loaded
+                if (nodeId) {
+                    loadNodeChildren(nodeId);
+                }
+            }
+            update(d);
+        };
+
         const nodeEnter = nodeGroup.enter().append("g")
             .attr("class", "node cursor-pointer")
             .attr("transform", (d: any) => {
@@ -542,35 +945,7 @@ export default function Dashboard() {
             })
             .on("click", async (event, d: any) => {
                 event.stopPropagation();
-                const nodeId = d.data.attributes?.id || d.data.id;
-                
-                if (d.children) {
-                    // Collapse: hide children
-                    d._children = d.children;
-                    d.children = null;
-                    setExpandedNodes(prev => {
-                        const newSet = new Set(prev);
-                        newSet.delete(nodeId);
-                        return newSet;
-                    });
-                } else {
-                    // Expand: show children
-                    d.children = d._children;
-                    d._children = null;
-                    
-                    // Mark as expanded
-                    setExpandedNodes(prev => {
-                        const newSet = new Set(prev);
-                        newSet.add(nodeId);
-                        return newSet;
-                    });
-                    
-                    // Lazy load children if not already loaded
-                    if (nodeId) {
-                        loadNodeChildren(nodeId);
-                    }
-                }
-                update(d);
+                await handleNodeExpandCollapse(d);
             });
 
         // Add Circle (colored strictly by node type)
@@ -590,9 +965,9 @@ export default function Dashboard() {
         const hasChildren = (d: any) => d.children || d._children || d.data._childCount > 0;
         const isExpanded = (d: any) => d.children && d.children.length > 0;
         
-        nodeEnter.filter(hasChildren)
+        const expandIndicator = nodeEnter.filter(hasChildren)
             .append("text")
-            .attr("class", "expand-indicator")
+            .attr("class", "expand-indicator cursor-pointer")
             .attr("dy", "0.31em")
             .attr("x", (d: any) => {
                 const offset = treeOrientation === 'horizontal' ? -25 : -15;
@@ -603,8 +978,11 @@ export default function Dashboard() {
             .style("fill", "#64748b")
             .style("font-size", "10px")
             .style("font-family", "system-ui")
-            .style("pointer-events", "none")
             .style("fill-opacity", 0)
+            .on("click", async (event, d: any) => {
+                event.stopPropagation(); // Prevent triggering node click
+                await handleNodeExpandCollapse(d);
+            })
             .transition().duration(500)
             .style("fill-opacity", 1);
         
@@ -739,6 +1117,20 @@ export default function Dashboard() {
                 return (pathSet.size > 0 && !pathSet.has(nodeId)) ? 0.3 : 1;
              });
 
+        // Update expand indicator for existing nodes (text and click handler)
+        nodeGroup.merge(nodeEnter as any).each(function(d: any) {
+            const node = d3.select(this);
+            const indicator = node.select(".expand-indicator");
+            if (!indicator.empty()) {
+                indicator
+                    .text(isExpanded(d) ? "▼" : "▶")
+                    .on("click", async (event: any) => {
+                        event.stopPropagation(); // Prevent triggering node click
+                        await handleNodeExpandCollapse(d);
+                    });
+            }
+        });
+
         // EXIT
         nodeGroup.exit().transition().duration(500)
             .attr("transform", (d: any) =>
@@ -807,6 +1199,11 @@ export default function Dashboard() {
         update(root);
     }
 
+    // Cleanup: remove event listeners
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeClick, centerTree, loadNodeChildren, loadingNodes]);
 
 
@@ -1009,32 +1406,66 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981] animate-pulse"></div>
                             <span className="text-xs font-bold text-slate-300 tracking-wide">DEX ASSISTANT</span>
+                            {chatHistory.length > 0 && (
+                                <span className="text-[9px] text-slate-500 ml-2">({chatHistory.length} messages)</span>
+                            )}
                         </div>
-                        <Terminal size={12} className="text-slate-600" />
+                        <div className="flex items-center gap-2">
+                            {chatHistory.length > 0 && (
+                                <button
+                                    onClick={handleDownloadChat}
+                                    className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 hover:border-indigo-500/50 text-indigo-300 hover:text-indigo-200 transition-all"
+                                    title="Download chat history"
+                                >
+                                    <Download size={12} />
+                                </button>
+                            )}
+                            <Terminal size={12} className="text-slate-600" />
+                        </div>
                     </div>
                     
                     {/* Messages Area */}
                     <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-                        {ragResult ? (
+                        {chatHistory.length > 0 ? (
                             <div className="space-y-4">
-                                {/* User Message */}
-                                {query && (
+                                {chatHistory.map((entry, index) => (
+                                    <div key={index} className="space-y-3">
+                                        {/* User Message */}
+                                        <div className="flex justify-end">
+                                            <div className="bg-indigo-600/20 border border-indigo-500/30 text-indigo-100 px-3 py-2 rounded-l-lg rounded-tr-lg max-w-[85%] shadow-lg">
+                                                <p className="text-xs font-medium">{entry.query}</p>
+                                                <p className="text-[9px] text-indigo-300/60 mt-1">
+                                                    {entry.timestamp.toLocaleTimeString()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* AI Response */}
+                                        <div className="flex justify-start relative">
+                                            <div className="absolute -left-2 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500 to-transparent opacity-50"></div>
+                                            <div className="pl-3 text-slate-300 max-w-[90%] space-y-2">
+                                                <div className="prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed font-light text-xs">
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.answer}</ReactMarkdown>
+                                                </div>
+                                                <p className="text-[9px] text-slate-500 mt-1">
+                                                    {entry.timestamp.toLocaleTimeString()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                
+                                {/* Show loading indicator if currently processing */}
+                                {loading && (
                                     <div className="flex justify-end">
                                         <div className="bg-indigo-600/20 border border-indigo-500/30 text-indigo-100 px-3 py-2 rounded-l-lg rounded-tr-lg max-w-[85%] shadow-lg">
-                                            <p className="text-xs font-medium">{query}</p>
+                                            <div className="flex items-center gap-2">
+                                                <RefreshCw className="animate-spin" size={12} />
+                                                <p className="text-xs font-medium">{query}</p>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
-                                
-                                {/* AI Response */}
-                                <div className="flex justify-start relative">
-                                    <div className="absolute -left-2 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500 to-transparent opacity-50"></div>
-                                    <div className="pl-3 text-slate-300 max-w-[90%] space-y-2">
-                                        <div className="prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed font-light text-xs">
-                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{ragResult}</ReactMarkdown>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         ) : (
                             <div className="h-full flex flex-col items-center justify-center text-slate-700 gap-3 opacity-60">
@@ -1291,7 +1722,7 @@ export default function Dashboard() {
       )}
 
       {/* --- GRAPH AREA --- */}
-      <main className="flex-1 min-w-0 relative bg-[#050505] cursor-move overflow-hidden" ref={treeContainer}>
+      <main className="flex-1 min-w-0 relative bg-[#050505] overflow-hidden" ref={treeContainer}>
         {/* Graph Controls */}
         <div className="absolute top-6 left-6 z-10 flex gap-3">
             <div className="p-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/10 shadow-xl flex gap-1 glass-panel">

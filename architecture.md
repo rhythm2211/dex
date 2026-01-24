@@ -420,18 +420,49 @@ INTERNAL_API_URL=http://dex-backend:8000  # Docker internal
 - **Network**: Services communicate via Docker service names
 
 ### Production Considerations
-- Neo4j: Use Neo4j Aura (cloud) or self-hosted
-- PostgreSQL: Use managed PostgreSQL (AWS RDS, Google Cloud SQL, Azure Database) with pgvector extension
-- Frontend: Vercel/Netlify deployment
-- Backend: Container orchestration (K8s, ECS, etc.)
+
+### Infrastructure
+- **Neo4j**: Use Neo4j Aura (cloud) or self-hosted with proper security
+- **PostgreSQL**: Use managed PostgreSQL (AWS RDS, Google Cloud SQL, Azure Database) with pgvector extension
+- **Frontend**: Vercel/Netlify deployment or containerized deployment
+- **Backend**: Container orchestration (K8s, ECS, etc.) with health checks and auto-scaling
+
+### Production Features
+- **Environment-based configuration**: Automatic detection of production vs development
+- **Health check endpoints**: `/health` with database connectivity checks
+- **Error handling**: Production-safe error messages (no sensitive data exposure)
+- **Logging**: Structured logging with appropriate levels (WARNING in production)
+- **Resource limits**: Docker resource constraints for stability
+- **Input validation**: Security-focused validation for all user inputs
+- **Connection retry logic**: Automatic retry for transient database failures
+- **CORS security**: Properly configured CORS for production domains
+
+### Deployment Options
+1. **Docker Compose**: Simple deployment for single-server setups
+2. **Kubernetes**: For scalable, multi-server deployments
+3. **Cloud Platforms**: AWS ECS, Google Cloud Run, Azure Container Instances
+4. **Serverless**: Frontend on Vercel, Backend on AWS Lambda/Google Cloud Functions (with modifications)
+
+### Monitoring & Observability
+- Health check endpoints for load balancer integration
+- Structured logging for log aggregation systems
+- Request ID tracking for distributed tracing
+- Performance metrics headers (X-Request-ID, X-Process-Time)
 
 ## Security Considerations
 
-1. **CORS**: Explicitly configured for frontend origins
-2. **Authentication**: NextAuth.js handles session management
+1. **CORS**: Explicitly configured for frontend origins with environment-based settings
+2. **Authentication**: NextAuth.js handles session management with OAuth and credentials
 3. **Data Isolation**: Each ingestion wipes previous data (single-tenant)
-4. **API Keys**: Stored in environment variables
+4. **API Keys**: Stored in environment variables, never committed to version control
 5. **Code Privacy**: Code processed in ephemeral containers (Docker)
+6. **Input Validation**: All user inputs validated and sanitized
+7. **Error Handling**: Production mode hides sensitive error details
+8. **Secrets Management**: Environment variables with validation warnings
+9. **HTTPS**: SSL/TLS required for production (via reverse proxy)
+10. **Rate Limiting**: Recommended for production API endpoints
+11. **SQL Injection Protection**: Parameterized queries via SQLAlchemy
+12. **XSS Protection**: Input sanitization and proper content types
 
 ## Performance Optimizations
 

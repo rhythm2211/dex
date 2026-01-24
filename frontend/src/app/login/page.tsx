@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react"; 
 import { Terminal, ArrowRight, Github, Lock, Mail, X } from "lucide-react";
+
+// Force dynamic rendering to prevent prerendering errors with useSession
+export const dynamic = 'force-dynamic';
 
 // --- ICONS ---
 const GoogleIcon = () => (
@@ -63,7 +66,8 @@ const SpotlightCard = ({ children, className = "" }: { children: React.ReactNode
   );
 };
 
-export default function LoginPage() {
+// Inner component that uses useSearchParams - must be wrapped in Suspense
+function LoginContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -321,5 +325,18 @@ export default function LoginPage() {
         </SpotlightCard>
       </div>
     </div>
+  );
+}
+
+// Main component wrapped in Suspense
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#050505] text-slate-200 font-sans flex flex-col items-center justify-center">
+        <div className="text-slate-400">Loading...</div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   );
 }

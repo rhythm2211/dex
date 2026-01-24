@@ -1,0 +1,130 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      tag:
+        description: 'Docker image tag'
+        required: false
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: ${{ secrets.STAGING_URL }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/dex
+            docker compose pull
+            docker compose up -d
+            docker compose ps
+      
+      - name: Health check
+        run: |
+          sleep 30
+          curl -f ${{ secrets.STAGING_URL }}/health || exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: ${{ secrets.PRODUCTION_URL }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            cd /opt/dex
+            docker compose pull
+            docker compose down
+            docker compose up -d
+            docker compose ps
+            docker system prune -f
+      
+      - name: Health check
+        run: |
+          sleep 60
+          for i in {1..5}; do
+            if curl -f ${{ secrets.PRODUCTION_URL }}/health; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Health check attempt $i failed, retrying..."
+            sleep 10
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
+      
+      - name: Notify deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Deployment to production completed'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always()
+
+  deploy-kubernetes:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && secrets.KUBECONFIG_DATA != ''
+    needs: [deploy-production]
+    environment:
+      name: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+      
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_DATA }}" > kubeconfig
+          export KUBECONFIG=kubeconfig
+          kubectl get nodes
+      
+      - name: Deploy to Kubernetes
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl set image deployment/dex-backend dex-backend=${{ env.REGISTRY }}/${{ github.repository }}/dex-backend:${{ github.sha }} -n dex
+          kubectl set image deployment/dex-frontend dex-frontend=${{ env.REGISTRY }}/${{ github.repository }}/dex-frontend:${{ github.sha }} -n dex
+          kubectl rollout status deployment/dex-backend -n dex
+          kubectl rollout status deployment/dex-frontend -n dex
