@@ -1,0 +1,68 @@
+services:
+  - type: web
+    name: dex-backend
+    runtime: docker
+    plan: free  # Change to 'starter' ($7/mo) for always-on service
+    region: oregon  # Choose closest region: oregon, frankfurt, singapore
+    branch: main  # Deploy from main branch
+    healthCheckPath: /health
+    envVars:
+      # Environment
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      
+      # PostgreSQL Configuration (Supabase)
+      # IMPORTANT: Set these values in Render Dashboard → Environment tab
+      # Do NOT commit actual secrets to git!
+      - key: POSTGRES_HOST
+        sync: false  # Set manually in Render Dashboard
+      - key: POSTGRES_PORT
+        value: 6543  # Connection pooler - works better with Render
+      - key: POSTGRES_USER
+        value: postgres
+      - key: POSTGRES_PASSWORD
+        sync: false  # Set manually in Render Dashboard
+      - key: POSTGRES_DB
+        value: postgres
+      - key: POSTGRES_VECTOR_TABLE
+        value: document_vectors
+      
+      # AI/LLM Configuration
+      # IMPORTANT: Set these values in Render Dashboard → Environment tab
+      - key: GROQ_API_KEY
+        sync: false  # Set manually in Render Dashboard
+      - key: GITHUB_TOKEN
+        sync: false  # Set manually in Render Dashboard
+      
+      # Neo4j Graph DB Configuration
+      # IMPORTANT: Set these values in Render Dashboard → Environment tab
+      - key: NEO4J_URI
+        sync: false  # Set manually in Render Dashboard
+      - key: NEO4J_USERNAME
+        value: neo4j
+      - key: NEO4J_PASSWORD
+        sync: false  # Set manually in Render Dashboard
+      - key: NEO4J_DATABASE
+        value: neo4j
+      
+      # CORS Configuration (JSON format)
+      - key: BACKEND_CORS_ORIGINS
+        value: '["https://dex.net.in","https://www.dex.net.in"]'
+      
+      # Frontend URL
+      - key: FRONTEND_URL
+        value: https://dex.net.in
+      
+      # Optional: Email Service (Resend)
+      # - key: RESEND_API_KEY
+      #   sync: false
+      # - key: RESEND_FROM_EMAIL
+      #   value: onboarding@resend.dev
+      # - key: RESEND_FROM_NAME
+      #   value: DEX
+      
+      # Optional: OpenAI (fallback)
+      # - key: OPENAI_API_KEY
+      #   sync: false
