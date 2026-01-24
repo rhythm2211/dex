@@ -27,7 +27,7 @@ psycopg2-binary  # For SQLAlchemy (user storage)
 # Note: torch==2.10.0+cpu is installed separately in Dockerfile to use CPU-only version
 # This saves ~3GB by excluding CUDA libraries (not needed on Railway CPU instances)
 sentence-transformers
-tokenizers==0.20.3
+tokenizers==0.22.2
 
 # --- Data Ingestion & Parsing ---
 gitpython
