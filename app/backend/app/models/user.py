@@ -54,7 +54,8 @@ engine = create_engine(
     max_overflow=10,
     connect_args={
         "connect_timeout": 10,  # 10 second timeout
-        "options": "-c statement_timeout=30000",  # 30 second statement timeout
+        # Note: statement_timeout removed - not supported by Neon DB connection pooler
+        # If needed, set it after connection is established using SQLAlchemy events
         "sslmode": "require",  # Require SSL for secure connections (especially for Neon DB)
         # For Neon DB, hostname is kept for SNI support
         # If hostname is used, psycopg2 will do its own resolution
