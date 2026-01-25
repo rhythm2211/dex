@@ -127,6 +127,17 @@ const handler = NextAuth({
             
             if (createResponse.ok) {
               console.log(`Created user profile for: ${user.email}`);
+              
+              // Update last_login timestamp for new OAuth users
+              fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}/update-login`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+              }).catch((error) => {
+                console.error("Failed to update login timestamp:", error);
+              });
+              
               // Send welcome email for new social login users
               // This is done asynchronously on the backend, so we don't wait for it
               fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}/send-welcome-email`, {
@@ -140,10 +151,21 @@ const handler = NextAuth({
               });
             }
           } else {
-            // User exists - update GitHub username if logging in with GitHub
+            // User exists - update last_login timestamp and GitHub username if needed
+            const userData = await checkResponse.json();
+            
+            // Update last_login timestamp for all OAuth logins
+            fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}/update-login`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            }).catch((error) => {
+              console.error("Failed to update login timestamp:", error);
+            });
+            
+            // Update GitHub username if logging in with GitHub and not set
             if (account?.provider === "github" && profile && 'login' in profile) {
-              const userData = await checkResponse.json();
-              // Update GitHub username if not set
               if (!userData.github_username) {
                 fetch(`${apiUrl}/api/v1/users/${encodeURIComponent(userData.id)}`, {
                   method: "PUT",
