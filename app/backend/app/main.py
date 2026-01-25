@@ -64,8 +64,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow GET, POST, OPTIONS, etc.
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Explicitly include OPTIONS
     allow_headers=["*"],  # Allow Content-Type, Authorization, etc.
+    expose_headers=["*"],  # Expose all headers in response
 )
 
 # --- Request Interceptor (Performance & Auditing) ---
@@ -74,7 +75,16 @@ async def request_interceptor(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.perf_counter()
     
-    logger.info(f"Incoming Request | ID: {request_id} | Method: {request.method} | Path: {request.url.path}")
+    # Log origin for CORS debugging
+    origin = request.headers.get("origin", "no-origin")
+    logger.info(f"Incoming Request | ID: {request_id} | Method: {request.method} | Path: {request.url.path} | Origin: {origin}")
+    
+    # For OPTIONS requests, let CORS middleware handle them without additional processing
+    if request.method == "OPTIONS":
+        response = await call_next(request)
+        # CORS middleware should have set the headers, but ensure we return 200 for successful preflight
+        if response.status_code == 200:
+            return response
     
     try:
         response = await call_next(request)
