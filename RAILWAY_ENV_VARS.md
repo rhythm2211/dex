@@ -20,14 +20,14 @@ DEBUG=false
 POSTGRES_HOST=ep-damp-dream-ahsk1hhl-pooler.c-3.us-east-1.aws.neon.tech
 POSTGRES_PORT=5432
 POSTGRES_USER=neondb_owner
-POSTGRES_PASSWORD=npg_5YQnb0maSDlx
+POSTGRES_PASSWORD=YOUR_NEON_DB_PASSWORD
 POSTGRES_DB=neondb
 POSTGRES_VECTOR_TABLE=document_vectors
-GROQ_API_KEY=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
-GITHUB_TOKEN=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
+GROQ_API_KEY=YOUR_GROQ_API_KEY
+GITHUB_TOKEN=YOUR_GITHUB_TOKEN
 NEO4J_URI=neo4j+s://f5c2d367.databases.neo4j.io
 NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=N4jbHcSTHB8hVu5js2KHKuadLosl6Y0YpLoIZ2oSNhw
+NEO4J_PASSWORD=YOUR_NEO4J_PASSWORD
 NEO4J_DATABASE=neo4j
 BACKEND_CORS_ORIGINS=["https://dex.net.in","https://www.dex.net.in"]
 FRONTEND_URL=https://dex.net.in
@@ -42,14 +42,14 @@ FRONTEND_URL=https://dex.net.in
 | `POSTGRES_HOST` | `ep-damp-dream-ahsk1hhl-pooler.c-3.us-east-1.aws.neon.tech` |
 | `POSTGRES_PORT` | `5432` |
 | `POSTGRES_USER` | `neondb_owner` |
-| `POSTGRES_PASSWORD` | `npg_5YQnb0maSDlx` |
+| `POSTGRES_PASSWORD` | `YOUR_NEON_DB_PASSWORD` (from Neon Dashboard) |
 | `POSTGRES_DB` | `neondb` |
 | `POSTGRES_VECTOR_TABLE` | `document_vectors` |
-| `GROQ_API_KEY` | `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` |
-| `GITHUB_TOKEN` | `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` |
+| `GROQ_API_KEY` | `YOUR_GROQ_API_KEY` (get from https://console.groq.com/) |
+| `GITHUB_TOKEN` | `YOUR_GITHUB_TOKEN` (create at https://github.com/settings/tokens) |
 | `NEO4J_URI` | `neo4j+s://f5c2d367.databases.neo4j.io` |
 | `NEO4J_USERNAME` | `neo4j` |
-| `NEO4J_PASSWORD` | `N4jbHcSTHB8hVu5js2KHKuadLosl6Y0YpLoIZ2oSNhw` |
+| `NEO4J_PASSWORD` | `YOUR_NEO4J_PASSWORD` (from Neo4j Aura Dashboard) |
 | `NEO4J_DATABASE` | `neo4j` |
 | `BACKEND_CORS_ORIGINS` | `["https://dex.net.in","https://www.dex.net.in"]` |
 | `FRONTEND_URL` | `https://dex.net.in` |

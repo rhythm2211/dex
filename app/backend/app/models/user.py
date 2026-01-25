@@ -55,7 +55,8 @@ engine = create_engine(
     connect_args={
         "connect_timeout": 10,  # 10 second timeout
         "options": "-c statement_timeout=30000",  # 30 second statement timeout
-        # Try to force IPv4 by using the resolved IP if available
+        "sslmode": "require",  # Require SSL for secure connections (especially for Neon DB)
+        # For Neon DB, hostname is kept for SNI support
         # If hostname is used, psycopg2 will do its own resolution
     }
 )
