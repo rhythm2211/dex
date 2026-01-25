@@ -981,70 +981,132 @@ class IngestionService:
                 chunk.metadata['file_name'] = os.path.relpath(full_path, actual_path)
                 chunk.page_content = f"File: {chunk.metadata['file_name']}\n{chunk.page_content}"
 
-            # Initialize PGVector store for batch insertion
-            # We'll use from_documents for the first batch, then add_texts for subsequent batches
-            batch_size = 100
+            # OPTIMIZED: Pre-generate embeddings in large batches, then bulk insert
+            # This is much faster than generating embeddings one-by-one in add_texts
+            embedding_batch_size = 500  # Larger batch for embedding generation (CPU-bound)
+            db_batch_size = 200  # Smaller batch for DB inserts (I/O-bound)
             total_chunks = len(vector_chunks)
-            logger.info(f"💾 Starting PostgreSQL vector indexing: {total_chunks} chunks in batches of {batch_size}")
+            logger.info(f"💾 Starting optimized PostgreSQL vector indexing: {total_chunks} chunks")
+            logger.info(f"   Embedding batch size: {embedding_batch_size}, DB insert batch size: {db_batch_size}")
             
-            # Process first batch to initialize the store
             if vector_chunks:
-                first_batch = vector_chunks[:batch_size]
+                # Initialize PGVector store (just to ensure table exists)
                 try:
-                    self._update_status("running", 80, f"Indexing vectors (0/{total_chunks})...")
-                    logger.info(f"🔧 Initializing PGVector store with first batch ({len(first_batch)} chunks)...")
-                    vector_store = PGVector.from_documents(
-                        documents=first_batch,
-                        embedding=self.embeddings,
+                    self._update_status("running", 80, f"Generating embeddings (0/{total_chunks})...")
+                    logger.info(f"🔧 Initializing PGVector store...")
+                    # Create a minimal store just to ensure table exists
+                    dummy_store = PGVector(
                         connection_string=settings.POSTGRES_CONNECTION_STRING,
+                        embedding_function=self.embeddings,
                         collection_name=settings.POSTGRES_VECTOR_TABLE,
                         use_jsonb=True
                     )
-                    logger.info(f"✅ PGVector store initialized with first batch")
+                    logger.info(f"✅ PGVector store initialized")
                 except Exception as e:
                     logger.error(f"❌ PGVector initialization failed: {e}")
                     raise RuntimeError(f"Failed to initialize vector store: {e}")
                 
-                # Process remaining batches
-                total_batches = (total_chunks + batch_size - 1) // batch_size
-                logger.info(f"📦 Processing {total_batches - 1} remaining batches...")
-                for i in range(batch_size, total_chunks, batch_size):
+                # Pre-generate all embeddings in large batches (much faster)
+                logger.info(f"🧮 Generating embeddings for {total_chunks} chunks in batches of {embedding_batch_size}...")
+                all_texts = [doc.page_content for doc in vector_chunks]
+                all_metadatas = [doc.metadata for doc in vector_chunks]
+                all_embeddings = []
+                
+                # Generate embeddings in batches
+                for i in range(0, total_chunks, embedding_batch_size):
                     self._check_cancelled()
-                    batch_num = (i // batch_size) + 1
-                    batch_progress = 80 + int((i / total_chunks) * 15) # 80% -> 95%
-                    self._update_status("running", batch_progress, f"Indexing vectors ({i}/{total_chunks})...")
+                    batch_texts = all_texts[i:i + embedding_batch_size]
+                    batch_progress = 80 + int((i / total_chunks) * 10) # 80% -> 90%
+                    self._update_status("running", batch_progress, f"Generating embeddings ({i}/{total_chunks})...")
                     
-                    batch = vector_chunks[i:i + batch_size]
-                    logger.info(f"  📤 Indexing batch {batch_num}/{total_batches}: chunks {i} to {min(i+batch_size, total_chunks)}")
+                    if (i // embedding_batch_size) % 10 == 0 or i == 0:
+                        logger.info(f"  🧮 Generating embeddings: batch {i//embedding_batch_size + 1}, chunks {i} to {min(i+embedding_batch_size, total_chunks)}")
+                    
+                    # Use the embedding model's embed_documents method (optimized for batch processing)
                     try:
-                        # Extract texts and metadatas for add_texts
-                        texts = [doc.page_content for doc in batch]
-                        metadatas = [doc.metadata for doc in batch]
-                        
-                        vector_store.add_texts(
-                            texts=texts,
-                            metadatas=metadatas
-                        )
-                        logger.info(f"  ✅ Batch {batch_num} indexed successfully")
-                    except (ConnectionError, OSError, psycopg.OperationalError) as e:
-                        error_msg = str(e)
-                        if "Connection reset" in error_msg or "Connection aborted" in error_msg or "connection" in error_msg.lower():
-                            logger.warning(f"⚠️  PostgreSQL connection issue during batch {batch_num}, retrying...")
-                            # Retry once
-                            try:
-                                vector_store.add_texts(
-                                    texts=texts,
-                                    metadatas=metadatas
-                                )
-                                logger.info(f"  ✅ Batch {batch_num} indexed after retry")
-                            except Exception as retry_e:
-                                logger.error(f"❌ PostgreSQL retry failed for batch {batch_num}: {retry_e}")
-                                raise RuntimeError(f"Failed to index vectors to PostgreSQL after retry. Connection issue: {retry_e}")
-                        else:
-                            raise
+                        batch_embeddings = self.embeddings.embed_documents(batch_texts)
+                        all_embeddings.extend(batch_embeddings)
                     except Exception as e:
-                        logger.error(f"❌ PostgreSQL indexing error for batch {batch_num}: {e}")
-                        raise RuntimeError(f"Failed to index vectors to PostgreSQL: {e}")
+                        logger.error(f"❌ Embedding generation failed for batch starting at {i}: {e}")
+                        raise RuntimeError(f"Failed to generate embeddings: {e}")
+                
+                logger.info(f"✅ Generated {len(all_embeddings)} embeddings")
+                
+                # Bulk insert into PostgreSQL using direct SQL (much faster than add_texts)
+                logger.info(f"💾 Bulk inserting {total_chunks} vectors into PostgreSQL in batches of {db_batch_size}...")
+                conninfo = make_conninfo(
+                    host=settings.POSTGRES_HOST,
+                    port=settings.POSTGRES_PORT,
+                    user=settings.POSTGRES_USER,
+                    password=settings.POSTGRES_PASSWORD,
+                    dbname=settings.POSTGRES_DB
+                )
+                
+                table_name = settings.POSTGRES_VECTOR_TABLE
+                total_db_batches = (total_chunks + db_batch_size - 1) // db_batch_size
+                
+                with psycopg.connect(conninfo) as conn:
+                    with conn.cursor() as cur:
+                        for i in range(0, total_chunks, db_batch_size):
+                            self._check_cancelled()
+                            batch_num = (i // db_batch_size) + 1
+                            batch_progress = 90 + int((i / total_chunks) * 5) # 90% -> 95%
+                            self._update_status("running", batch_progress, f"Indexing vectors ({i}/{total_chunks})...")
+                            
+                            batch_texts = all_texts[i:i + db_batch_size]
+                            batch_embeddings = all_embeddings[i:i + db_batch_size]
+                            batch_metadatas = all_metadatas[i:i + db_batch_size]
+                            
+                            if batch_num % 10 == 0 or batch_num == 1:
+                                logger.info(f"  💾 Inserting batch {batch_num}/{total_db_batches}: chunks {i} to {min(i+db_batch_size, total_chunks)}")
+                            
+                            try:
+                                # Bulk insert using executemany for better performance
+                                # Format: pgvector accepts string format '[1,2,3]' or list (if adapter registered)
+                                insert_query = f"""
+                                    INSERT INTO {table_name} (content, metadata, embedding, file_name, source, created_at)
+                                    VALUES (%s, %s, %s::vector, %s, %s, CURRENT_TIMESTAMP)
+                                """
+                                
+                                # Prepare data for bulk insert
+                                insert_data = []
+                                for text, embedding, metadata in zip(batch_texts, batch_embeddings, batch_metadatas):
+                                    file_name = metadata.get('file_name', '')
+                                    source = metadata.get('source', '')
+                                    # Convert embedding list to string format for pgvector
+                                    # Format: '[1.0,2.0,3.0]' - pgvector accepts this format
+                                    embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
+                                    insert_data.append((
+                                        text,
+                                        json.dumps(metadata),
+                                        embedding_str,
+                                        file_name,
+                                        source
+                                    ))
+                                
+                                # Bulk insert
+                                cur.executemany(insert_query, insert_data)
+                                conn.commit()
+                                
+                            except (ConnectionError, OSError, psycopg.OperationalError) as e:
+                                error_msg = str(e)
+                                if "Connection reset" in error_msg or "Connection aborted" in error_msg or "connection" in error_msg.lower():
+                                    logger.warning(f"⚠️  PostgreSQL connection issue during batch {batch_num}, retrying...")
+                                    conn.rollback()
+                                    # Retry once
+                                    try:
+                                        cur.executemany(insert_query, insert_data)
+                                        conn.commit()
+                                        logger.info(f"  ✅ Batch {batch_num} inserted after retry")
+                                    except Exception as retry_e:
+                                        logger.error(f"❌ PostgreSQL retry failed for batch {batch_num}: {retry_e}")
+                                        raise RuntimeError(f"Failed to index vectors to PostgreSQL after retry. Connection issue: {retry_e}")
+                                else:
+                                    raise
+                            except Exception as e:
+                                logger.error(f"❌ PostgreSQL indexing error for batch {batch_num}: {e}")
+                                conn.rollback()
+                                raise RuntimeError(f"Failed to index vectors to PostgreSQL: {e}")
                 
                 logger.info(f"✅ PostgreSQL vector indexing complete: {total_chunks} chunks indexed")
 
