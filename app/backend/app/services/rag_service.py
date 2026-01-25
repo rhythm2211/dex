@@ -13,25 +13,36 @@ logger = logging.getLogger("dex-core")
 
 class RAGService:
     def __init__(self):
-        # Initialize Embeddings & Vector Store once
-        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        # Validate required configuration
+        if not settings.GROQ_API_KEY:
+            raise ValueError("GROQ_API_KEY is required but not set. Please configure it in environment variables.")
         
-        # Initialize PGVector store
-        self.vector_store = PGVector(
-            connection_string=settings.POSTGRES_CONNECTION_STRING,
-            embedding_function=self.embeddings,
-            collection_name=settings.POSTGRES_VECTOR_TABLE,
-            use_jsonb=True  # Use JSONB for metadata
-        )
+        if not settings.POSTGRES_CONNECTION_STRING:
+            raise ValueError("POSTGRES_CONNECTION_STRING is required but not set. Please configure database connection.")
         
-        # Initialize Retriever (loads graph into memory)
-        self.retriever = HybridRetriever(self.vector_store)
-        
-        self.llm = ChatGroq(
-            model_name="llama-3.3-70b-versatile",
-            temperature=0,
-            groq_api_key=settings.GROQ_API_KEY
-        )
+        try:
+            # Initialize Embeddings & Vector Store once
+            self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            
+            # Initialize PGVector store
+            self.vector_store = PGVector(
+                connection_string=settings.POSTGRES_CONNECTION_STRING,
+                embedding_function=self.embeddings,
+                collection_name=settings.POSTGRES_VECTOR_TABLE,
+                use_jsonb=True  # Use JSONB for metadata
+            )
+            
+            # Initialize Retriever (loads graph into memory)
+            self.retriever = HybridRetriever(self.vector_store)
+            
+            self.llm = ChatGroq(
+                model_name="llama-3.3-70b-versatile",
+                temperature=0,
+                groq_api_key=settings.GROQ_API_KEY
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize RAGService components: {e}")
+            raise RuntimeError(f"RAGService initialization failed: {str(e)}") from e
 
     def reload_knowledge_base(self):
         """

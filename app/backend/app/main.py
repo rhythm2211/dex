@@ -89,11 +89,31 @@ async def request_interceptor(request: Request, call_next):
         
     except Exception as error:
         logger.error(f"System Failure | ID: {request_id} | Error: {str(error)}", exc_info=True)
-        # Don't expose internal error details in production
-        error_message = "Internal System Error" if settings.ENVIRONMENT == "production" else str(error)
+        # Provide more helpful error messages for common issues
+        error_str = str(error)
+        error_type = type(error).__name__
+        
+        # For initialization errors, provide more context
+        if "Failed to initialize" in error_str or "RuntimeError" in error_type:
+            # Check for common initialization failures
+            if "ingestion service" in error_str.lower():
+                error_message = "Service initialization failed: Ingestion service unavailable. Check GROQ_API_KEY and NEO4J configuration."
+            elif "rag service" in error_str.lower():
+                error_message = "Service initialization failed: RAG service unavailable. Check database and API keys."
+            elif "database" in error_str.lower() or "connection" in error_str.lower():
+                error_message = "Database connection failed. Check database configuration and network connectivity."
+            else:
+                error_message = f"Service initialization error: {error_str[:200]}" if settings.ENVIRONMENT != "production" else "Service initialization failed. Check logs for details."
+        elif settings.ENVIRONMENT == "production":
+            # In production, provide generic message but include error type
+            error_message = f"Internal System Error ({error_type})"
+        else:
+            # In development, show full error
+            error_message = error_str
+        
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": error_message, "request_id": request_id}
+            content={"error": error_message, "request_id": request_id, "error_type": error_type}
         )
 
 # --- Global Exception Handlers ---
@@ -132,7 +152,6 @@ async def health_probe():
     # Check PostgreSQL connection
     try:
         from sqlalchemy import text, create_engine
-        from backend.app.core.config import settings
         engine = create_engine(settings.DATABASE_URL)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
