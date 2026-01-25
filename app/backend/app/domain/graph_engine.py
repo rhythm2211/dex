@@ -131,6 +131,108 @@ class GraphEngine:
         
         with self.driver.session(database=self.database) as session:
             return session.run(query, **params)
+    
+    def batch_upsert_nodes(self, nodes: list, batch_size: int = 100):
+        """
+        Batch insert nodes into Neo4j for better performance.
+        Uses UNWIND to insert multiple nodes in a single transaction.
+        """
+        if not self.driver or not nodes:
+            return
+        
+        # Process in batches to avoid query size limits
+        for i in range(0, len(nodes), batch_size):
+            batch = nodes[i:i + batch_size]
+            
+            query = """
+            UNWIND $nodes AS node
+            MERGE (n:CodeNode {id: node.id})
+            SET n.name = node.name,
+                n.type = node.type,
+                n.val = node.val,
+                n.last_author = node.last_author,
+                n.last_modified = node.last_modified,
+                n.commit_count = node.commit_count,
+                n.bus_risk_score = node.bus_risk_score,
+                n.top_owner = node.top_owner,
+                n.collaborators = node.collaborators
+            """
+            
+            params = {
+                "nodes": [
+                    {
+                        "id": node.get("id"),
+                        "name": node.get("name", ""),
+                        "type": node.get("type", "file"),
+                        "val": node.get("val", 5),
+                        "last_author": node.get("last_author", "Unknown"),
+                        "last_modified": node.get("last_modified", ""),
+                        "commit_count": node.get("commit_count", 0),
+                        "bus_risk_score": node.get("bus_risk_score", 0.0),
+                        "top_owner": node.get("top_owner", "None"),
+                        "collaborators": node.get("collaborators", [])
+                    }
+                    for node in batch
+                ]
+            }
+            
+            try:
+                self._safe_session_run(query, **params)
+            except Exception as e:
+                logger.error(f"Failed to batch upsert {len(batch)} nodes: {e}")
+                # Fallback to individual inserts for this batch
+                for node in batch:
+                    try:
+                        self.upsert_node(node)
+                    except:
+                        pass
+    
+    def batch_upsert_edges(self, edges: list, batch_size: int = 200):
+        """
+        Batch insert edges into Neo4j for better performance.
+        Uses UNWIND to insert multiple edges in a single transaction.
+        """
+        if not self.driver or not edges:
+            return
+        
+        # Process in batches to avoid query size limits
+        for i in range(0, len(edges), batch_size):
+            batch = edges[i:i + batch_size]
+            
+            # Group edges by relationship type for efficiency
+            edges_by_type = {}
+            for edge in batch:
+                rel_type = "DEPENDS_ON" if edge.get("relation") == "IMPORTS" else edge.get("relation", "DEPENDS_ON")
+                if rel_type not in edges_by_type:
+                    edges_by_type[rel_type] = []
+                edges_by_type[rel_type].append(edge)
+            
+            # Insert each relationship type in a separate query
+            for rel_type, type_edges in edges_by_type.items():
+                query = f"""
+                UNWIND $edges AS edge
+                MATCH (a:CodeNode {{id: edge.source}})
+                MATCH (b:CodeNode {{id: edge.target}})
+                MERGE (a)-[:{rel_type}]->(b)
+                """
+                
+                params = {
+                    "edges": [
+                        {"source": edge.get("source"), "target": edge.get("target")}
+                        for edge in type_edges
+                    ]
+                }
+                
+                try:
+                    self._safe_session_run(query, **params)
+                except Exception as e:
+                    logger.error(f"Failed to batch upsert {len(type_edges)} {rel_type} edges: {e}")
+                    # Fallback to individual inserts for this batch
+                    for edge in type_edges:
+                        try:
+                            self.upsert_edge(edge.get("source"), edge.get("target"), edge.get("relation"))
+                        except:
+                            pass
 
     def wipe_graph(self):
         if not self.driver: return
@@ -350,21 +452,24 @@ class GraphEngine:
         # Add more language-specific resolution as needed
         return None
 
-    def extract_and_build(self, file_content: str, file_path: str, repo_root: str = "", git_metadata: dict = None, blame_map: dict = None):
+    def extract_and_build(self, file_content: str, file_path: str, repo_root: str = "", git_metadata: dict = None, blame_map: dict = None, return_data: bool = False):
         """
         Extract code structure and build graph nodes/edges.
         Supports Python (AST) and other languages (regex fallback).
+        
+        Args:
+            return_data: If True, returns (nodes, edges) instead of inserting to Neo4j
         """
         file_meta = git_metadata or {}
         
-        # 1. Push File Node
-        self.upsert_node({
+        # 1. File Node
+        file_node = {
             "id": file_path,
             "type": "file",
             "name": os.path.basename(file_path),
             "val": 15,
             **file_meta
-        })
+        }
 
         # 2. Parse structure based on language
         language = self._detect_language(file_path)
@@ -383,13 +488,14 @@ class GraphEngine:
             except Exception as e:
                 logger.debug(f"  ⚠️  Regex extraction failed for {file_path}: {e}")
         else:
-            # Unknown language - just create file node (already done above)
+            # Unknown language - just create file node
             logger.debug(f"  📄 Unknown language for {file_path}, skipping structure extraction")
         
         if len(nodes) > 0 or len(edges) > 0:
             logger.debug(f"  📊 Neo4j: Extracted {len(nodes)} nodes, {len(edges)} edges from {os.path.basename(file_path)}")
 
-        # 3. Push Children (Classes/Functions)
+        # 3. Process Children (Classes/Functions) with ownership
+        processed_nodes = [file_node]  # Start with file node
         for node in nodes:
             # [NEW] Calculate Function-Level Ownership
             top_owner = "Unknown"
@@ -407,10 +513,16 @@ class GraphEngine:
             node_data["top_owner"] = top_owner # Override with specific function owner
             node_data["collaborators"] = collaborators
             node_data["val"] = 10 if node["type"] == "class" else 5
-            
-            self.upsert_node(node_data)
+            processed_nodes.append(node_data)
 
-        # 4. Push Edges
+        # If return_data is True, return without inserting
+        if return_data:
+            return processed_nodes, edges
+
+        # 4. Insert to Neo4j (original behavior)
+        self.upsert_node(file_node)
+        for node in processed_nodes[1:]:  # Skip file node (already inserted)
+            self.upsert_node(node)
         for edge in edges:
             self.upsert_edge(edge['source'], edge['target'], edge['relation'])
 

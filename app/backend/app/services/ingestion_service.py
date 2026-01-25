@@ -842,21 +842,26 @@ class IngestionService:
             if file_counts:
                 logger.info(f"📊 File breakdown: {', '.join([f'{count} {ext}' for ext, count in file_counts.items()])}")
 
-            # --- PHASE 2: STREAM TO CLOUD (NEO4J) ---
+            # --- PHASE 2: STREAM TO CLOUD (NEO4J) - OPTIMIZED WITH BATCHING ---
             total_docs = len(raw_docs)
-            logger.info(f"🚀 Starting Neo4j streaming for {total_docs} files...")
+            logger.info(f"🚀 Starting Neo4j streaming for {total_docs} files (using batch inserts for performance)...")
+            
+            # Collect all nodes and edges for batch insertion
+            all_nodes = []
+            all_edges = []
+            batch_size = 50  # Process files in batches before inserting to Neo4j
             
             for i, doc in enumerate(raw_docs):
                 # Check for cancellation periodically
-                if i % 5 == 0:
+                if i % 10 == 0:
                     self._check_cancelled()
                 
-                # Update progress bar and log every 5 files or every 10%
-                if i % 5 == 0:
+                # Update progress bar and log every 10 files
+                if i % 10 == 0:
                     progress = 40 + int((i / total_docs) * 35) # 40% -> 75%
                     self._update_status("running", progress, f"Streaming Nodes to Cloud ({i}/{total_docs})...")
-                    if i % 10 == 0 or i == 0:
-                        logger.info(f"📤 Streaming to Neo4j: {i}/{total_docs} files ({int((i/total_docs)*100)}%)")
+                    if i % 50 == 0 or i == 0:
+                        logger.info(f"📤 Processing files for Neo4j: {i}/{total_docs} files ({int((i/total_docs)*100)}%)")
                 
                 file_path = doc.metadata.get('source', 'unknown')
                 relative_path = os.path.relpath(file_path, actual_path)
@@ -871,42 +876,61 @@ class IngestionService:
                 # [NEW] Get Line-Level Blame (Ownership) - only for code files
                 blame_map = {}
                 if is_code_file:
-                    if i % 20 == 0:
-                        logger.info(f"  🔍 Getting git blame for: {relative_path}")
                     try:
                         blame_map = self._get_file_blame(actual_path, relative_path)
                     except Exception as e:
-                        logger.warning(f"  ⚠️  Failed to get git blame for {relative_path}: {e}")
+                        logger.debug(f"  ⚠️  Failed to get git blame for {relative_path}: {e}")
                         blame_map = {}
                 
-                # PUSH TO NEO4J (Streaming)
-                # Pass the blame_map so GraphEngine can assign function owners
-                if i % 20 == 0:
-                    file_type = "code" if is_code_file else "text"
-                    logger.info(f"  📊 Processing {file_type} file and pushing to Neo4j: {relative_path}")
-                
+                # Extract structure (but don't insert yet - collect for batch)
                 try:
-                    self.graph_engine.extract_and_build(
+                    # Use extract_and_build with return_data=True to get nodes/edges without inserting
+                    nodes, edges = self.graph_engine.extract_and_build(
                         file_content=doc.page_content, 
                         file_path=relative_path, 
                         repo_root=actual_path,
                         git_metadata=git_meta,
-                        blame_map=blame_map
+                        blame_map=blame_map,
+                        return_data=True
                     )
+                    all_nodes.extend(nodes)
+                    all_edges.extend(edges)
                 except Exception as e:
-                    logger.warning(f"  ⚠️  Failed to process {relative_path}: {e}")
-                    # Still create a file node even if AST parsing fails
-                    try:
-                        self.graph_engine.upsert_node({
-                            "id": relative_path,
-                            "type": "file",
-                            "name": os.path.basename(relative_path),
-                            "val": 15,
-                            **git_meta
-                        })
-                    except:
-                        pass
+                    logger.debug(f"  ⚠️  Failed to extract structure for {relative_path}: {e}")
+                    # Still add file node even if parsing fails
+                    all_nodes.append({
+                        "id": relative_path,
+                        "type": "file",
+                        "name": os.path.basename(relative_path),
+                        "val": 15,
+                        **git_meta
+                    })
                     continue
+                
+                # Batch insert every batch_size files to avoid memory issues
+                if (i + 1) % batch_size == 0 or (i + 1) == total_docs:
+                    logger.info(f"  💾 Batch inserting {len(all_nodes)} nodes and {len(all_edges)} edges to Neo4j...")
+                    try:
+                        self.graph_engine.batch_upsert_nodes(all_nodes)
+                        self.graph_engine.batch_upsert_edges(all_edges)
+                        logger.info(f"  ✅ Batch insert complete: {len(all_nodes)} nodes, {len(all_edges)} edges")
+                    except Exception as e:
+                        logger.error(f"  ❌ Batch insert failed: {e}. Falling back to individual inserts...")
+                        # Fallback to individual inserts
+                        for node in all_nodes:
+                            try:
+                                self.graph_engine.upsert_node(node)
+                            except:
+                                pass
+                        for edge in all_edges:
+                            try:
+                                self.graph_engine.upsert_edge(edge['source'], edge['target'], edge['relation'])
+                            except:
+                                pass
+                    
+                    # Clear batches
+                    all_nodes = []
+                    all_edges = []
             
             logger.info(f"✅ Neo4j streaming complete: {total_docs} files processed")
 
