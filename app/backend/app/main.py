@@ -50,6 +50,8 @@ origins = [
     "http://localhost:8000",      # Self (Swagger UI)
     "http://localhost:8001",      # Self (Swagger UI - Docker port)
     "http://frontend:3000",       # Docker service name
+    "https://dex.net.in",         # Production frontend
+    "https://www.dex.net.in",     # Production frontend (www)
 ]
 
 # If settings provide more origins, add them
@@ -75,16 +77,10 @@ async def request_interceptor(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.perf_counter()
     
-    # Log origin for CORS debugging
-    origin = request.headers.get("origin", "no-origin")
-    logger.info(f"Incoming Request | ID: {request_id} | Method: {request.method} | Path: {request.url.path} | Origin: {origin}")
-    
-    # For OPTIONS requests, let CORS middleware handle them without additional processing
-    if request.method == "OPTIONS":
-        response = await call_next(request)
-        # CORS middleware should have set the headers, but ensure we return 200 for successful preflight
-        if response.status_code == 200:
-            return response
+    # Log origin for CORS debugging (only for non-OPTIONS to avoid conflicts)
+    if request.method != "OPTIONS":
+        origin = request.headers.get("origin", "no-origin")
+        logger.info(f"Incoming Request | ID: {request_id} | Method: {request.method} | Path: {request.url.path} | Origin: {origin}")
     
     try:
         response = await call_next(request)
