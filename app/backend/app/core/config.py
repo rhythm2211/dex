@@ -159,11 +159,17 @@ class Settings(BaseSettings):
         
         # Add Neon DB specific parameters
         if self._is_neon_db(self.POSTGRES_HOST):
-            endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
-            # URL-encode endpoint ID and add to connection string
-            encoded_endpoint_id = quote_plus(endpoint_id)
-            # Add endpoint ID and SSL mode for Neon DB
-            connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require"
+            # For pooled connections, don't add endpoint option - SNI handles it
+            # Only add endpoint option for direct (unpooled) connections
+            if "-pooler" not in self.POSTGRES_HOST:
+                endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
+                # URL-encode endpoint ID and add to connection string
+                encoded_endpoint_id = quote_plus(endpoint_id)
+                # Add endpoint ID and SSL mode for Neon DB
+                connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require"
+            else:
+                # Pooled connection - only add SSL mode, endpoint comes from SNI
+                connection_string += "?sslmode=require"
         else:
             # For other databases, add SSL if not specified
             if "sslmode" not in connection_string:
@@ -199,11 +205,17 @@ class Settings(BaseSettings):
         
         # Add Neon DB specific parameters
         if self._is_neon_db(self.POSTGRES_HOST):
-            endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
-            # URL-encode endpoint ID and add to connection string
-            encoded_endpoint_id = quote_plus(endpoint_id)
-            # Add endpoint ID and SSL mode for Neon DB
-            connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require"
+            # For pooled connections, don't add endpoint option - SNI handles it
+            # Only add endpoint option for direct (unpooled) connections
+            if "-pooler" not in self.POSTGRES_HOST:
+                endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
+                # URL-encode endpoint ID and add to connection string
+                encoded_endpoint_id = quote_plus(endpoint_id)
+                # Add endpoint ID and SSL mode for Neon DB
+                connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require"
+            else:
+                # Pooled connection - only add SSL mode, endpoint comes from SNI
+                connection_string += "?sslmode=require"
         else:
             # For other databases, add SSL if not specified
             if "sslmode" not in connection_string:
