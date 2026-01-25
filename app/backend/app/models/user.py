@@ -121,6 +121,65 @@ def init_db():
                     conn.commit()
                 except Exception:
                     pass  # Column may already exist
+                
+                # Optionally set up pgvector extension and document_vectors table
+                # This is non-blocking - if pgvector isn't available, the app will still start
+                try:
+                    from backend.app.core.config import settings
+                    # Enable pgvector extension if available
+                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                    conn.commit()
+                    
+                    # Create document_vectors table if it doesn't exist
+                    table_name = settings.POSTGRES_VECTOR_TABLE or "document_vectors"
+                    conn.execute(text(f"""
+                        CREATE TABLE IF NOT EXISTS {table_name} (
+                            id SERIAL PRIMARY KEY,
+                            content TEXT NOT NULL,
+                            metadata JSONB,
+                            embedding vector(384),
+                            file_name TEXT,
+                            source TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """))
+                    conn.commit()
+                    
+                    # Create indexes if they don't exist (non-blocking)
+                    try:
+                        conn.execute(text(f"""
+                            CREATE INDEX IF NOT EXISTS {table_name}_embedding_idx
+                            ON {table_name}
+                            USING hnsw (embedding vector_cosine_ops)
+                            WITH (m = 16, ef_construction = 64);
+                        """))
+                        conn.commit()
+                    except Exception:
+                        pass  # Index may already exist or extension not fully available
+                    
+                    try:
+                        conn.execute(text(f"""
+                            CREATE INDEX IF NOT EXISTS {table_name}_metadata_idx
+                            ON {table_name}
+                            USING GIN (metadata);
+                        """))
+                        conn.commit()
+                    except Exception:
+                        pass
+                    
+                    try:
+                        conn.execute(text(f"""
+                            CREATE INDEX IF NOT EXISTS {table_name}_file_name_idx
+                            ON {table_name} (file_name);
+                        """))
+                        conn.commit()
+                    except Exception:
+                        pass
+                    
+                    logger.info(f"✅ pgvector extension and {table_name} table initialized")
+                except Exception as e:
+                    # pgvector setup is optional - log warning but don't fail
+                    logger.warning(f"⚠️ pgvector setup skipped (optional): {e}")
             
             logger.info("✅ Database initialized successfully")
             return
