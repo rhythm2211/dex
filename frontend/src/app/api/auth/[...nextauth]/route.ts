@@ -100,9 +100,12 @@ const handler = NextAuth({
       if (user?.email) {
         try {
           const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+          console.log(`[NextAuth] API URL: ${apiUrl}`);
+          console.log(`[NextAuth] Attempting to save user: ${user.email}`);
           
           // Check if user exists
           const checkResponse = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}`);
+          console.log(`[NextAuth] Check user response status: ${checkResponse.status}`);
           
           if (!checkResponse.ok) {
             // User doesn't exist, create new profile
@@ -125,8 +128,10 @@ const handler = NextAuth({
               }),
             });
             
+            console.log(`[NextAuth] Create user response status: ${createResponse.status}`);
+            
             if (createResponse.ok) {
-              console.log(`Created user profile for: ${user.email}`);
+              console.log(`✅ Created user profile for: ${user.email}`);
               
               // Update last_login timestamp for new OAuth users
               fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}/update-login`, {
@@ -184,7 +189,12 @@ const handler = NextAuth({
           }
         } catch (error) {
           // Log error but don't block sign in
-          console.error("Failed to save user to database:", error);
+          console.error("❌ Failed to save user to database:", error);
+          console.error("❌ Error details:", {
+            message: error instanceof Error ? error.message : String(error),
+            apiUrl: process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+            userEmail: user?.email,
+          });
         }
       }
       
