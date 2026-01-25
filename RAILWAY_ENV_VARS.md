@@ -6,7 +6,7 @@
 
 If you're seeing `connection to server at "127.0.0.1"` errors, it means `POSTGRES_HOST` is not set in Railway.
 
-**Fix**: Go to Railway Dashboard → Your Service → Variables tab → Add `POSTGRES_HOST=db.zyrxhllgdgowsbjislaq.supabase.co`
+**Fix**: Go to Railway Dashboard → Your Service → Variables tab → Add `POSTGRES_HOST=ep-damp-dream-ahsk1hhl-pooler.c-3.us-east-1.aws.neon.tech`
 
 ## Required Environment Variables
 
@@ -17,11 +17,11 @@ Add these in Railway Dashboard → Your Service → Variables tab:
 ```env
 ENVIRONMENT=production
 DEBUG=false
-POSTGRES_HOST=db.zyrxhllgdgowsbjislaq.supabase.co
-POSTGRES_PORT=6543
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=[@Muj219302335]
-POSTGRES_DB=postgres
+POSTGRES_HOST=ep-damp-dream-ahsk1hhl-pooler.c-3.us-east-1.aws.neon.tech
+POSTGRES_PORT=5432
+POSTGRES_USER=neondb_owner
+POSTGRES_PASSWORD=npg_5YQnb0maSDlx
+POSTGRES_DB=neondb
 POSTGRES_VECTOR_TABLE=document_vectors
 GROQ_API_KEY=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
 GITHUB_TOKEN=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
@@ -39,11 +39,11 @@ FRONTEND_URL=https://dex.net.in
 |----------|-------|
 | `ENVIRONMENT` | `production` |
 | `DEBUG` | `false` |
-| `POSTGRES_HOST` | `db.zyrxhllgdgowsbjislaq.supabase.co` |
-| `POSTGRES_PORT` | `6543` |
-| `POSTGRES_USER` | `postgres` |
-| `POSTGRES_PASSWORD` | `[@Muj219302335]` |
-| `POSTGRES_DB` | `postgres` |
+| `POSTGRES_HOST` | `ep-damp-dream-ahsk1hhl-pooler.c-3.us-east-1.aws.neon.tech` |
+| `POSTGRES_PORT` | `5432` |
+| `POSTGRES_USER` | `neondb_owner` |
+| `POSTGRES_PASSWORD` | `npg_5YQnb0maSDlx` |
+| `POSTGRES_DB` | `neondb` |
 | `POSTGRES_VECTOR_TABLE` | `document_vectors` |
 | `GROQ_API_KEY` | `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` |
 | `GITHUB_TOKEN` | `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` |
@@ -68,8 +68,8 @@ RESEND_FROM_NAME=DEX
 
 ## Important Notes
 
-1. **POSTGRES_PORT**: Use `6543` for connection pooler (recommended) or `5432` for direct connection
-2. **POSTGRES_PASSWORD**: Make sure to URL-encode special characters like `[@Muj219302335]` - the app handles this automatically
+1. **POSTGRES_PORT**: Use `5432` for Neon DB (pooler port)
+2. **POSTGRES_PASSWORD**: The app handles URL encoding automatically for special characters
 3. **BACKEND_CORS_ORIGINS**: Must be valid JSON array format with double quotes
 4. **No .env file needed**: Railway uses environment variables directly, not .env files
 
@@ -99,7 +99,7 @@ RESEND_FROM_NAME=DEX
 After setting variables, check the deployment logs. You should see:
 
 ✅ **Success indicators:**
-- `Database connection: postgres@db.zyrxhllgdgowsbjislaq.supabase.co:6543/postgres`
+- `Database connection: neondb_owner@ep-damp-dream-ahsk1hhl-pooler.c-3.us-east-1.aws.neon.tech:5432/neondb`
 - `✅ Database initialized successfully`
 - No warnings about `POSTGRES_HOST` being localhost
 
@@ -112,7 +112,7 @@ After setting variables, check the deployment logs. You should see:
 
 ### Error: "connection to server at 127.0.0.1"
 **Cause**: `POSTGRES_HOST` environment variable is not set  
-**Fix**: Add `POSTGRES_HOST=db.zyrxhllgdgowsbjislaq.supabase.co` in Railway Variables
+**Fix**: Add `POSTGRES_HOST=ep-damp-dream-ahsk1hhl-pooler.c-3.us-east-1.aws.neon.tech` in Railway Variables
 
 ### Error: "Could not find .env file"
 **Cause**: This is normal in Railway - it uses environment variables, not .env files  
@@ -123,32 +123,29 @@ After setting variables, check the deployment logs. You should see:
 **Fix**: Add `GROQ_API_KEY` in Railway Variables
 
 ### Error: "Network is unreachable" with IPv6 address
-**Cause**: Railway's network is trying to connect via IPv6, but Railway doesn't support IPv6 or Supabase isn't reachable via IPv6  
+**Note**: Neon DB on AWS supports both IPv4 and IPv6 connections for free. If you see IPv6 connection errors, it's likely a Railway network configuration issue, not a Neon DB limitation.
+
 **Symptoms**: 
-- `Failed to resolve db.xxxxx.supabase.co to IPv4`
-- `connection to server at "db.xxxxx.supabase.co" (2406:da1a:...) failed: Network is unreachable`
+- `Failed to resolve ep-xxxxx.neon.tech to IPv4`
+- `connection to server at "ep-xxxxx.neon.tech" (2406:da1a:...) failed: Network is unreachable`
 
 **Solutions** (try in order):
 
-1. **Check Supabase Network Restrictions**:
-   - Go to Supabase Dashboard → Project Settings → Database → Network Restrictions
+1. **Verify Connection Pooler is Used**:
+   - Make sure you're using the pooler endpoint (ends with `-pooler`)
+   - Example: `ep-xxxxx-pooler.xxxxx.aws.neon.tech`
+   - Port should be `5432` for pooler
+   - The pooler handles IPv4/IPv6 connectivity automatically
+
+2. **Check Neon DB Network Settings**:
+   - Go to Neon Dashboard → Project Settings → Network
    - Make sure there are no IP restrictions blocking Railway
    - Or temporarily disable restrictions to test
 
-2. **Enable Supabase IPv4 Add-on** (if connection pooler doesn't work):
-   - Even with connection pooler (port 6543), you may need the IPv4 add-on
-   - Go to Supabase Dashboard → Project Settings → Addons
-   - Enable "IPv4" add-on ($4/month)
-   - This provides a dedicated IPv4 endpoint
-
-3. **Use Direct Connection with IPv4 Add-on**:
-   - If pooler still doesn't work, try direct connection:
-   - Change `POSTGRES_PORT=5432` in Railway Variables
-   - Make sure IPv4 add-on is enabled in Supabase
-
-4. **Check Railway Network Settings**:
+3. **Check Railway Network Settings**:
    - Railway's network should support outbound connections
    - If you're on a restricted plan, check if database connections are allowed
+   - Railway should support both IPv4 and IPv6 outbound connections
 
 ### Port Issues
 - Railway automatically sets `PORT` environment variable

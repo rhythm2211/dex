@@ -112,9 +112,9 @@ class Settings(BaseSettings):
         
         # If all methods fail, log warning but return hostname
         # The connection pooler should handle IPv4, but if it doesn't work,
-        # the user may need to enable Supabase IPv4 add-on
-        logger.warning(f"⚠️ Failed to resolve {hostname} to IPv4. Connection may fail if Railway network doesn't support IPv6.")
-        logger.warning(f"⚠️ If connection fails, consider enabling Supabase IPv4 add-on or check Railway network settings.")
+        # check network settings or database provider configuration
+        logger.warning(f"⚠️ Failed to resolve {hostname} to IPv4. Connection may fail if network doesn't support IPv6.")
+        logger.warning(f"⚠️ If connection fails, check database provider network settings.")
         return hostname  # Fallback to hostname - connection pooler should handle this
     
     @property
@@ -170,4 +170,4 @@ logger.info(f"PostgreSQL Config - Host: {settings.POSTGRES_HOST}, Port: {setting
 # Warn if using default localhost (likely missing env var)
 if settings.POSTGRES_HOST == "localhost" and os.getenv("ENVIRONMENT") == "production":
     logger.warning("⚠️ WARNING: POSTGRES_HOST is 'localhost' in production! This usually means the environment variable is not set.")
-    logger.warning("⚠️ Please set POSTGRES_HOST in Railway Variables tab to your Supabase hostname.")
+    logger.warning("⚠️ Please set POSTGRES_HOST in your deployment platform's environment variables to your database hostname.")

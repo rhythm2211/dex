@@ -5,7 +5,7 @@ This guide will help you deploy DEX to `dex.net.in` **completely FREE** using fr
 ## 🎯 What We'll Use (All Free)
 
 - **Frontend**: Vercel (Free forever)
-- **Backend**: Railway or Render (Free tier)
+- **Backend**: Railway (Free tier)
 - **PostgreSQL**: Supabase or Neon (Free tier with pgvector)
 - **Neo4j**: Neo4j Aura Free tier
 - **Domain**: dex.net.in (you already have this)
@@ -332,7 +332,7 @@ Your DEX application is now live at **https://dex.net.in** - completely FREE!
 **Railway**:
 - ⚠️ $5 free credit/month (usually enough for small apps)
 - ⚠️ Sleeps after 7 days of inactivity (wakes on request)
-- 💡 Consider Render as alternative (see below)
+- 💡 See `RAILWAY_ENV_VARS.md` for detailed Railway setup
 
 **Supabase**:
 - ✅ 500MB database
@@ -343,18 +343,7 @@ Your DEX application is now live at **https://dex.net.in** - completely FREE!
 - ✅ Free tier available
 - ✅ Limited to 50k nodes
 
-### Alternative: Use Render Instead of Railway
-
-If Railway free tier doesn't work for you:
-
-1. **Sign up**: https://render.com
-2. **Create Web Service**:
-   - Connect GitHub repo
-   - Root Directory: `app/backend`
-   - Build Command: (auto-detected)
-   - Start Command: (auto-detected from Dockerfile)
-3. **Add environment variables** (same as Railway)
-4. **Free tier**: Sleeps after 15 min inactivity, but free forever
+For detailed Railway setup instructions, see `RAILWAY_ENV_VARS.md`.
 
 ---
 
@@ -394,7 +383,7 @@ If Railway free tier doesn't work for you:
 ## 💰 Cost Summary
 
 - **Vercel**: $0 (Free forever)
-- **Railway/Render**: $0 (Free tier)
+- **Railway**: $0 (Free tier)
 - **Supabase**: $0 (Free tier)
 - **Neo4j Aura**: $0 (Free tier)
 - **Domain**: ~$1/month (you already have this)

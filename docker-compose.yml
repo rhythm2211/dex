@@ -43,7 +43,7 @@ services:
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["http://localhost:3001","http://localhost:3000","http://frontend:3000"]}
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - DEBUG=${DEBUG:-false}
-      # PostgreSQL connection: Use .env file values (Supabase) or override for local postgres service
+      # PostgreSQL connection: Use .env file values (Neon DB) or override for local postgres service
       # If POSTGRES_HOST is not set in .env, it will use the local postgres service
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
