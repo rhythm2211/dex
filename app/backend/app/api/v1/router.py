@@ -57,7 +57,11 @@ def get_ingestion_status_lightweight():
 def get_rag_service():
     global _rag_service
     if _rag_service is None:
-        _rag_service = RAGService()
+        try:
+            _rag_service = RAGService()
+        except Exception as e:
+            logger.exception(f"Failed to initialize RAGService: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to initialize RAG service: {str(e)}") from e
     return _rag_service
 
 # --- Data Models ---
