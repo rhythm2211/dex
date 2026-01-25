@@ -83,8 +83,36 @@ class Settings(BaseSettings):
             warnings.warn("GROQ_API_KEY is not set. RAG queries will fail!")
         return v
     
+    def _is_neon_db(self, hostname: str) -> bool:
+        """Check if hostname is a Neon DB endpoint"""
+        return "neon.tech" in hostname or "neon.com" in hostname
+    
+    def _extract_neon_endpoint_id(self, hostname: str) -> str:
+        """Extract endpoint ID from Neon DB hostname (e.g., ep-damp-dream-ahsk1hhl from ep-damp-dream-ahsk1hhl-pooler...)"""
+        if "-pooler" in hostname:
+            # Extract endpoint ID before -pooler
+            endpoint_id = hostname.split("-pooler")[0]
+        elif hostname.startswith("ep-"):
+            # Extract endpoint ID (everything before the first dot after ep-)
+            parts = hostname.split(".")
+            for part in parts:
+                if part.startswith("ep-"):
+                    endpoint_id = part
+                    break
+            else:
+                endpoint_id = hostname.split(".")[0]
+        else:
+            endpoint_id = hostname.split(".")[0]
+        return endpoint_id
+    
     def _resolve_ipv4_host(self, hostname: str) -> str:
-        """Resolve hostname to IPv4 address to avoid IPv6 issues"""
+        """Resolve hostname to IPv4 address to avoid IPv6 issues.
+        For Neon DB, keep hostname for SNI support."""
+        # Neon DB requires hostname for SNI, don't resolve to IP
+        if self._is_neon_db(hostname):
+            logger.info(f"✅ Using Neon DB hostname for SNI: {hostname}")
+            return hostname
+        
         # If it's already an IP address, return as-is
         try:
             socket.inet_aton(hostname)
@@ -123,9 +151,24 @@ class Settings(BaseSettings):
         # URL-encode password to handle special characters like @, [, ], etc.
         encoded_password = quote_plus(self.POSTGRES_PASSWORD)
         encoded_user = quote_plus(self.POSTGRES_USER)
-        # Resolve to IPv4 to avoid IPv6 connection issues
+        # Resolve host (keep hostname for Neon DB SNI support)
         resolved_host = self._resolve_ipv4_host(self.POSTGRES_HOST)
+        
+        # Build connection string
         connection_string = f"postgresql://{encoded_user}:{encoded_password}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        
+        # Add Neon DB specific parameters
+        if self._is_neon_db(self.POSTGRES_HOST):
+            endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
+            # URL-encode endpoint ID and add to connection string
+            encoded_endpoint_id = quote_plus(endpoint_id)
+            # Add endpoint ID and SSL mode for Neon DB
+            connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require"
+        else:
+            # For other databases, add SSL if not specified
+            if "sslmode" not in connection_string:
+                connection_string += "?sslmode=require"
+        
         logger.debug(f"PostgreSQL connection string generated for pgvector (host: {resolved_host}, port: {self.POSTGRES_PORT})")
         return connection_string 
 
@@ -148,9 +191,24 @@ class Settings(BaseSettings):
         # URL-encode password to handle special characters like @, [, ], etc.
         encoded_password = quote_plus(self.POSTGRES_PASSWORD)
         encoded_user = quote_plus(self.POSTGRES_USER)
-        # Resolve to IPv4 to avoid IPv6 connection issues
+        # Resolve host (keep hostname for Neon DB SNI support)
         resolved_host = self._resolve_ipv4_host(self.POSTGRES_HOST)
+        
+        # Build connection string
         connection_string = f"postgresql://{encoded_user}:{encoded_password}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        
+        # Add Neon DB specific parameters
+        if self._is_neon_db(self.POSTGRES_HOST):
+            endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
+            # URL-encode endpoint ID and add to connection string
+            encoded_endpoint_id = quote_plus(endpoint_id)
+            # Add endpoint ID and SSL mode for Neon DB
+            connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require"
+        else:
+            # For other databases, add SSL if not specified
+            if "sslmode" not in connection_string:
+                connection_string += "?sslmode=require"
+        
         # Log connection details (without password) for debugging
         logger.info(f"Database connection: {self.POSTGRES_USER}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}")
         return connection_string 
