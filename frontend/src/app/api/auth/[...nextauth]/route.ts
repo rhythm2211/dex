@@ -107,44 +107,44 @@ const handler = NextAuth({
           const checkResponse = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}`);
           console.log(`[NextAuth] Check user response status: ${checkResponse.status}`);
           
-          if (!checkResponse.ok) {
-            // User doesn't exist, create new profile
-            // Extract GitHub username if logging in with GitHub
-            let githubUsername = null;
-            if (account?.provider === "github" && profile && 'login' in profile) {
-              githubUsername = (profile as any).login;
-            }
+          // Use upsert endpoint to always update user info, even if profile not completed
+          // Extract GitHub username if logging in with GitHub
+          let githubUsername = null;
+          if (account?.provider === "github" && profile && 'login' in profile) {
+            githubUsername = (profile as any).login;
+          }
+          
+          // Always upsert user to ensure they're updated on every login
+          const upsertResponse = await fetch(`${apiUrl}/api/v1/users/upsert`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              email: user.email,
+              name: user.name || null,
+              github_username: githubUsername,
+            }),
+          });
+          
+          console.log(`[NextAuth] Upsert user response status: ${upsertResponse.status}`);
+          
+          if (upsertResponse.ok) {
+            const wasNew = !checkResponse.ok;
+            console.log(`${wasNew ? '✅ Created' : '✅ Updated'} user profile for: ${user.email}`);
             
-            const createResponse = await fetch(`${apiUrl}/api/v1/users`, {
+            // Update last_login timestamp for all logins
+            fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}/update-login`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({
-                email: user.email,
-                name: user.name || null,
-                github_username: githubUsername,
-                profile_completed: false,
-              }),
+            }).catch((error) => {
+              console.error("Failed to update login timestamp:", error);
             });
             
-            console.log(`[NextAuth] Create user response status: ${createResponse.status}`);
-            
-            if (createResponse.ok) {
-              console.log(`✅ Created user profile for: ${user.email}`);
-              
-              // Update last_login timestamp for new OAuth users
-              fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}/update-login`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-              }).catch((error) => {
-                console.error("Failed to update login timestamp:", error);
-              });
-              
-              // Send welcome email for new social login users
-              // This is done asynchronously on the backend, so we don't wait for it
+            // Send welcome email only for new users
+            if (wasNew) {
               fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}/send-welcome-email`, {
                 method: "POST",
                 headers: {
@@ -156,36 +156,7 @@ const handler = NextAuth({
               });
             }
           } else {
-            // User exists - update last_login timestamp and GitHub username if needed
-            const userData = await checkResponse.json();
-            
-            // Update last_login timestamp for all OAuth logins
-            fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}/update-login`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-            }).catch((error) => {
-              console.error("Failed to update login timestamp:", error);
-            });
-            
-            // Update GitHub username if logging in with GitHub and not set
-            if (account?.provider === "github" && profile && 'login' in profile) {
-              if (!userData.github_username) {
-                fetch(`${apiUrl}/api/v1/users/${encodeURIComponent(userData.id)}`, {
-                  method: "PUT",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    github_username: (profile as any).login,
-                  }),
-                }).catch(() => {
-                  console.log("Failed to update GitHub username");
-                });
-              }
-            }
-            console.log(`User profile exists for: ${user.email}`);
+            console.error(`❌ Failed to upsert user: ${user.email}`);
           }
         } catch (error) {
           // Log error but don't block sign in

@@ -10,7 +10,7 @@ from sqlalchemy import func
 from typing import Optional, List
 from datetime import datetime, timedelta
 
-from backend.app.models.user import User, get_db, init_db
+from backend.app.models.user import User, UserCredentials, get_db, init_db
 from backend.app.services.email_service import email_service
 
 logger = logging.getLogger("dex-core")
@@ -85,17 +85,106 @@ def get_user_by_email(email: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     return user.to_dict()
 
-@router.post("/users", response_model=UserProfileResponse, status_code=201)
-def create_user_profile(profile: UserProfileCreate, db: Session = Depends(get_db)):
-    """Create a new user profile"""
+@router.post("/users/upsert", response_model=UserProfileResponse, status_code=200)
+def upsert_user_profile(profile: UserProfileCreate, db: Session = Depends(get_db)):
+    """
+    Create or update user profile (upsert).
+    This endpoint always updates user info, even if profile is not completed.
+    Used by NextAuth callbacks to ensure users are always up-to-date.
+    """
     # Check if user already exists
     existing_user = db.query(User).filter(
         (User.id == profile.email) | (User.email == profile.email)
     ).first()
     
     if existing_user:
-        raise HTTPException(status_code=400, detail="User already exists")
+        # Update existing user with new information (always update, even if profile not completed)
+        updated = False
+        if profile.name is not None and profile.name != existing_user.name:
+            existing_user.name = profile.name
+            updated = True
+        if profile.github_username is not None and profile.github_username != existing_user.github_username:
+            existing_user.github_username = profile.github_username
+            updated = True
+        if profile.company is not None and profile.company != existing_user.company:
+            existing_user.company = profile.company
+            updated = True
+        if profile.role is not None and profile.role != existing_user.role:
+            existing_user.role = profile.role
+            updated = True
+        
+        # Always ensure user is active and update timestamp
+        existing_user.is_active = True
+        existing_user.updated_at = datetime.utcnow()
+        
+        if updated:
+            db.commit()
+            db.refresh(existing_user)
+            logger.info(f"Updated user profile on login: {profile.email}")
+        else:
+            logger.info(f"User profile already up-to-date: {profile.email}")
+        
+        return existing_user.to_dict()
     
+    # Create new user if doesn't exist
+    new_user = User(
+        id=profile.email,  # Use email as ID
+        email=profile.email,
+        name=profile.name,
+        age=profile.age,
+        company=profile.company,
+        role=profile.role,
+        bio=profile.bio,
+        github_username=profile.github_username,
+        profile_completed=False,
+        is_active=True,
+        last_login=None
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    logger.info(f"Created new user profile on login: {profile.email}")
+    
+    # Send welcome email asynchronously (don't block the response)
+    import threading
+    def send_email_async():
+        try:
+            email_service.send_welcome_email(profile.email, profile.name)
+        except Exception as e:
+            logger.error(f"Failed to send welcome email to {profile.email}: {str(e)}")
+    
+    # Start email sending in background thread
+    email_thread = threading.Thread(target=send_email_async, daemon=True)
+    email_thread.start()
+    
+    return new_user.to_dict()
+
+@router.post("/users", response_model=UserProfileResponse, status_code=201)
+def create_user_profile(profile: UserProfileCreate, db: Session = Depends(get_db)):
+    """Create a new user profile or update existing one (upsert)"""
+    # Check if user already exists
+    existing_user = db.query(User).filter(
+        (User.id == profile.email) | (User.email == profile.email)
+    ).first()
+    
+    if existing_user:
+        # Update existing user with new information (even if profile not completed)
+        if profile.name is not None:
+            existing_user.name = profile.name
+        if profile.github_username is not None:
+            existing_user.github_username = profile.github_username
+        existing_user.updated_at = datetime.utcnow()
+        existing_user.is_active = True  # Ensure user is active
+        
+        db.commit()
+        db.refresh(existing_user)
+        
+        logger.info(f"Updated existing user profile: {profile.email}")
+        return existing_user.to_dict()
+    
+    # Create new user
     new_user = User(
         id=profile.email,  # Use email as ID for now
         email=profile.email,
@@ -149,10 +238,10 @@ def signup_user(signup: UserSignupRequest, db: Session = Depends(get_db)):
     salt = bcrypt.gensalt()
     password_hash = bcrypt.hashpw(password_bytes, salt).decode('utf-8')
     
+    # Create user
     new_user = User(
         id=signup.email,  # Use email as ID
         email=signup.email,
-        password_hash=password_hash,
         name=signup.name,
         profile_completed=False,
         is_active=True,
@@ -160,6 +249,14 @@ def signup_user(signup: UserSignupRequest, db: Session = Depends(get_db)):
     )
     
     db.add(new_user)
+    db.flush()  # Flush to get the user ID
+    
+    # Create credentials entry in separate table
+    user_credentials = UserCredentials(
+        user_id=new_user.id,
+        password_hash=password_hash
+    )
+    db.add(user_credentials)
     db.commit()
     db.refresh(new_user)
     
@@ -193,12 +290,15 @@ def verify_credentials(credentials: UserCredentialsRequest, db: Session = Depend
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    if not user.password_hash:
+    # Get credentials from separate table
+    user_creds = db.query(UserCredentials).filter(UserCredentials.user_id == user.id).first()
+    
+    if not user_creds:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
     # Verify password
     password_bytes = credentials.password.encode('utf-8')
-    password_hash_bytes = user.password_hash.encode('utf-8')
+    password_hash_bytes = user_creds.password_hash.encode('utf-8')
     
     if not bcrypt.checkpw(password_bytes, password_hash_bytes):
         raise HTTPException(status_code=401, detail="Invalid email or password")

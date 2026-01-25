@@ -1,9 +1,9 @@
 """
 User database models and schema
 """
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 from backend.app.core.config import settings
 
@@ -14,7 +14,6 @@ class User(Base):
     
     id = Column(String, primary_key=True)  # NextAuth user ID (email or provider ID)
     email = Column(String, unique=True, nullable=False, index=True)
-    password_hash = Column(String, nullable=True)  # Hashed password for credentials auth
     name = Column(String, nullable=True)
     age = Column(Integer, nullable=True)
     company = Column(String, nullable=True)
@@ -26,6 +25,9 @@ class User(Base):
     last_login = Column(DateTime, nullable=True, index=True)  # Last login timestamp
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship to credentials table
+    credentials = relationship("UserCredentials", back_populates="user", uselist=False, cascade="all, delete-orphan")
     
     def to_dict(self):
         return {
@@ -43,6 +45,19 @@ class User(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class UserCredentials(Base):
+    """Separate table for storing user credentials (password hashes)"""
+    __tablename__ = "user_credentials"
+    
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    password_hash = Column(String, nullable=False)  # Hashed password for credentials auth
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship back to user
+    user = relationship("User", back_populates="credentials")
 
 # Database setup - PostgreSQL only
 # Add connect_args to prefer IPv4 and handle connection issues
@@ -104,14 +119,41 @@ def init_db():
                 except Exception:
                     pass  # Column may already exist
                 
+                # Create user_credentials table if it doesn't exist
                 try:
                     conn.execute(text("""
-                        ALTER TABLE users 
-                        ADD COLUMN IF NOT EXISTS password_hash VARCHAR
+                        CREATE TABLE IF NOT EXISTS user_credentials (
+                            user_id VARCHAR PRIMARY KEY,
+                            password_hash VARCHAR NOT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            CONSTRAINT fk_user_credentials_user 
+                                FOREIGN KEY (user_id) 
+                                REFERENCES users(id) 
+                                ON DELETE CASCADE
+                        )
                     """))
                     conn.commit()
-                except Exception:
-                    pass  # Column may already exist
+                    logger.info("✅ user_credentials table created")
+                except Exception as e:
+                    logger.warning(f"⚠️ user_credentials table creation skipped: {e}")
+                
+                # Migrate existing password_hash from users table to user_credentials table
+                try:
+                    conn.execute(text("""
+                        INSERT INTO user_credentials (user_id, password_hash, created_at, updated_at)
+                        SELECT id, password_hash, created_at, updated_at
+                        FROM users
+                        WHERE password_hash IS NOT NULL
+                        AND id NOT IN (SELECT user_id FROM user_credentials)
+                    """))
+                    conn.commit()
+                    logger.info("✅ Migrated existing password hashes to user_credentials table")
+                except Exception as e:
+                    logger.warning(f"⚠️ Password migration skipped: {e}")
+                
+                # Remove password_hash column from users table (optional - can be done later)
+                # For now, we'll keep it for backward compatibility but won't use it
                 
                 try:
                     conn.execute(text("""

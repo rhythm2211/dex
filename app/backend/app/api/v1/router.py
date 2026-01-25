@@ -3,7 +3,8 @@ import json
 import logging
 from datetime import datetime, timedelta
 from collections import Counter
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 
 # --- Service Imports ---
@@ -316,6 +317,11 @@ async def get_active_zones(days: int = 30):
 # ==========================================
 # 📦 EXISTING INGESTION & QUERY ENDPOINTS
 # ==========================================
+
+@api_router.options("/ingest")
+async def options_ingest():
+    """Handle CORS preflight requests for /ingest endpoint."""
+    return Response(status_code=200)
 
 @api_router.post("/ingest")
 async def trigger_ingestion(request: IngestRequest, background_tasks: BackgroundTasks):
