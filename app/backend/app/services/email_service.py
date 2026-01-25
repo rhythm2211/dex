@@ -56,17 +56,26 @@ class EmailService:
             }
             
             logger.info(f"Attempting to send welcome email to {user_email}")
+            logger.debug(f"Email params: from={params['from']}, to={params['to']}, subject={params['subject']}")
+            
             result = self.resend_emails.send(params)
             
             # Resend API returns a dict with 'id' key on success, or raises an exception on failure
-            if result and isinstance(result, dict) and result.get('id'):
-                logger.info(f"Welcome email sent successfully to {user_email} (ID: {result.get('id')})")
-                return True
-            elif result and hasattr(result, 'id'):
-                logger.info(f"Welcome email sent successfully to {user_email} (ID: {result.id})")
+            # Handle different response formats
+            email_id = None
+            if isinstance(result, dict):
+                email_id = result.get('id') or result.get('data', {}).get('id')
+            elif hasattr(result, 'id'):
+                email_id = result.id
+            elif hasattr(result, 'data') and hasattr(result.data, 'id'):
+                email_id = result.data.id
+            
+            if email_id:
+                logger.info(f"Welcome email sent successfully to {user_email} (ID: {email_id})")
                 return True
             else:
-                logger.error(f"Failed to send welcome email to {user_email}. Response: {result}")
+                logger.error(f"Failed to send welcome email to {user_email}. Unexpected response format: {result}")
+                logger.error(f"Response type: {type(result)}, Response value: {result}")
                 return False
                 
         except Exception as e:
@@ -98,15 +107,10 @@ class EmailService:
             <td align="center" style="padding: 40px 20px;">
                 <table role="presentation" style="max-width: 600px; width: 100%; border-collapse: collapse; background-color: #0a0a0a; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; overflow: hidden;">
                     
-                    <!-- Header with Logo -->
+                    <!-- Header with DEX Brand -->
                     <tr>
                         <td style="padding: 40px 40px 30px; text-align: center; background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);">
-                            <div style="display: inline-flex; align-items: center; gap: 12px; padding: 12px; background-color: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);">
-                                <div style="width: 32px; height: 32px; background-color: rgba(99, 102, 241, 0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                                    <span style="color: #818cf8; font-size: 20px; font-weight: bold;">&gt;</span>
-                                </div>
-                                <span style="font-size: 24px; font-weight: bold; letter-spacing: 0.2em; color: #ffffff;">DEX</span>
-                            </div>
+                            <span style="font-size: 24px; font-weight: bold; letter-spacing: 0.2em; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">DEX</span>
                         </td>
                     </tr>
                     
