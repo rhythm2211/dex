@@ -190,7 +190,7 @@ See [SETUP.md](./SETUP.md#security-hardening) for production security guidelines
 
 DEX can be deployed for **free** (except domain ~$1/month) using:
 - **Frontend**: Vercel (free tier)
-- **Backend**: Railway or Render (free tier)
+- **Backend**: Railway (free tier)
 - **PostgreSQL**: Railway/Supabase/Neon (free tier)
 - **Neo4j**: Neo4j Aura (free tier)
 

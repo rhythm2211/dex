@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 logger = logging.getLogger("uvicorn")
 
 # --- SMART PATH RESOLUTION ---
+# In Docker, environment variables are provided via env_file in docker-compose,
+# so .env file loading is optional. Pydantic-settings will read from environment variables.
 CONFIG_DIR = Path(__file__).resolve().parent  # app/core
 BACKEND_DIR = CONFIG_DIR.parent.parent        # backend
 ROOT_DIR = BACKEND_DIR.parent                 # app (root)
@@ -25,13 +27,14 @@ env_paths = [
 loaded = False
 for path in env_paths:
     if path.exists():
-        load_dotenv(path)
+        load_dotenv(path, override=False)  # Don't override existing env vars
         logger.info(f"✅ Loaded .env file from: {path}")
         loaded = True
         break
 
-if not loaded:
-    logger.warning(f"⚠️ Could not find .env file! Checked: {[str(p) for p in env_paths]}")
+# Only warn if running locally (not in Docker) and no env vars are set
+if not loaded and not os.getenv("POSTGRES_HOST") and os.getenv("ENVIRONMENT") != "production":
+    logger.debug(f"ℹ️ No .env file found (checked: {[str(p) for p in env_paths]}). Using environment variables.")
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Dex Cognitive Engine"
@@ -52,6 +55,7 @@ class Settings(BaseSettings):
 
     # --- AI & Vector DB Keys ---
     # PostgreSQL + pgvector configuration
+    # Note: In Docker, these are overridden by environment variables in docker-compose.yml
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "postgres"
@@ -81,20 +85,37 @@ class Settings(BaseSettings):
     
     def _resolve_ipv4_host(self, hostname: str) -> str:
         """Resolve hostname to IPv4 address to avoid IPv6 issues"""
+        # If it's already an IP address, return as-is
         try:
-            # Force IPv4 resolution using getaddrinfo with AF_INET
-            # This ensures we only get IPv4 addresses, not IPv6
-            addrinfo = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
-            if addrinfo:
-                ipv4_address = addrinfo[0][4][0]  # Get first IPv4 address
-                logger.info(f"Resolved {hostname} to IPv4: {ipv4_address}")
-                return ipv4_address
-            else:
-                logger.warning(f"No IPv4 address found for {hostname}, using hostname")
-                return hostname
-        except (socket.gaierror, OSError) as e:
-            logger.warning(f"Failed to resolve {hostname} to IPv4, using hostname: {e}")
-            return hostname  # Fallback to hostname
+            socket.inet_aton(hostname)
+            return hostname  # Already an IPv4 address
+        except socket.error:
+            pass  # Not an IP address, continue with resolution
+        
+        # Try multiple methods to get IPv4 address
+        methods = [
+            # Method 1: getaddrinfo with AF_INET (IPv4 only)
+            lambda: socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM),
+            # Method 2: gethostbyname (legacy, IPv4 only)
+            lambda: [(socket.AF_INET, socket.SOCK_STREAM, 0, '', (socket.gethostbyname(hostname), 0))],
+        ]
+        
+        for method in methods:
+            try:
+                addrinfo = method()
+                if addrinfo:
+                    ipv4_address = addrinfo[0][4][0]  # Get first IPv4 address
+                    logger.info(f"✅ Resolved {hostname} to IPv4: {ipv4_address}")
+                    return ipv4_address
+            except (socket.gaierror, OSError, socket.herror) as e:
+                continue  # Try next method
+        
+        # If all methods fail, log warning but return hostname
+        # The connection pooler should handle IPv4, but if it doesn't work,
+        # check network settings or database provider configuration
+        logger.warning(f"⚠️ Failed to resolve {hostname} to IPv4. Connection may fail if network doesn't support IPv6.")
+        logger.warning(f"⚠️ If connection fails, check database provider network settings.")
+        return hostname  # Fallback to hostname - connection pooler should handle this
     
     @property
     def POSTGRES_CONNECTION_STRING(self) -> str:
@@ -104,7 +125,9 @@ class Settings(BaseSettings):
         encoded_user = quote_plus(self.POSTGRES_USER)
         # Resolve to IPv4 to avoid IPv6 connection issues
         resolved_host = self._resolve_ipv4_host(self.POSTGRES_HOST)
-        return f"postgresql://{encoded_user}:{encoded_password}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
+        connection_string = f"postgresql://{encoded_user}:{encoded_password}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        logger.debug(f"PostgreSQL connection string generated for pgvector (host: {resolved_host}, port: {self.POSTGRES_PORT})")
+        return connection_string 
 
     # --- Neo4j Graph DB Config (New) ---
     # We make these Optional so the app doesn't crash if you just want to run unit tests
@@ -127,7 +150,10 @@ class Settings(BaseSettings):
         encoded_user = quote_plus(self.POSTGRES_USER)
         # Resolve to IPv4 to avoid IPv6 connection issues
         resolved_host = self._resolve_ipv4_host(self.POSTGRES_HOST)
-        return f"postgresql://{encoded_user}:{encoded_password}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}" 
+        connection_string = f"postgresql://{encoded_user}:{encoded_password}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        # Log connection details (without password) for debugging
+        logger.info(f"Database connection: {self.POSTGRES_USER}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}")
+        return connection_string 
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -137,3 +163,11 @@ class Settings(BaseSettings):
     )
 
 settings = Settings()
+
+# Log configuration after initialization for debugging
+logger.info(f"PostgreSQL Config - Host: {settings.POSTGRES_HOST}, Port: {settings.POSTGRES_PORT}, DB: {settings.POSTGRES_DB}, User: {settings.POSTGRES_USER}")
+
+# Warn if using default localhost (likely missing env var)
+if settings.POSTGRES_HOST == "localhost" and os.getenv("ENVIRONMENT") == "production":
+    logger.warning("⚠️ WARNING: POSTGRES_HOST is 'localhost' in production! This usually means the environment variable is not set.")
+    logger.warning("⚠️ Please set POSTGRES_HOST in your deployment platform's environment variables to your database hostname.")

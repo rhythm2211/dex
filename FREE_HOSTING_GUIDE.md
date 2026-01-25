@@ -7,7 +7,7 @@ This guide will walk you through hosting DEX for free while maintaining producti
 **Free Hosting Stack:**
 - **Domain**: Namecheap/Cloudflare (paid, ~$10-15/year)
 - **Frontend**: Vercel (free tier - excellent for Next.js)
-- **Backend**: Railway or Render (free tier)
+- **Backend**: Railway (free tier)
 - **PostgreSQL**: Railway, Supabase, or Neon (free tier)
 - **Neo4j**: Neo4j Aura Free tier (or self-hosted)
 - **CDN/DNS**: Cloudflare (free tier)
@@ -358,7 +358,7 @@ Your GitHub Actions workflows are already set up!
 - Configure in Railway dashboard
 
 **Update workflows:**
-- Update `deploy.yml` with your Railway/Render URLs
+- Update `deploy.yml` with your Railway URL
 - Or disable auto-deploy and use manual deployment
 
 ---

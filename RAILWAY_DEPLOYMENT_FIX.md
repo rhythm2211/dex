@@ -13,39 +13,39 @@
 - **Files**: `app/backend/app/models/user.py`, `app/backend/app/api/v1/endpoints/users.py`
 
 ### 3. Network Connectivity Issue
-- **Problem**: "Network is unreachable" when connecting to Supabase
+- **Problem**: "Network is unreachable" when connecting to Neon DB
 - **Possible Causes**:
-  - Railway network trying IPv6 but Supabase only accepts IPv4
+  - Railway network trying IPv6 but Neon DB may have IPv4/IPv6 issues
   - Firewall/security group blocking Railway IPs
-  - Supabase connection pooling not enabled
+  - Connection pooler not being used
 
 ## Solutions to Try
 
-### Option 1: Use Supabase Connection Pooling (Recommended)
-Supabase provides a connection pooling URL that's more reliable for serverless/container deployments:
+### Option 1: Use Neon DB Connection Pooler (Recommended)
+Neon DB provides a connection pooling URL that's more reliable for serverless/container deployments:
 
-1. Go to Supabase Dashboard → Project Settings → Database
-2. Find **Connection Pooling** section
-3. Copy the **Connection string** (uses port 6543 instead of 5432)
+1. Go to Neon Dashboard → Your Project → Connection Details
+2. Find **Connection Pooler** section
+3. Copy the **Connection string** (uses port 5432 with pooler endpoint)
 4. Update Railway variable:
    ```
-   POSTGRES_HOST=db.xxxxx.supabase.co
-   POSTGRES_PORT=6543  # Use pooling port instead of 5432
+   POSTGRES_HOST=ep-xxxxx-pooler.xxxxx.aws.neon.tech
+   POSTGRES_PORT=5432  # Pooler uses port 5432
    ```
 
-### Option 2: Check Supabase Network Settings
-1. Go to Supabase Dashboard → Project Settings → Database
-2. Check **Network Restrictions**
+### Option 2: Check Neon DB Network Settings
+1. Go to Neon Dashboard → Project Settings → Network
+2. Check **IP Allowlist** or **Network Restrictions**
 3. Ensure Railway IPs are allowed (or disable restrictions temporarily for testing)
 
 ### Option 3: Use Direct Connection String
-If connection pooling doesn't work, try using Supabase's direct connection string format:
+If connection pooling doesn't work, try using Neon DB's direct connection string format:
 ```
-POSTGRES_HOST=db.xxxxx.supabase.co
+POSTGRES_HOST=ep-xxxxx.xxxxx.aws.neon.tech
 POSTGRES_PORT=5432
-POSTGRES_USER=postgres.xxxxx  # Note: includes project ref
+POSTGRES_USER=neondb_owner
 POSTGRES_PASSWORD=your_password
-POSTGRES_DB=postgres
+POSTGRES_DB=neondb
 ```
 
 ## Verification Steps
@@ -72,4 +72,4 @@ After deploying fixes:
 - ✅ Connection string encoding fixed
 - ✅ Non-blocking database initialization
 - ⚠️ Network connectivity needs verification
-- ⚠️ May need to use Supabase connection pooling
+- ⚠️ May need to use Neon DB connection pooler
