@@ -87,6 +87,9 @@ if (process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET) {
 const handler = NextAuth({
   providers,
   secret: process.env.NEXTAUTH_SECRET,
+  // Explicitly set the base URL to prevent redirect URI mismatches
+  // This ensures NextAuth uses the correct callback URL based on the environment
+  url: process.env.NEXTAUTH_URL,
   pages: {
     signIn: '/login', 
   },

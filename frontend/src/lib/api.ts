@@ -189,6 +189,10 @@ class DexClient {
   // 3. Ingestion Trigger
   public async triggerIngestion(repoUrl: string): Promise<IngestResponse> {
     try {
+      // Log the base URL being used for debugging
+      console.log(`[Ingestion] Using API URL: ${this.baseURL}`);
+      console.log(`[Ingestion] Full endpoint: ${this.baseURL}/api/v1/ingest`);
+      
       // Ingestion should return immediately (uses background tasks)
       // Increased timeout to handle any initialization delays
       const res: AxiosResponse<IngestResponse> = await this.client.post('/ingest', { repo_path: repoUrl }, {
@@ -198,8 +202,30 @@ class DexClient {
     } catch (error: any) {
       console.error("Ingestion Trigger Failure:", error?.message);
       console.error("Full error:", error);
+      console.error("Error details:", {
+        message: error?.message,
+        code: error?.code,
+        response: error?.response?.data,
+        status: error?.response?.status,
+        baseURL: this.baseURL,
+        endpoint: `${this.baseURL}/api/v1/ingest`
+      });
+      
       // Provide more detailed error information
-      const errorMessage = error.response?.data?.detail || error.message || "Failed to start ingestion";
+      let errorMessage = "Failed to start ingestion";
+      
+      if (error?.code === 'ECONNREFUSED' || error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
+        errorMessage = `Cannot connect to backend at ${this.baseURL}. Please check if the backend is running and accessible.`;
+      } else if (error?.response?.status === 400) {
+        errorMessage = error.response.data?.detail || "Invalid request. Please check the repository URL.";
+      } else if (error?.response?.status === 409) {
+        errorMessage = error.response.data?.detail || "An ingestion task is already running.";
+      } else if (error?.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
       throw new Error(errorMessage);
     }
   }
