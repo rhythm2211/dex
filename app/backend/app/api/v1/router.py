@@ -156,6 +156,10 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
     logger.info(f"✅ Status initialized for user_id={user_id}, repository_id={repository_id}")
     
     try:
+        # Update status to show we're initializing the service
+        with _services_lock:
+            _ingestion_statuses[user_id] = {"state": "running", "progress": 0, "step": "Initializing services..."}
+        
         logger.info(f"🔧 Getting ingestion service for user_id={user_id}, repository_id={repository_id}")
         ingestion_service = get_ingestion_service(user_id, repository_id)
         logger.info(f"✅ Ingestion service obtained for user_id={user_id}")
