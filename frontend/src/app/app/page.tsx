@@ -179,7 +179,17 @@ export default function Dashboard() {
       import('next-auth/react').then(({ getSession }) => {
         dexApi.setUserSessionGetter(async () => {
           const session = await getSession();
-          return session || { user: null };
+          if (!session || !session.user) {
+            return { user: null };
+          }
+          // Transform NextAuth Session to match expected type
+          // Convert null email to undefined, and extract id if available
+          return {
+            user: {
+              email: session.user.email ?? undefined,
+              id: (session.user as any).id ?? undefined,
+            }
+          };
         });
       });
     }
