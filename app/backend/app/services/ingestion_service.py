@@ -185,6 +185,17 @@ class IngestionService:
     def _update_status(self, state: str, progress: int, step: str):
         self._status = {"state": state, "progress": progress, "step": step}
         logger.info(f"Ingestion Status: [{progress}%] {step}")
+        
+        # Also update the global status dictionary for API polling
+        # Use lazy import to avoid circular dependency (import happens at method call time,
+        # after router.py has already finished loading)
+        if self.user_id:
+            try:
+                from backend.app.api.v1.router import _ingestion_statuses
+                _ingestion_statuses[self.user_id] = self._status
+            except (ImportError, AttributeError):
+                # If import fails (shouldn't happen in normal operation), just log a debug message
+                logger.debug(f"Could not update global status for user {self.user_id}")
     
     class _CloneProgress(RemoteProgress):
         """Progress callback for git clone operations with progress tracking"""
