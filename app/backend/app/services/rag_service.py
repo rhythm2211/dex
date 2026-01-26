@@ -4,18 +4,27 @@ import json
 import pgvector  # Required for LangChain's PGVector implementation
 from langchain_community.vectorstores import PGVector
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from backend.app.core.config import settings
 from backend.app.domain.hybrid_retriever import HybridRetriever
+from backend.app.utils.groq_client import MultiKeyChatGroq
 
 logger = logging.getLogger("dex-core")
 
 class RAGService:
-    def __init__(self):
+    def __init__(self, user_id: str = None, repository_id: str = None):
+        """
+        Initialize RAG service with user and repository context for multi-tenant isolation.
+        """
+        # Store user and repository context
+        self.user_id = user_id
+        self.repository_id = repository_id
+        
         # Validate required configuration
-        if not settings.GROQ_API_KEY:
-            raise ValueError("GROQ_API_KEY is required but not set. Please configure it in environment variables.")
+        import os
+        groq_keys = os.getenv("GROQ_API_KEYS", os.getenv("GROQ_API_KEY", ""))
+        if not groq_keys:
+            raise ValueError("GROQ_API_KEY or GROQ_API_KEYS is required but not set. Please configure it in environment variables.")
         
         if not settings.POSTGRES_CONNECTION_STRING:
             raise ValueError("POSTGRES_CONNECTION_STRING is required but not set. Please configure database connection.")
@@ -32,13 +41,13 @@ class RAGService:
                 use_jsonb=True  # Use JSONB for metadata
             )
             
-            # Initialize Retriever (loads graph into memory)
-            self.retriever = HybridRetriever(self.vector_store)
+            # Initialize Retriever (loads graph into memory) with user/repository context
+            self.retriever = HybridRetriever(self.vector_store, user_id=user_id, repository_id=repository_id)
             
-            self.llm = ChatGroq(
+            # Use MultiKeyChatGroq for automatic key management
+            self.llm = MultiKeyChatGroq(
                 model_name="llama-3.3-70b-versatile",
-                temperature=0,
-                groq_api_key=settings.GROQ_API_KEY
+                temperature=0
             )
         except Exception as e:
             logger.error(f"Failed to initialize RAGService components: {e}")
@@ -52,10 +61,18 @@ class RAGService:
         self.retriever.reload_graph()
         logger.info("✅ Knowledge base refreshed.")
     
-    def answer_query(self, query_text: str) -> dict:
+    def answer_query(self, query_text: str, user_id: str = None, repository_id: str = None) -> dict:
+        """
+        Answer a query using hybrid RAG retrieval.
+        Now supports user_id and repository_id filtering for multi-tenant isolation.
+        """
+        # Use provided user_id/repository_id or fall back to instance defaults
+        effective_user_id = user_id or self.user_id
+        effective_repository_id = repository_id or self.repository_id
+        
         # 1. Hybrid Retrieval
         # Returns a JSON string with separated contexts
-        retrieval_result = self.retriever.retrieve(query_text)
+        retrieval_result = self.retriever.retrieve(query_text, user_id=effective_user_id, repository_id=effective_repository_id)
         
         # 2. Parse Contexts
         try:
@@ -109,7 +126,8 @@ class RAGService:
             Provide a technical, markdown-formatted response."""
         )
         
-        # 5. Execution
+        # 5. Execution (rate limiting is handled automatically by MultiKeyChatGroq)
+        # Note: The multi-key system handles rate limiting and failover automatically
         chain = prompt | self.llm
         response = chain.invoke({
             "code_context": code_context, 

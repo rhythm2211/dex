@@ -7,7 +7,7 @@ from collections import Counter
 from typing import Dict, List, Tuple, Optional
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, TransientError
-from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection, retry_on_connection_error
+from backend.app.utils.connection_utils import verify_neo4j_connection, retry_on_connection_error
 
 logger = logging.getLogger("dex-core")
 
@@ -90,21 +90,20 @@ class CodeStructureVisitor(ast.NodeVisitor):
 
 class GraphEngine:
     def __init__(self):
-        uri = os.getenv("NEO4J_URI")
-        user = os.getenv("NEO4J_USERNAME")
-        password = os.getenv("NEO4J_PASSWORD")
-        self.database = os.getenv("NEO4J_DATABASE", "neo4j")
+        """
+        Initialize GraphEngine using shared Neo4j driver.
+        This optimizes connection pooling by sharing a single driver across all users.
+        """
+        from backend.app.utils.neo4j_driver_manager import neo4j_driver_manager
         
-        if uri and user and password:
-            # Use connection utility with proper configuration
-            self.driver = create_neo4j_driver(uri, user, password, database=self.database)
-            if self.driver:
-                self._create_indices()
-            else:
-                logger.error("❌ Neo4j driver creation failed.")
+        # Use shared driver manager instead of creating new driver
+        self.driver = neo4j_driver_manager.get_driver()
+        self.database = neo4j_driver_manager.get_database()
+        
+        if self.driver:
+            self._create_indices()
         else:
-            logger.error("❌ Neo4j Credentials missing.")
-            self.driver = None
+            logger.error("❌ Neo4j driver not available. Graph operations will fail.")
 
     def close(self):
         if self.driver: self.driver.close()
@@ -114,6 +113,13 @@ class GraphEngine:
         try:
             self._safe_session_run(
                 "CREATE CONSTRAINT node_id_unique IF NOT EXISTS FOR (n:CodeNode) REQUIRE n.id IS UNIQUE"
+            )
+            # Create index on user_id and repository_id for faster filtering
+            self._safe_session_run(
+                "CREATE INDEX user_id_index IF NOT EXISTS FOR (n:CodeNode) ON (n.user_id)"
+            )
+            self._safe_session_run(
+                "CREATE INDEX repository_id_index IF NOT EXISTS FOR (n:CodeNode) ON (n.repository_id)"
             )
         except Exception as e:
             logger.warning(f"Neo4j index skipped: {e}")
@@ -132,10 +138,11 @@ class GraphEngine:
         with self.driver.session(database=self.database) as session:
             return session.run(query, **params)
     
-    def batch_upsert_nodes(self, nodes: list, batch_size: int = 100):
+    def batch_upsert_nodes(self, nodes: list, batch_size: int = 100, user_id: str = None, repository_id: str = None):
         """
         Batch insert nodes into Neo4j for better performance.
         Uses UNWIND to insert multiple nodes in a single transaction.
+        Now supports user_id and repository_id for multi-tenant isolation.
         """
         if not self.driver or not nodes:
             return
@@ -146,7 +153,7 @@ class GraphEngine:
             
             query = """
             UNWIND $nodes AS node
-            MERGE (n:CodeNode {id: node.id})
+            MERGE (n:CodeNode {id: node.id, user_id: $user_id, repository_id: $repository_id})
             SET n.name = node.name,
                 n.type = node.type,
                 n.val = node.val,
@@ -155,7 +162,9 @@ class GraphEngine:
                 n.commit_count = node.commit_count,
                 n.bus_risk_score = node.bus_risk_score,
                 n.top_owner = node.top_owner,
-                n.collaborators = node.collaborators
+                n.collaborators = node.collaborators,
+                n.user_id = $user_id,
+                n.repository_id = $repository_id
             """
             
             params = {
@@ -173,7 +182,9 @@ class GraphEngine:
                         "collaborators": node.get("collaborators", [])
                     }
                     for node in batch
-                ]
+                ],
+                "user_id": user_id or "",
+                "repository_id": repository_id or ""
             }
             
             try:
@@ -187,10 +198,11 @@ class GraphEngine:
                     except:
                         pass
     
-    def batch_upsert_edges(self, edges: list, batch_size: int = 200):
+    def batch_upsert_edges(self, edges: list, batch_size: int = 200, user_id: str = None, repository_id: str = None):
         """
         Batch insert edges into Neo4j for better performance.
         Uses UNWIND to insert multiple edges in a single transaction.
+        Now supports user_id and repository_id for multi-tenant isolation.
         """
         if not self.driver or not edges:
             return
@@ -209,19 +221,34 @@ class GraphEngine:
             
             # Insert each relationship type in a separate query
             for rel_type, type_edges in edges_by_type.items():
-                query = f"""
-                UNWIND $edges AS edge
-                MATCH (a:CodeNode {{id: edge.source}})
-                MATCH (b:CodeNode {{id: edge.target}})
-                MERGE (a)-[:{rel_type}]->(b)
-                """
-                
-                params = {
-                    "edges": [
-                        {"source": edge.get("source"), "target": edge.get("target")}
-                        for edge in type_edges
-                    ]
-                }
+                if user_id and repository_id:
+                    query = f"""
+                    UNWIND $edges AS edge
+                    MATCH (a:CodeNode {{id: edge.source, user_id: $user_id, repository_id: $repository_id}})
+                    MATCH (b:CodeNode {{id: edge.target, user_id: $user_id, repository_id: $repository_id}})
+                    MERGE (a)-[:{rel_type}]->(b)
+                    """
+                    params = {
+                        "edges": [
+                            {"source": edge.get("source"), "target": edge.get("target")}
+                            for edge in type_edges
+                        ],
+                        "user_id": user_id,
+                        "repository_id": repository_id
+                    }
+                else:
+                    query = f"""
+                    UNWIND $edges AS edge
+                    MATCH (a:CodeNode {{id: edge.source}})
+                    MATCH (b:CodeNode {{id: edge.target}})
+                    MERGE (a)-[:{rel_type}]->(b)
+                    """
+                    params = {
+                        "edges": [
+                            {"source": edge.get("source"), "target": edge.get("target")}
+                            for edge in type_edges
+                        ]
+                    }
                 
                 try:
                     self._safe_session_run(query, **params)
@@ -234,20 +261,36 @@ class GraphEngine:
                         except:
                             pass
 
-    def wipe_graph(self):
+    def wipe_graph(self, user_id: str = None, repository_id: str = None):
+        """
+        Wipe graph data. If user_id and repository_id are provided, only wipe that user's repository.
+        If not provided, wipes all data (backward compatibility).
+        """
         if not self.driver: return
         try:
-            self._safe_session_run("MATCH (n) DETACH DELETE n")
+            if user_id and repository_id:
+                # Only wipe specific user's repository
+                query = """
+                MATCH (n:CodeNode {user_id: $user_id, repository_id: $repository_id})
+                DETACH DELETE n
+                """
+                self._safe_session_run(query, user_id=user_id, repository_id=repository_id)
+                logger.info(f"Wiped graph for user_id={user_id}, repository_id={repository_id}")
+            else:
+                # Wipe all (backward compatibility)
+                self._safe_session_run("MATCH (n) DETACH DELETE n")
+                logger.info("Wiped entire graph (no user/repo filter)")
         except Exception as e:
             logger.error(f"Failed to wipe graph: {e}")
             raise
 
-    def upsert_node(self, node_data: dict):
+    def upsert_node(self, node_data: dict, user_id: str = None, repository_id: str = None):
         if not self.driver: return
         
         # [NEW] Added 'owner' and 'collaborators' properties
+        # [NEW] Added user_id and repository_id for multi-tenant isolation
         query = """
-        MERGE (n:CodeNode {id: $id})
+        MERGE (n:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id})
         SET n.name = $name,
             n.type = $type,
             n.val = $val,
@@ -256,7 +299,9 @@ class GraphEngine:
             n.commit_count = $commit_count,
             n.bus_risk_score = $bus_risk_score,
             n.top_owner = $top_owner,
-            n.collaborators = $collaborators
+            n.collaborators = $collaborators,
+            n.user_id = $user_id,
+            n.repository_id = $repository_id
         """
         
         params = {
@@ -269,7 +314,9 @@ class GraphEngine:
             "commit_count": node_data.get("commit_count", 0),
             "bus_risk_score": node_data.get("bus_risk_score", 0.0),
             "top_owner": node_data.get("top_owner", "None"),
-            "collaborators": node_data.get("collaborators", []) # List of strings
+            "collaborators": node_data.get("collaborators", []), # List of strings
+            "user_id": user_id or "",
+            "repository_id": repository_id or ""
         }
         try:
             self._safe_session_run(query, **params)
@@ -277,16 +324,16 @@ class GraphEngine:
             logger.error(f"Failed to upsert node {node_data.get('id')}: {e}")
             raise
 
-    def upsert_edge(self, source: str, target: str, relation: str):
+    def upsert_edge(self, source: str, target: str, relation: str, user_id: str = None, repository_id: str = None):
         if not self.driver: return
         rel_type = "DEPENDS_ON" if relation == "IMPORTS" else relation
         query = f"""
-        MATCH (a:CodeNode {{id: $source}})
-        MATCH (b:CodeNode {{id: $target}})
+        MATCH (a:CodeNode {{id: $source, user_id: $user_id, repository_id: $repository_id}})
+        MATCH (b:CodeNode {{id: $target, user_id: $user_id, repository_id: $repository_id}})
         MERGE (a)-[:{rel_type}]->(b)
         """
         try:
-            self._safe_session_run(query, source=source, target=target)
+            self._safe_session_run(query, source=source, target=target, user_id=user_id or "", repository_id=repository_id or "")
         except Exception as e:
             logger.error(f"Failed to upsert edge {source} -> {target}: {e}")
             raise
@@ -538,11 +585,12 @@ class GraphEngine:
             logger.error(f"Neo4j connection verification failed: {e}")
             return False
 
-    def get_full_graph(self, limit=2000):
+    def get_full_graph(self, limit=2000, user_id: str = None, repository_id: str = None):
         """
         Fetches graph for Frontend Visualization.
         Optimized query: Get nodes first, then relationships separately.
         This is faster than OPTIONAL MATCH on large graphs.
+        Now filters by user_id and repository_id for multi-tenant isolation.
         """
         if not self.driver: 
             logger.warning("Neo4j driver not available, returning empty graph")
@@ -565,14 +613,23 @@ class GraphEngine:
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    # First, get all nodes (up to limit)
-                    # Optimized: Get nodes first, then relationships separately
-                    nodes_query = """
-                    MATCH (n:CodeNode)
-                    RETURN n
-                    LIMIT $limit
-                    """
-                    result = session.run(nodes_query, limit=limit)
+                    # First, get all nodes (up to limit) - filtered by user_id and repository_id
+                    if user_id and repository_id:
+                        nodes_query = """
+                        MATCH (n:CodeNode {user_id: $user_id, repository_id: $repository_id})
+                        RETURN n
+                        LIMIT $limit
+                        """
+                        result = session.run(nodes_query, limit=limit, user_id=user_id, repository_id=repository_id)
+                    else:
+                        # Backward compatibility: get all nodes if no filter
+                        nodes_query = """
+                        MATCH (n:CodeNode)
+                        RETURN n
+                        LIMIT $limit
+                        """
+                        result = session.run(nodes_query, limit=limit)
+                    
                     for record in result:
                         n = dict(record["n"])
                         nodes_map[n["id"]] = n
@@ -584,13 +641,27 @@ class GraphEngine:
                         chunk_size = 500
                         for i in range(0, len(node_ids), chunk_size):
                             chunk = node_ids[i:i + chunk_size]
-                            rel_query = """
-                            MATCH (n:CodeNode)-[r]->(m:CodeNode)
-                            WHERE n.id IN $node_ids
-                            RETURN n.id as source, m.id as target, type(r) as relation, m as target_node
-                            LIMIT 10000
-                            """
-                            rel_result = session.run(rel_query, node_ids=chunk)
+                            if user_id and repository_id:
+                                rel_query = """
+                                MATCH (n:CodeNode)-[r]->(m:CodeNode)
+                                WHERE n.id IN $node_ids 
+                                  AND n.user_id = $user_id 
+                                  AND n.repository_id = $repository_id
+                                  AND m.user_id = $user_id 
+                                  AND m.repository_id = $repository_id
+                                RETURN n.id as source, m.id as target, type(r) as relation, m as target_node
+                                LIMIT 10000
+                                """
+                                rel_result = session.run(rel_query, node_ids=chunk, user_id=user_id, repository_id=repository_id)
+                            else:
+                                rel_query = """
+                                MATCH (n:CodeNode)-[r]->(m:CodeNode)
+                                WHERE n.id IN $node_ids
+                                RETURN n.id as source, m.id as target, type(r) as relation, m as target_node
+                                LIMIT 10000
+                                """
+                                rel_result = session.run(rel_query, node_ids=chunk)
+                            
                             for record in rel_result:
                                 source_id = record["source"]
                                 target_id = record["target"]
@@ -623,25 +694,37 @@ class GraphEngine:
                 return {"nodes": list(nodes_map.values()), "links": links}
             return {"nodes": [], "links": []}
 
-    def get_neighbors(self, node_id: str):
+    def get_neighbors(self, node_id: str, user_id: str = None, repository_id: str = None):
         """
         LAZY LOADING: Fetches immediate children/neighbors of a node.
         Used when a user clicks a Folder to see its contents.
+        Now filters by user_id and repository_id for multi-tenant isolation.
         """
         if not self.driver: return {"nodes": [], "links": []}
 
         # Query: Find the clicked node (p) and its outgoing children (c)
-        query = """
-        MATCH (p:CodeNode {id: $id})-[r]->(c:CodeNode)
-        RETURN p, r, c
-        LIMIT 500
-        """
+        # Filter by user_id and repository_id if provided
+        if user_id and repository_id:
+            query = """
+            MATCH (p:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id})-[r]->(c:CodeNode {user_id: $user_id, repository_id: $repository_id})
+            RETURN p, r, c
+            LIMIT 500
+            """
+        else:
+            query = """
+            MATCH (p:CodeNode {id: $id})-[r]->(c:CodeNode)
+            RETURN p, r, c
+            LIMIT 500
+            """
         
         nodes_map = {}
         links = []
         
         with self.driver.session(database=self.database) as session:
-            result = session.run(query, id=node_id)
+            if user_id and repository_id:
+                result = session.run(query, id=node_id, user_id=user_id, repository_id=repository_id)
+            else:
+                result = session.run(query, id=node_id)
             for record in result:
                 p = dict(record["p"])
                 c = dict(record["c"])
@@ -658,10 +741,11 @@ class GraphEngine:
 
         return {"nodes": list(nodes_map.values()), "links": links}
 
-    def get_impact_subgraph(self, target_id: str):
+    def get_impact_subgraph(self, target_id: str, user_id: str = None, repository_id: str = None):
         """
         IMPACT RADAR: Cypher Query to find 'Blast Radius'.
         Finds all files that recursively DEPEND ON the target.
+        Now filters by user_id and repository_id for multi-tenant isolation.
         """
         if not self.driver: return {"nodes": [], "links": []}
         
@@ -677,12 +761,22 @@ class GraphEngine:
         
         with self.driver.session(database=self.database) as session:
             # We first fetch the target node details to be safe
-            target_res = session.run("MATCH (n:CodeNode {id: $id}) RETURN n", id=target_id)
+            if user_id and repository_id:
+                target_query = "MATCH (n:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id}) RETURN n"
+                target_res = session.run(target_query, id=target_id, user_id=user_id, repository_id=repository_id)
+            else:
+                target_query = "MATCH (n:CodeNode {id: $id}) RETURN n"
+                target_res = session.run(target_query, id=target_id)
+            
             for rec in target_res:
                 nodes_map[target_id] = dict(rec["n"])
 
             # Then fetch dependencies
-            result = session.run(query, id=target_id)
+            if user_id and repository_id:
+                result = session.run(query, id=target_id, user_id=user_id, repository_id=repository_id)
+            else:
+                result = session.run(query, id=target_id)
+            
             for record in result:
                 # 'r' is a list of relationships in the path, but we simplify for visualization
                 # Actually, let's use a simpler query pattern for the graph lib
@@ -690,15 +784,24 @@ class GraphEngine:
 
             # Simpler Graph Query (Path Expansion)
             # We use a union to get immediate edges for visualization
-            simple_query = """
-            MATCH (t:CodeNode {id: $id})<-[r:DEPENDS_ON]-(s:CodeNode)
-            RETURN s, r, t
-            UNION
-            MATCH (t:CodeNode {id: $id})<-[:DEPENDS_ON]-(inter)<-[r:DEPENDS_ON]-(s:CodeNode)
-            RETURN s, r, inter as t
-            """
-            
-            result = session.run(simple_query, id=target_id)
+            if user_id and repository_id:
+                simple_query = """
+                MATCH (t:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id})<-[r:DEPENDS_ON]-(s:CodeNode {user_id: $user_id, repository_id: $repository_id})
+                RETURN s, r, t
+                UNION
+                MATCH (t:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id})<-[:DEPENDS_ON]-(inter:CodeNode {user_id: $user_id, repository_id: $repository_id})<-[r:DEPENDS_ON]-(s:CodeNode {user_id: $user_id, repository_id: $repository_id})
+                RETURN s, r, inter as t
+                """
+                result = session.run(simple_query, id=target_id, user_id=user_id, repository_id=repository_id)
+            else:
+                simple_query = """
+                MATCH (t:CodeNode {id: $id})<-[r:DEPENDS_ON]-(s:CodeNode)
+                RETURN s, r, t
+                UNION
+                MATCH (t:CodeNode {id: $id})<-[:DEPENDS_ON]-(inter)<-[r:DEPENDS_ON]-(s:CodeNode)
+                RETURN s, r, inter as t
+                """
+                result = session.run(simple_query, id=target_id)
             for record in result:
                 s = dict(record["s"])
                 t = dict(record["t"])

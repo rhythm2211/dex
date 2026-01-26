@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from collections import Counter
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from pydantic import BaseModel, field_validator
 
 # --- Service Imports ---
@@ -11,6 +11,8 @@ from backend.app.services.ingestion_service import IngestionService
 from backend.app.services.rag_service import RAGService
 from backend.app.api.v1.endpoints.users import router as users_router
 from backend.app.api.v1.endpoints.health import router as health_router
+from backend.app.api.v1.dependencies import get_current_user
+from backend.app.models.user import User
 
 logger = logging.getLogger("dex-core")
 
@@ -22,47 +24,61 @@ api_router.include_router(users_router, tags=["users"])
 # Include health routes
 api_router.include_router(health_router, prefix="/health", tags=["health"])
 
-# --- Singleton Services (Lazy Initialization) ---
-# Initialize services lazily to avoid blocking on startup
-_ingestion_service = None
-_rag_service = None
-# Lightweight status storage (doesn't require full service initialization)
-_ingestion_status = {"state": "idle", "progress": 0, "step": "Ready"}
-# Track if cancellation was requested
-_cancellation_requested = False
+# --- Multi-Tenant Service Management ---
+# Store services per user for isolation
+_ingestion_services: dict[str, IngestionService] = {}  # user_id -> IngestionService
+_rag_services: dict[str, RAGService] = {}  # user_id -> RAGService
+# Track ingestion status per user
+_ingestion_statuses: dict[str, dict] = {}  # user_id -> status dict
+# Track cancellation requests per user
+_cancellation_requests: dict[str, bool] = {}  # user_id -> bool
 
-def get_ingestion_service():
-    global _ingestion_service
-    if _ingestion_service is None:
+def get_ingestion_service(user_id: str, repository_id: str = None) -> IngestionService:
+    """
+    Get or create ingestion service for a specific user.
+    Each user gets their own service instance for isolation.
+    """
+    # Create a unique key for user+repository combination
+    service_key = f"{user_id}:{repository_id or 'default'}"
+    
+    if service_key not in _ingestion_services:
         try:
-            _ingestion_service = IngestionService()
-            # Sync status after initialization
-            global _ingestion_status
-            _ingestion_status = _ingestion_service.get_current_status()
+            _ingestion_services[service_key] = IngestionService(user_id=user_id, repository_id=repository_id)
+            # Initialize status for this user
+            if user_id not in _ingestion_statuses:
+                _ingestion_statuses[user_id] = {"state": "idle", "progress": 0, "step": "Ready"}
+            logger.info(f"Created IngestionService for user_id={user_id}, repository_id={repository_id}")
         except Exception as e:
-            logger.exception(f"Failed to initialize IngestionService: {e}", exc_info=True)
+            logger.exception(f"Failed to initialize IngestionService for user {user_id}: {e}", exc_info=True)
             raise RuntimeError(f"Failed to initialize ingestion service: {str(e)}") from e
-    return _ingestion_service
+    
+    return _ingestion_services[service_key]
 
-def get_ingestion_status_lightweight():
-    """Get ingestion status without initializing the full service."""
-    global _ingestion_service, _ingestion_status
-    if _ingestion_service is not None:
-        # Service is initialized, use it
-        return _ingestion_service.get_current_status()
+def get_ingestion_status_lightweight(user_id: str):
+    """Get ingestion status for a specific user without initializing the full service."""
+    if user_id in _ingestion_statuses:
+        return _ingestion_statuses[user_id]
     else:
-        # Service not initialized, return cached status
-        return _ingestion_status
+        # Return default status if user not found
+        return {"state": "idle", "progress": 0, "step": "Ready"}
 
-def get_rag_service():
-    global _rag_service
-    if _rag_service is None:
+def get_rag_service(user_id: str, repository_id: str = None) -> RAGService:
+    """
+    Get or create RAG service for a specific user.
+    Each user gets their own service instance for isolation.
+    """
+    # Create a unique key for user+repository combination
+    service_key = f"{user_id}:{repository_id or 'default'}"
+    
+    if service_key not in _rag_services:
         try:
-            _rag_service = RAGService()
+            _rag_services[service_key] = RAGService(user_id=user_id, repository_id=repository_id)
+            logger.info(f"Created RAGService for user_id={user_id}, repository_id={repository_id}")
         except Exception as e:
-            logger.exception(f"Failed to initialize RAGService: {e}", exc_info=True)
+            logger.exception(f"Failed to initialize RAGService for user {user_id}: {e}", exc_info=True)
             raise RuntimeError(f"Failed to initialize RAG service: {str(e)}") from e
-    return _rag_service
+    
+    return _rag_services[service_key]
 
 # --- Data Models ---
 from pydantic import field_validator
@@ -94,23 +110,34 @@ class HybridRAGRequest(BaseModel):
         return v.strip()
 
 # --- Background Task Wrapper ---
-def run_ingestion_sequence(repo_path: str):
-    global _ingestion_status, _cancellation_requested
-    _cancellation_requested = False  # Reset cancellation flag at start
+def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = None):
+    """
+    Run ingestion sequence for a specific user.
+    Now supports multi-tenant isolation with user_id and repository_id.
+    """
+    # Generate repository_id from repo_path if not provided
+    if not repository_id:
+        # Use repo URL as repository_id (sanitized)
+        import re
+        repository_id = re.sub(r'[^a-zA-Z0-9_-]', '_', repo_path)[:100]
+    
+    # Reset cancellation flag for this user
+    _cancellation_requests[user_id] = False
+    
     try:
-        ingestion_service = get_ingestion_service()
+        ingestion_service = get_ingestion_service(user_id, repository_id)
         # Sync status immediately after initialization
-        _ingestion_status = ingestion_service.get_current_status()
+        _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         
-        logger.info(f"🚀 Starting background ingestion for: {repo_path}")
-        result = ingestion_service.process_repository(repo_path)
+        logger.info(f"🚀 Starting background ingestion for user_id={user_id}, repository_id={repository_id}, repo_path={repo_path}")
+        result = ingestion_service.process_repository(repo_path, user_id=user_id, repository_id=repository_id)
         
         # Sync status after processing
-        _ingestion_status = ingestion_service.get_current_status()
+        _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         
         if result.get("status") == "success":
             logger.info("💾 Ingestion processing done. Triggering RAG memory refresh...")
-            rag_service = get_rag_service()
+            rag_service = get_rag_service(user_id, repository_id)
             rag_service.reload_knowledge_base()
             logger.info("✅ System fully updated.")
         elif result.get("status") == "cancelled":
@@ -118,14 +145,14 @@ def run_ingestion_sequence(repo_path: str):
         else:
             logger.error(f"❌ Ingestion failed: {result.get('error')}")
     except Exception as e:
-        logger.exception(f"Background task crashed: {e}")
+        logger.exception(f"Background task crashed for user {user_id}: {e}")
         try:
-            ingestion_service = get_ingestion_service()
+            ingestion_service = get_ingestion_service(user_id, repository_id)
             ingestion_service._update_status("error", 0, f"System Error: {str(e)}")
-            _ingestion_status = ingestion_service.get_current_status()
+            _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         except:
             # If service initialization fails, update lightweight status
-            _ingestion_status = {"state": "error", "progress": 0, "step": f"System Error: {str(e)}"}
+            _ingestion_statuses[user_id] = {"state": "error", "progress": 0, "step": f"System Error: {str(e)}"}
 
 # --- Endpoints ---
 
@@ -134,47 +161,72 @@ def health_check():
     return {"status": "ok", "version": "1.3.0 (Neo4j Cloud + Onboarding)"}
 
 @api_router.get("/graph/structure")
-async def get_knowledge_graph():
+async def get_knowledge_graph(
+    repository_id: str = Query(None, description="Repository ID to filter graph"),
+    current_user: User = Depends(get_current_user)
+):
     """
     Fetches the knowledge graph directly from Neo4j Cloud.
-    Now supports massive datasets via smart limits.
+    Now supports massive datasets via smart limits and user/repository filtering.
     Made async to prevent blocking and allow timeout handling.
     """
     try:
         # Default limit 2500 to prevent browser crash on initial load
-        ingestion_service = get_ingestion_service()
-        graph_data = ingestion_service.graph_engine.get_full_graph(limit=2500)
+        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        graph_data = ingestion_service.graph_engine.get_full_graph(
+            limit=2500, 
+            user_id=current_user.id, 
+            repository_id=repository_id
+        )
         return graph_data
     except Exception as e:
-        logger.error(f"Neo4j Read Error: {e}")
+        logger.error(f"Neo4j Read Error for user {current_user.id}: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return {"nodes": [], "links": []}
 
 @api_router.get("/graph/impact")
-def get_impact_graph(file_id: str = Query(..., description="The file ID (path) to analyze blast radius for")):
+def get_impact_graph(
+    file_id: str = Query(..., description="The file ID (path) to analyze blast radius for"),
+    repository_id: str = Query(None, description="Repository ID to filter graph"),
+    current_user: User = Depends(get_current_user)
+):
     """
     IMPACT RADAR: Queries Neo4j for the dependency subgraph.
     Returns: All files that depend on 'file_id' (Upstream Dependencies).
+    Now filters by user_id and repository_id for multi-tenant isolation.
     """
     try:
-        ingestion_service = get_ingestion_service()
-        return ingestion_service.graph_engine.get_impact_subgraph(file_id)
+        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        return ingestion_service.graph_engine.get_impact_subgraph(
+            file_id, 
+            user_id=current_user.id, 
+            repository_id=repository_id
+        )
     except Exception as e:
-        logger.error(f"Neo4j Impact Query Error: {e}")
+        logger.error(f"Neo4j Impact Query Error for user {current_user.id}: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/graph/expand")
-def expand_graph_node(node_id: str = Query(..., description="The node ID to expand and load children for")):
+def expand_graph_node(
+    node_id: str = Query(..., description="The node ID to expand and load children for"),
+    repository_id: str = Query(None, description="Repository ID to filter graph"),
+    current_user: User = Depends(get_current_user)
+):
     """
     LAZY LOADING: Fetches immediate children/neighbors of a node.
     Used when a user expands a node in the graph visualization.
+    Now filters by user_id and repository_id for multi-tenant isolation.
     """
     try:
-        ingestion_service = get_ingestion_service()
-        return ingestion_service.graph_engine.get_neighbors(node_id)
+        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        return ingestion_service.graph_engine.get_neighbors(
+            node_id, 
+            user_id=current_user.id, 
+            repository_id=repository_id
+        )
     except Exception as e:
-        logger.error(f"Neo4j Expand Query Error: {e}")
+        logger.error(f"Neo4j Expand Query Error for user {current_user.id}: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/git/history")
@@ -318,10 +370,15 @@ async def get_active_zones(days: int = 30):
 # ==========================================
 
 @api_router.post("/ingest")
-async def trigger_ingestion(request: IngestRequest, background_tasks: BackgroundTasks):
+async def trigger_ingestion(
+    request: IngestRequest, 
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
+):
     """
     Trigger ingestion in background. Returns immediately.
     Use /ingest/status to check progress.
+    Now supports multi-tenant isolation - each user can ingest independently.
     """
     try:
         # Input validation and sanitization
@@ -339,25 +396,33 @@ async def trigger_ingestion(request: IngestRequest, background_tasks: Background
             if ".." in repo_path or "//" in repo_path.replace("://", ""):
                 raise HTTPException(status_code=400, detail="Invalid repository path format")
         
-        # Check status without initializing the full service (lazy check)
-        current_status = get_ingestion_status_lightweight()
+        # Generate repository_id from repo_path
+        import re
+        repository_id = re.sub(r'[^a-zA-Z0-9_-]', '_', repo_path)[:100]
+        
+        # Check status for this specific user (not global)
+        current_status = get_ingestion_status_lightweight(current_user.id)
         
         if current_status["state"] == "running":
-            raise HTTPException(status_code=409, detail="An ingestion task is already running.")
+            raise HTTPException(
+                status_code=409, 
+                detail=f"An ingestion task is already running for your account. Please wait for it to complete or cancel it first."
+            )
 
         # Start background task - this should return immediately
         # Service initialization will happen in the background task, not here
-        background_tasks.add_task(run_ingestion_sequence, repo_path)
+        background_tasks.add_task(run_ingestion_sequence, repo_path, current_user.id, repository_id)
         
-        logger.info(f"Ingestion request accepted for: {repo_path}")
+        logger.info(f"Ingestion request accepted for user_id={current_user.id}, repository_id={repository_id}, repo_path={repo_path}")
         return {
             "status": "accepted",
-            "message": f"Ingestion started for {repo_path}. Check /ingest/status for progress."
+            "message": f"Ingestion started for {repo_path}. Check /ingest/status for progress.",
+            "repository_id": repository_id
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Failed to start ingestion: {e}", exc_info=True)
+        logger.exception(f"Failed to start ingestion for user {current_user.id}: {e}", exc_info=True)
         error_detail = str(e)
         # Provide more helpful error messages for common issues
         if "Neo4j" in error_detail or "NEO4J" in error_detail:
@@ -369,59 +434,78 @@ async def trigger_ingestion(request: IngestRequest, background_tasks: Background
         raise HTTPException(status_code=500, detail=f"Failed to start ingestion: {error_detail}")
 
 @api_router.get("/ingest/status")
-def get_ingestion_status():
-    # Use lightweight status check to avoid blocking on service initialization
-    return get_ingestion_status_lightweight()
+def get_ingestion_status(
+    repository_id: str = Query(None, description="Repository ID to check status for"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get ingestion status for the current user.
+    Use lightweight status check to avoid blocking on service initialization.
+    """
+    return get_ingestion_status_lightweight(current_user.id)
 
 @api_router.post("/ingest/cancel")
-def cancel_ingestion():
+def cancel_ingestion(
+    repository_id: str = Query(None, description="Repository ID to cancel ingestion for"),
+    current_user: User = Depends(get_current_user)
+):
     """
-    Cancel the currently running ingestion process.
+    Cancel the currently running ingestion process for the current user.
     """
-    global _ingestion_status, _cancellation_requested
-    _cancellation_requested = True
+    _cancellation_requests[current_user.id] = True
     try:
-        ingestion_service = get_ingestion_service()
+        ingestion_service = get_ingestion_service(current_user.id, repository_id)
         ingestion_service.cancel()
-        _ingestion_status = ingestion_service.get_current_status()
-        logger.info("🛑 Ingestion cancellation requested via API")
+        _ingestion_statuses[current_user.id] = ingestion_service.get_current_status()
+        logger.info(f"🛑 Ingestion cancellation requested via API for user_id={current_user.id}")
         return {"status": "cancelled", "message": "Ingestion cancellation requested"}
     except Exception as e:
-        logger.error(f"Failed to cancel ingestion: {e}")
+        logger.error(f"Failed to cancel ingestion for user {current_user.id}: {e}")
         # Try to update status anyway
-        _ingestion_status = {"state": "cancelled", "progress": 0, "step": "Cancellation attempted"}
+        _ingestion_statuses[current_user.id] = {"state": "cancelled", "progress": 0, "step": "Cancellation attempted"}
         return {"status": "cancelled", "message": f"Cancellation requested (service may not be initialized): {str(e)}"}
 
 @api_router.post("/ingest/reset")
-def reset_ingestion_status():
+def reset_ingestion_status(
+    repository_id: str = Query(None, description="Repository ID to reset status for"),
+    current_user: User = Depends(get_current_user)
+):
     """
     Reset ingestion status if it gets stuck.
     This allows starting a new ingestion after a failed/stuck one.
     """
-    global _ingestion_status
     try:
         # Reset lightweight status immediately
-        _ingestion_status = {"state": "idle", "progress": 0, "step": "Ready"}
+        _ingestion_statuses[current_user.id] = {"state": "idle", "progress": 0, "step": "Ready"}
         
         # If service is initialized, also reset it
-        if _ingestion_service is not None:
-            _ingestion_service._update_status("idle", 0, "Ready")
-            _ingestion_status = _ingestion_service.get_current_status()
+        service_key = f"{current_user.id}:{repository_id or 'default'}"
+        if service_key in _ingestion_services:
+            _ingestion_services[service_key]._update_status("idle", 0, "Ready")
+            _ingestion_statuses[current_user.id] = _ingestion_services[service_key].get_current_status()
         
-        logger.info("Ingestion status reset to idle")
+        logger.info(f"Ingestion status reset to idle for user_id={current_user.id}")
         return {"status": "reset", "message": "Ingestion status has been reset"}
     except Exception as e:
-        logger.error(f"Failed to reset ingestion status: {e}")
+        logger.error(f"Failed to reset ingestion status for user {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reset ingestion status: {str(e)}")
 
 @api_router.post("/query/hybrid")
-def execute_hybrid_query(request: HybridRAGRequest):
+def execute_hybrid_query(
+    request: HybridRAGRequest,
+    repository_id: str = Query(None, description="Repository ID to query"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Execute hybrid RAG query.
+    Now filters by user_id and repository_id for multi-tenant isolation.
+    """
     try:
-        rag_service = get_rag_service()
-        response = rag_service.answer_query(request.query)
+        rag_service = get_rag_service(current_user.id, repository_id)
+        response = rag_service.answer_query(request.query, user_id=current_user.id, repository_id=repository_id)
         return response
     except Exception as e:
-        logger.error(f"Query failed: {e}")
+        logger.error(f"Query failed for user {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/graph/expand")

@@ -132,6 +132,7 @@ export interface HealthSummary {
 class DexClient {
   private client: AxiosInstance;
   private baseURL: string;
+  private getUserSession: (() => Promise<{ user?: { email?: string; id?: string } | null }>) | null = null;
 
   constructor() {
     // --- DOCKER / LOCAL NETWORKING ---
@@ -148,6 +149,37 @@ class DexClient {
       headers: { 'Content-Type': 'application/json' },
       timeout: 60000, 
     });
+
+    // Add request interceptor to include user context
+    this.client.interceptors.request.use(async (config) => {
+      // Try to get user session if available (client-side only)
+      if (typeof window !== 'undefined' && this.getUserSession) {
+        try {
+          const session = await this.getUserSession();
+          if (session?.user) {
+            // Add user email or ID to headers
+            if (session.user.email) {
+              config.headers['X-User-Email'] = session.user.email;
+            }
+            if (session.user.id) {
+              config.headers['X-User-Id'] = session.user.id;
+            }
+          }
+        } catch (error) {
+          // Silently fail - user might not be logged in
+          console.debug('Could not get user session for API request:', error);
+        }
+      }
+      return config;
+    });
+  }
+
+  /**
+   * Set the function to get the current user session.
+   * This should be called from components that have access to useSession.
+   */
+  setUserSessionGetter(getter: () => Promise<{ user?: { email?: string; id?: string } | null }>) {
+    this.getUserSession = getter;
   }
 
   // Helper to check if error is an aborted/cancelled request (expected behavior)

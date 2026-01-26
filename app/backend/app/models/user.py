@@ -62,11 +62,14 @@ class UserCredentials(Base):
 # Database setup - PostgreSQL only
 # Add connect_args to prefer IPv4 and handle connection issues
 # Note: If using connection pooler (port 6543), it should handle IPv4 automatically
+# Optimized connection pool for multi-tenant support
+# Increased pool size to support 15-20 concurrent users
 engine = create_engine(
     settings.DATABASE_URL, 
     pool_pre_ping=True, 
-    pool_size=5, 
-    max_overflow=10,
+    pool_size=20,  # Increased from 5 to 20 for better concurrency
+    max_overflow=15,  # Increased from 10 to 15 for peak loads
+    pool_recycle=3600,  # Recycle connections after 1 hour
     connect_args={
         "connect_timeout": 10,  # 10 second timeout
         # Note: statement_timeout removed - not supported by Neon DB connection pooler

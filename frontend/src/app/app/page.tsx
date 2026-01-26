@@ -171,6 +171,19 @@ export default function Dashboard() {
   const { data: session } = useSession();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+
+  // Set up user session getter for API client
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Import getSession dynamically to avoid SSR issues
+      import('next-auth/react').then(({ getSession }) => {
+        dexApi.setUserSessionGetter(async () => {
+          const session = await getSession();
+          return session || { user: null };
+        });
+      });
+    }
+  }, []);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [ragResult, setRagResult] = useState<string | null>(null);

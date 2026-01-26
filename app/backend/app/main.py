@@ -170,18 +170,12 @@ async def health_probe():
     # Check Neo4j connection (if configured)
     if settings.NEO4J_URI:
         try:
-            from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection
-            from neo4j import GraphDatabase
-            driver = GraphDatabase.driver(
-                settings.NEO4J_URI,
-                auth=(settings.NEO4J_USERNAME, settings.NEO4J_PASSWORD)
-            )
-            if verify_neo4j_connection(driver):
+            from backend.app.utils.neo4j_driver_manager import neo4j_driver_manager
+            if neo4j_driver_manager.verify_connection():
                 health_status["neo4j"] = "connected"
             else:
                 health_status["neo4j"] = "disconnected"
                 health_status["status"] = "degraded"
-            driver.close()
         except Exception as e:
             logger.error(f"Neo4j health check failed: {e}")
             health_status["neo4j"] = "disconnected"

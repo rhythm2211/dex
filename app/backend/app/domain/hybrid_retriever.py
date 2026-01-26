@@ -5,38 +5,38 @@ from typing import List, Union
 from langchain_community.vectorstores import PGVector
 from langchain_core.vectorstores import VectorStore
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_groq import ChatGroq
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, TransientError
 from backend.app.core.config import settings
-from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection, retry_on_connection_error
+from backend.app.utils.connection_utils import verify_neo4j_connection, retry_on_connection_error
+from backend.app.utils.groq_client import MultiKeyChatGroq
 
 logger = logging.getLogger("dex-core")
 
 class HybridRetriever:
-    def __init__(self, vector_store: Union[PGVector, VectorStore]):
+    def __init__(self, vector_store: Union[PGVector, VectorStore], user_id: str = None, repository_id: str = None):
+        """
+        Initialize HybridRetriever with user and repository context for multi-tenant isolation.
+        """
         self.vector_store = vector_store
-        self.llm = ChatGroq(
+        self.user_id = user_id
+        self.repository_id = repository_id
+        # Use MultiKeyChatGroq for automatic key management
+        self.llm = MultiKeyChatGroq(
             model_name="llama-3.3-70b-versatile",
-            temperature=0,
-            groq_api_key=settings.GROQ_API_KEY
+            temperature=0
         )
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         
         # --- NEO4J CONNECTION (Read-Only access for RAG) ---
-        uri = settings.NEO4J_URI
-        user = settings.NEO4J_USERNAME
-        password = settings.NEO4J_PASSWORD
-        self.database = os.getenv("NEO4J_DATABASE", "neo4j")
+        # Use shared driver manager to optimize connection pooling
+        from backend.app.utils.neo4j_driver_manager import neo4j_driver_manager
         
-        if uri and user and password:
-            # Use connection utility with proper configuration
-            self.driver = create_neo4j_driver(uri, user, password, database=self.database)
-            if not self.driver:
-                logger.error("❌ Neo4j driver creation failed in Retriever. Graph context will be empty.")
-        else:
-            logger.error("❌ Neo4j Credentials missing in Retriever. Graph context will be empty.")
-            self.driver = None
+        self.driver = neo4j_driver_manager.get_driver()
+        self.database = neo4j_driver_manager.get_database()
+        
+        if not self.driver:
+            logger.error("❌ Neo4j driver not available in Retriever. Graph context will be empty.")
 
     def close(self):
         if self.driver:
@@ -49,24 +49,44 @@ class HybridRetriever:
         """
         pass
 
-    def retrieve(self, query: str, k_vectors: int = 10) -> str:
+    def retrieve(self, query: str, k_vectors: int = 10, user_id: str = None, repository_id: str = None) -> str:
         """
         Enhanced Hybrid Retrieval with Person Query Detection:
         1. Detect if query is about a person/author
-        2. Find the code (Vector Search)
-        3. Find the context (Graph Lookup via Neo4j)
+        2. Find the code (Vector Search) - filtered by user_id/repository_id
+        3. Find the context (Graph Lookup via Neo4j) - filtered by user_id/repository_id
         4. If person query, also search Neo4j directly for author/owner info
         """
+        # Use provided user_id/repository_id or fall back to instance defaults
+        effective_user_id = user_id or self.user_id
+        effective_repository_id = repository_id or self.repository_id
+        
         # Step 0: Detect Person Query
         person_name = self._extract_person_name(query)
         
         # Step 1: Semantic Search (PGVector) - increase k for better coverage
+        # Filter by user_id and repository_id if provided
         code_context = []
         anchors = set()
         
         try:
-            docs = self.vector_store.similarity_search(query, k=k_vectors)
-            for doc in docs:
+            # Use similarity_search_with_score to get metadata, then filter
+            docs_with_scores = self.vector_store.similarity_search_with_score(query, k=k_vectors * 2)  # Get more to filter
+            
+            # Filter by user_id and repository_id if provided
+            filtered_docs = []
+            for doc, score in docs_with_scores:
+                metadata = doc.metadata
+                if effective_user_id and metadata.get('user_id') != effective_user_id:
+                    continue
+                if effective_repository_id and metadata.get('repository_id') != effective_repository_id:
+                    continue
+                filtered_docs.append((doc, score))
+                if len(filtered_docs) >= k_vectors:
+                    break
+            
+            # Use filtered docs
+            for doc, score in filtered_docs:
                 filename = doc.metadata.get('file_name')
                 if filename:
                     anchors.add(filename)
@@ -83,16 +103,16 @@ class HybridRetriever:
         if person_name and self.driver:
             # Person query: Search Neo4j directly for this person's contributions
             logger.info(f"Detected person query for: {person_name}")
-            graph_context = self._query_person_work(person_name)
+            graph_context = self._query_person_work(person_name, effective_user_id, effective_repository_id)
             
             # Also expand any file anchors we found
             if anchors:
-                anchor_context = self._expand_anchors_neo4j(list(anchors))
+                anchor_context = self._expand_anchors_neo4j(list(anchors), effective_user_id, effective_repository_id)
                 if anchor_context and "No graph context" not in anchor_context:
                     graph_context += "\n\n--- Related Files ---\n" + anchor_context
         elif anchors:
             # Standard query: Expand file anchors
-            graph_context = self._expand_anchors_neo4j(list(anchors))
+            graph_context = self._expand_anchors_neo4j(list(anchors), effective_user_id, effective_repository_id)
         else:
             graph_context = "No graph context available."
 
@@ -147,10 +167,11 @@ Person name:"""
         
         return ""
     
-    def _query_person_work(self, person_name: str) -> str:
+    def _query_person_work(self, person_name: str, user_id: str = None, repository_id: str = None) -> str:
         """
         Query Neo4j directly for what a person is working on.
         Searches in last_author, top_owner, and collaborators fields.
+        Now filters by user_id and repository_id for multi-tenant isolation.
         """
         if not self.driver:
             return "Neo4j not available for person query."
@@ -159,17 +180,31 @@ Person name:"""
         person_lower = person_name.lower()
         
         # Cypher query to find all nodes where this person is involved
-        query = """
-        MATCH (n:CodeNode)
-        WHERE 
-            toLower(n.last_author) CONTAINS $person_name OR
-            toLower(n.top_owner) CONTAINS $person_name OR
-            ANY(collab IN n.collaborators WHERE toLower(collab) CONTAINS $person_name)
-        OPTIONAL MATCH (n)-[r]-(m:CodeNode)
-        RETURN n, r, m
-        ORDER BY n.commit_count DESC
-        LIMIT 50
-        """
+        # Filter by user_id and repository_id if provided
+        if user_id and repository_id:
+            query = """
+            MATCH (n:CodeNode {user_id: $user_id, repository_id: $repository_id})
+            WHERE 
+                toLower(n.last_author) CONTAINS $person_name OR
+                toLower(n.top_owner) CONTAINS $person_name OR
+                ANY(collab IN n.collaborators WHERE toLower(collab) CONTAINS $person_name)
+            OPTIONAL MATCH (n)-[r]-(m:CodeNode {user_id: $user_id, repository_id: $repository_id})
+            RETURN n, r, m
+            ORDER BY n.commit_count DESC
+            LIMIT 50
+            """
+        else:
+            query = """
+            MATCH (n:CodeNode)
+            WHERE 
+                toLower(n.last_author) CONTAINS $person_name OR
+                toLower(n.top_owner) CONTAINS $person_name OR
+                ANY(collab IN n.collaborators WHERE toLower(collab) CONTAINS $person_name)
+            OPTIONAL MATCH (n)-[r]-(m:CodeNode)
+            RETURN n, r, m
+            ORDER BY n.commit_count DESC
+            LIMIT 50
+            """
         
         person_work = []
         files_owned = []
@@ -180,7 +215,10 @@ Person name:"""
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    return session.run(query, person_name=person_lower)
+                    if user_id and repository_id:
+                        return session.run(query, person_name=person_lower, user_id=user_id, repository_id=repository_id)
+                    else:
+                        return session.run(query, person_name=person_lower)
             
             result = _execute_query()
             
@@ -276,10 +314,11 @@ Person name:"""
         
         return "\n".join(result_parts)
 
-    def _expand_anchors_neo4j(self, file_anchors: List[str]) -> str:
+    def _expand_anchors_neo4j(self, file_anchors: List[str], user_id: str = None, repository_id: str = None) -> str:
         """
         Queries Neo4j to find structural relationships & Git metadata 
         for the identified anchor files.
+        Now filters by user_id and repository_id for multi-tenant isolation.
         """
         if not self.driver or not file_anchors:
             return "No graph context available (DB disconnected or no anchors)."
@@ -288,14 +327,25 @@ Person name:"""
         # 1. Match nodes that START with the filename (File node + its Classes/Functions)
         # 2. Find incoming/outgoing relationships (r) to other nodes (m)
         # 3. Return the triple + metadata
-        query = """
-        UNWIND $anchors AS filename
-        MATCH (n:CodeNode) 
-        WHERE n.id STARTS WITH filename
-        OPTIONAL MATCH (n)-[r]-(m:CodeNode)
-        RETURN n, r, m
-        LIMIT 20
-        """
+        # Filter by user_id and repository_id if provided
+        if user_id and repository_id:
+            query = """
+            UNWIND $anchors AS filename
+            MATCH (n:CodeNode {user_id: $user_id, repository_id: $repository_id}) 
+            WHERE n.id STARTS WITH filename
+            OPTIONAL MATCH (n)-[r]-(m:CodeNode {user_id: $user_id, repository_id: $repository_id})
+            RETURN n, r, m
+            LIMIT 20
+            """
+        else:
+            query = """
+            UNWIND $anchors AS filename
+            MATCH (n:CodeNode) 
+            WHERE n.id STARTS WITH filename
+            OPTIONAL MATCH (n)-[r]-(m:CodeNode)
+            RETURN n, r, m
+            LIMIT 20
+            """
         
         relevant_info = set()
         
@@ -303,7 +353,10 @@ Person name:"""
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    return session.run(query, anchors=file_anchors)
+                    if user_id and repository_id:
+                        return session.run(query, anchors=file_anchors, user_id=user_id, repository_id=repository_id)
+                    else:
+                        return session.run(query, anchors=file_anchors)
             
             result = _execute_query()
             

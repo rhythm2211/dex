@@ -127,22 +127,35 @@ class IngestionService:
         ext = os.path.splitext(file_path)[1].lower()
         return self.splitters.get(ext, self.default_splitter)
     
-    def __init__(self):
+    def __init__(self, user_id: str = None, repository_id: str = None):
         # Create language-specific splitters for better chunking
         self.splitters: Dict[str, RecursiveCharacterTextSplitter] = {}
         self._init_language_splitters()
+        
+        # Store user and repository context for multi-tenant isolation
+        self.user_id = user_id
+        self.repository_id = repository_id
         
         # Initialize the Neo4j-backed Graph Engine
         self.graph_engine = GraphEngine()
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         
-        # Paths
+        # Paths - user-scoped if user_id provided
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        self.data_dir = os.path.join(base_dir, "backend", "data")
+        if user_id:
+            # User-specific data directory
+            self.data_dir = os.path.join(base_dir, "backend", "data", user_id)
+        else:
+            # Legacy: shared data directory
+            self.data_dir = os.path.join(base_dir, "backend", "data")
         os.makedirs(self.data_dir, exist_ok=True)
         
         # We still keep history locally for the timeline slider (it's small & sequential)
-        self.history_path = os.path.join(self.data_dir, "repo_history.json") 
+        # Use repository_id in filename if provided
+        if repository_id:
+            self.history_path = os.path.join(self.data_dir, f"repo_history_{repository_id}.json")
+        else:
+            self.history_path = os.path.join(self.data_dir, "repo_history.json") 
 
         # Internal status for polling
         self._status = {"state": "idle", "progress": 0, "step": "Ready"}
@@ -210,8 +223,9 @@ class IngestionService:
     def _wipe_knowledge_base(self):
         """
         Atomic Wipe: Clears Vector DB (PostgreSQL/pgvector) AND Graph DB (Neo4j).
+        Now supports user/repository-scoped wiping for multi-tenant isolation.
         """
-        # 1. Clear PostgreSQL vector table
+        # 1. Clear PostgreSQL vector table - filter by user_id and repository_id if provided
         try:
             conninfo = make_conninfo(
                 host=settings.POSTGRES_HOST,
@@ -222,16 +236,25 @@ class IngestionService:
             )
             with psycopg.connect(conninfo) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(f"TRUNCATE TABLE {settings.POSTGRES_VECTOR_TABLE};")
+                    if self.user_id and self.repository_id:
+                        # Delete only vectors for this user/repository
+                        cur.execute(
+                            f"DELETE FROM {settings.POSTGRES_VECTOR_TABLE} WHERE metadata->>'user_id' = %s AND metadata->>'repository_id' = %s;",
+                            (self.user_id, self.repository_id)
+                        )
+                        logger.info(f"✅ PostgreSQL vector table '{settings.POSTGRES_VECTOR_TABLE}' cleared for user_id={self.user_id}, repository_id={self.repository_id}.")
+                    else:
+                        # Legacy: clear all (backward compatibility)
+                        cur.execute(f"TRUNCATE TABLE {settings.POSTGRES_VECTOR_TABLE};")
+                        logger.info(f"✅ PostgreSQL vector table '{settings.POSTGRES_VECTOR_TABLE}' cleared (all data).")
                     conn.commit()
-            logger.info(f"✅ PostgreSQL vector table '{settings.POSTGRES_VECTOR_TABLE}' cleared.")
         except Exception as e:
             logger.error(f"PostgreSQL vector table wipe failed: {e}")
 
-        # 2. Clear Neo4j
+        # 2. Clear Neo4j - filter by user_id and repository_id if provided
         try:
-            self.graph_engine.wipe_graph()
-            logger.info("✅ Neo4j database wiped.")
+            self.graph_engine.wipe_graph(user_id=self.user_id, repository_id=self.repository_id)
+            logger.info(f"✅ Neo4j database wiped for user_id={self.user_id}, repository_id={self.repository_id}.")
         except Exception as e:
             logger.error(f"Neo4j wipe failed: {e}")
 
@@ -462,12 +485,22 @@ class IngestionService:
                     f"Example: git@github.com:owner/repository.git"
                 )
 
-    def process_repository(self, repo_path: str):
+    def process_repository(self, repo_path: str, user_id: str = None, repository_id: str = None):
+        """
+        Process a repository for ingestion.
+        Now supports user_id and repository_id for multi-tenant isolation.
+        """
+        # Update user/repository context if provided
+        if user_id:
+            self.user_id = user_id
+        if repository_id:
+            self.repository_id = repository_id
+        
         # Reset cancellation flag at start
         self._cancelled = False
         self._update_status("running", 0, "Initializing pipeline...")
         
-        # Step 0: Clean Slate
+        # Step 0: Clean Slate - wipe only this user's repository data
         self._check_cancelled()
         self._wipe_knowledge_base()
         
@@ -911,20 +944,20 @@ class IngestionService:
                 if (i + 1) % batch_size == 0 or (i + 1) == total_docs:
                     logger.info(f"  💾 Batch inserting {len(all_nodes)} nodes and {len(all_edges)} edges to Neo4j...")
                     try:
-                        self.graph_engine.batch_upsert_nodes(all_nodes)
-                        self.graph_engine.batch_upsert_edges(all_edges)
+                        self.graph_engine.batch_upsert_nodes(all_nodes, user_id=self.user_id, repository_id=self.repository_id)
+                        self.graph_engine.batch_upsert_edges(all_edges, user_id=self.user_id, repository_id=self.repository_id)
                         logger.info(f"  ✅ Batch insert complete: {len(all_nodes)} nodes, {len(all_edges)} edges")
                     except Exception as e:
                         logger.error(f"  ❌ Batch insert failed: {e}. Falling back to individual inserts...")
                         # Fallback to individual inserts
                         for node in all_nodes:
                             try:
-                                self.graph_engine.upsert_node(node)
+                                self.graph_engine.upsert_node(node, user_id=self.user_id, repository_id=self.repository_id)
                             except:
                                 pass
                         for edge in all_edges:
                             try:
-                                self.graph_engine.upsert_edge(edge['source'], edge['target'], edge['relation'])
+                                self.graph_engine.upsert_edge(edge['source'], edge['target'], edge['relation'], user_id=self.user_id, repository_id=self.repository_id)
                             except:
                                 pass
                     
@@ -974,12 +1007,17 @@ class IngestionService:
                 top_extensions = sorted(chunk_stats.items(), key=lambda x: -x[1])[:5]
                 logger.info(f"📊 Top chunked file types: {', '.join([f'{count} chunks from {ext}' for ext, count in top_extensions])}")
             
-            # Enhance chunks with filenames
+            # Enhance chunks with filenames and user/repository context
             logger.info("📝 Enhancing chunks with metadata...")
             for chunk in vector_chunks:
                 full_path = chunk.metadata.get('source', '')
                 chunk.metadata['file_name'] = os.path.relpath(full_path, actual_path)
                 chunk.page_content = f"File: {chunk.metadata['file_name']}\n{chunk.page_content}"
+                # Add user_id and repository_id for multi-tenant isolation
+                if self.user_id:
+                    chunk.metadata['user_id'] = self.user_id
+                if self.repository_id:
+                    chunk.metadata['repository_id'] = self.repository_id
 
             # OPTIMIZED: Pre-generate embeddings in large batches, then bulk insert
             # This is much faster than generating embeddings one-by-one in add_texts
@@ -1073,6 +1111,11 @@ class IngestionService:
                                 for text, embedding, metadata in zip(batch_texts, batch_embeddings, batch_metadatas):
                                     file_name = metadata.get('file_name', '')
                                     source = metadata.get('source', '')
+                                    # Ensure user_id and repository_id are in metadata
+                                    if self.user_id and 'user_id' not in metadata:
+                                        metadata['user_id'] = self.user_id
+                                    if self.repository_id and 'repository_id' not in metadata:
+                                        metadata['repository_id'] = self.repository_id
                                     # Convert embedding list to string format for pgvector
                                     # Format: '[1.0,2.0,3.0]' - pgvector accepts this format
                                     embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'

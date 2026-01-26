@@ -96,3 +96,19 @@ def get_orphans():
     except Exception as e:
         logger.error(f"Error getting orphans: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/groq-keys")
+def get_groq_keys_status():
+    """
+    GET /api/v1/health/groq-keys
+    Returns status and statistics for all Groq API keys.
+    Useful for monitoring key health, rate limits, and usage.
+    """
+    try:
+        from backend.app.utils.groq_key_manager import groq_key_manager
+        stats = groq_key_manager.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting Groq keys status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

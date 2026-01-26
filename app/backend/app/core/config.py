@@ -63,7 +63,8 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "dex"
     POSTGRES_VECTOR_TABLE: str = "document_vectors"  # Table name for vector storage
     
-    GROQ_API_KEY: str = ""
+    GROQ_API_KEY: str = ""  # Single key (backward compatibility)
+    GROQ_API_KEYS: str = ""  # Multiple keys (comma or space separated)
     GITHUB_TOKEN: str = "" 
     OPENAI_API_KEY: str = ""
     
@@ -77,10 +78,12 @@ class Settings(BaseSettings):
     
     @field_validator("GROQ_API_KEY", mode="before")
     def validate_groq_key(cls, v):
-        """Warn if GROQ_API_KEY is missing."""
-        if not v:
+        """Warn if GROQ_API_KEY is missing (only if GROQ_API_KEYS is also not set)."""
+        # Check if GROQ_API_KEYS is set instead
+        groq_keys = os.getenv("GROQ_API_KEYS", "")
+        if not v and not groq_keys:
             import warnings
-            warnings.warn("GROQ_API_KEY is not set. RAG queries will fail!")
+            warnings.warn("GROQ_API_KEY or GROQ_API_KEYS is not set. RAG queries will fail!")
         return v
     
     def _is_neon_db(self, hostname: str) -> bool:
