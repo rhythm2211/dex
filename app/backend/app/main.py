@@ -83,16 +83,27 @@ async def request_interceptor(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.perf_counter()
     
+    # Extract user information from headers
+    user_email = request.headers.get("X-User-Email")
+    user_id = request.headers.get("X-User-Id")
+    user_info = None
+    if user_email:
+        user_info = f"User: {user_email}"
+    elif user_id:
+        user_info = f"User-ID: {user_id}"
+    else:
+        user_info = "User: anonymous"
+    
     # Log origin for CORS debugging (only for non-OPTIONS to avoid conflicts)
     origin = request.headers.get("origin", "no-origin")
     if request.method != "OPTIONS":
-        logger.info(f"Incoming Request | ID: {request_id} | Method: {request.method} | Path: {request.url.path} | Origin: {origin}")
+        logger.info(f"Incoming Request | ID: {request_id} | Method: {request.method} | Path: {request.url.path} | Origin: {origin} | {user_info}")
         # Also print to stdout for immediate visibility
-        print(f"[MIDDLEWARE] {request.method} {request.url.path} | Origin: {origin}", flush=True)
+        print(f"[MIDDLEWARE] {request.method} {request.url.path} | Origin: {origin} | {user_info}", flush=True)
     else:
         # Log OPTIONS requests for CORS debugging
-        logger.info(f"CORS Preflight | ID: {request_id} | Path: {request.url.path} | Origin: {origin}")
-        print(f"[CORS] OPTIONS {request.url.path} | Origin: {origin}", flush=True)
+        logger.info(f"CORS Preflight | ID: {request_id} | Path: {request.url.path} | Origin: {origin} | {user_info}")
+        print(f"[CORS] OPTIONS {request.url.path} | Origin: {origin} | {user_info}", flush=True)
     
     try:
         response = await call_next(request)
@@ -102,11 +113,11 @@ async def request_interceptor(request: Request, call_next):
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time"] = str(round(process_time, 4))
         
-        logger.info(f"Request Completed | ID: {request_id} | Status: {response.status_code} | Duration: {process_time:.4f}s")
+        logger.info(f"Request Completed | ID: {request_id} | Status: {response.status_code} | Duration: {process_time:.4f}s | {user_info}")
         return response
         
     except Exception as error:
-        logger.error(f"System Failure | ID: {request_id} | Error: {str(error)}", exc_info=True)
+        logger.error(f"System Failure | ID: {request_id} | Error: {str(error)} | {user_info}", exc_info=True)
         # Provide more helpful error messages for common issues
         error_str = str(error)
         error_type = type(error).__name__
