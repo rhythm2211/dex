@@ -81,6 +81,8 @@ async def request_interceptor(request: Request, call_next):
     if request.method != "OPTIONS":
         origin = request.headers.get("origin", "no-origin")
         logger.info(f"Incoming Request | ID: {request_id} | Method: {request.method} | Path: {request.url.path} | Origin: {origin}")
+        # Also print to stdout for immediate visibility
+        print(f"[MIDDLEWARE] {request.method} {request.url.path} | Origin: {origin}", flush=True)
     
     try:
         response = await call_next(request)

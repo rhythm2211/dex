@@ -144,6 +144,10 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
     """
     # Force log flush to ensure logs are visible immediately
     import sys
+    import traceback
+    
+    # Log immediately with flush
+    print(f"📋 [BACKGROUND TASK] Starting ingestion sequence for user_id={user_id}, repo_path={repo_path}", flush=True)
     sys.stdout.flush()
     sys.stderr.flush()
     
@@ -477,9 +481,22 @@ async def trigger_ingestion(
     Use /ingest/status to check progress.
     Now supports multi-tenant isolation - each user can ingest independently.
     """
+    import sys
+    # Log BEFORE anything else to catch if endpoint is reached
+    print("🚀 [ENDPOINT] POST /ingest endpoint called", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    
+    logger.info(f"🚀 POST /ingest received for user_id={current_user.id}")
+    print(f"🚀 [ENDPOINT] User authenticated: {current_user.id}", flush=True)
+    sys.stdout.flush()
+    
     try:
         # Input validation and sanitization
         repo_path = request.repo_path.strip()
+        logger.info(f"📝 Processing repo_path: {repo_path[:100]}...")
+        sys.stdout.flush()
+        
         if not repo_path:
             raise HTTPException(status_code=400, detail="Repository path cannot be empty")
         
@@ -496,11 +513,19 @@ async def trigger_ingestion(
         # Generate repository_id from repo_path
         import re
         repository_id = re.sub(r'[^a-zA-Z0-9_-]', '_', repo_path)[:100]
+        logger.info(f"🔑 Generated repository_id: {repository_id}")
+        sys.stdout.flush()
         
         # Check status for this specific user (not global)
+        logger.info(f"📊 Checking current ingestion status for user_id={current_user.id}")
+        sys.stdout.flush()
         current_status = get_ingestion_status_lightweight(current_user.id)
+        logger.info(f"📊 Current status: {current_status}")
+        sys.stdout.flush()
         
         if current_status["state"] == "running":
+            logger.warning(f"⚠️ Ingestion already running for user_id={current_user.id}")
+            sys.stdout.flush()
             raise HTTPException(
                 status_code=409, 
                 detail=f"An ingestion task is already running for your account. Please wait for it to complete or cancel it first."
@@ -509,10 +534,13 @@ async def trigger_ingestion(
         # Start background task - this should return immediately
         # Service initialization will happen in the background task, not here
         logger.info(f"📤 Adding background task for user_id={current_user.id}, repository_id={repository_id}, repo_path={repo_path}")
+        sys.stdout.flush()
         background_tasks.add_task(run_ingestion_sequence, repo_path, current_user.id, repository_id)
         logger.info(f"✅ Background task added successfully for user_id={current_user.id}")
+        sys.stdout.flush()
         
-        logger.info(f"Ingestion request accepted for user_id={current_user.id}, repository_id={repository_id}, repo_path={repo_path}")
+        logger.info(f"✅ Ingestion request accepted for user_id={current_user.id}, repository_id={repository_id}, repo_path={repo_path}")
+        sys.stdout.flush()
         return {
             "status": "accepted",
             "message": f"Ingestion started for {repo_path}. Check /ingest/status for progress.",
