@@ -79,11 +79,15 @@ def get_ingestion_status_lightweight(user_id: str):
     import threading
     lock_acquired = False
     try:
-        # Try to acquire lock with very short timeout to prevent blocking
-        # If we can't get the lock quickly, return default status
-        lock_acquired = _services_lock.acquire(timeout=0.01)  # 10ms timeout - very short
+        # Try to acquire lock with reasonable timeout (50ms) to prevent blocking
+        # This gives enough time for normal operations but fails fast if there's contention
+        lock_acquired = _services_lock.acquire(timeout=0.05)  # 50ms timeout
         if not lock_acquired:
-            # If lock is busy, return default immediately - don't block
+            # If lock is busy, try to read without lock (might get stale data, but better than blocking)
+            # This is a fallback - we prefer to get the lock but won't block forever
+            if user_id in _ingestion_statuses:
+                # Return a copy without lock (slight race condition risk, but acceptable for status polling)
+                return _ingestion_statuses[user_id].copy()
             return {"state": "idle", "progress": 0, "step": "Ready"}
         
         # Quick check - don't do expensive operations
@@ -211,9 +215,17 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
         logger.info(f"✅ Ingestion service obtained for user_id={user_id}")
         sys.stdout.flush()
         
-        # Sync status immediately after initialization (thread-safe)
+        # Don't sync status from service if we already have "running" status
+        # The service might have default "idle" status from initialization
+        # We want to keep the "running" status we set earlier
         with _services_lock:
-            _ingestion_statuses[user_id] = ingestion_service.get_current_status()
+            current_global_status = _ingestion_statuses.get(user_id, {})
+            if current_global_status.get("state") != "running":
+                # Only sync if global status is not "running"
+                _ingestion_statuses[user_id] = ingestion_service.get_current_status()
+            else:
+                # Update service's internal status to match global "running" status
+                ingestion_service._status = current_global_status.copy()
         
         logger.info(f"🚀 Starting background ingestion for user_id={user_id}, repository_id={repository_id}, repo_path={repo_path}")
         result = ingestion_service.process_repository(repo_path, user_id=user_id, repository_id=repository_id)
@@ -615,6 +627,18 @@ async def trigger_ingestion(
             # Don't block - allow the request to proceed and reset in background task
             # The background task will check and reset if needed
         
+        # Set status IMMEDIATELY before adding background task
+        # This ensures status is available for polling right away
+        with _services_lock:
+            _cancellation_requests[current_user.id] = False
+            _ingestion_statuses[current_user.id] = {
+                "state": "running", 
+                "progress": 0, 
+                "step": "Starting ingestion...",
+                "_last_update": datetime.now().isoformat()
+            }
+        print(f"[ENDPOINT] Status set to 'running' for user_id={current_user.id}", flush=True)
+        
         # Start background task - this should return immediately
         # Service initialization will happen in the background task, not here
         print(f"[ENDPOINT] Adding background task...", flush=True)
@@ -662,41 +686,65 @@ async def get_ingestion_status(
     Made async to prevent blocking and ensure fast response.
     """
     try:
-        # Fast, non-blocking status check - no logging to avoid I/O blocking
+        # Fast, non-blocking status check
         status = get_ingestion_status_lightweight(current_user.id)
-        # Return immediately - don't log (logging can block)
+        # Log status for debugging (but use print to avoid blocking)
+        print(f"[STATUS] user_id={current_user.id}, state={status.get('state')}, progress={status.get('progress')}, step={status.get('step')}", flush=True)
         return status
     except Exception as e:
         # If status check fails, return default instead of erroring
-        # Don't log here either to avoid blocking
         return {"state": "error", "progress": 0, "step": "Status check failed"}
 
 @api_router.post("/ingest/cancel")
-def cancel_ingestion(
+async def cancel_ingestion(
     repository_id: str = Query(None, description="Repository ID to cancel ingestion for"),
     current_user: User = Depends(get_current_user)
 ):
     """
     Cancel the currently running ingestion process for the current user.
-    Thread-safe implementation.
+    Thread-safe implementation. Made async to prevent blocking.
     """
-    # Set cancellation flag (thread-safe)
+    import sys
+    print(f"[CANCEL] Cancellation requested for user_id={current_user.id}", flush=True)
+    
+    # Set cancellation flag (thread-safe) - this is the most important part
     with _services_lock:
         _cancellation_requests[current_user.id] = True
+        # Update status immediately to show cancellation
+        _ingestion_statuses[current_user.id] = {
+            "state": "cancelled", 
+            "progress": 0, 
+            "step": "Cancellation requested...",
+            "_last_update": datetime.now().isoformat()
+        }
     
+    print(f"[CANCEL] Cancellation flag set for user_id={current_user.id}", flush=True)
+    
+    # Try to cancel the service if it exists, but don't fail if it doesn't
     try:
-        ingestion_service = get_ingestion_service(current_user.id, repository_id)
-        ingestion_service.cancel()
-        with _services_lock:
-            _ingestion_statuses[current_user.id] = ingestion_service.get_current_status()
-        logger.info(f"🛑 Ingestion cancellation requested via API for user_id={current_user.id}")
-        return {"status": "cancelled", "message": "Ingestion cancellation requested"}
+        # Normalize repository_id
+        normalized_repo_id = repository_id or 'default'
+        service_key = f"{current_user.id}:{normalized_repo_id}"
+        
+        # Check if service exists without initializing it
+        if service_key in _ingestion_services:
+            ingestion_service = _ingestion_services[service_key]
+            ingestion_service.cancel()
+            # Update status from service
+            with _services_lock:
+                _ingestion_statuses[current_user.id] = ingestion_service.get_current_status()
+            print(f"[CANCEL] Service cancelled for user_id={current_user.id}", flush=True)
+        else:
+            print(f"[CANCEL] Service not initialized yet for user_id={current_user.id}, but flag is set", flush=True)
+            # Service not initialized yet, but cancellation flag is set
+            # The background task will check this flag and cancel when it starts
     except Exception as e:
-        logger.error(f"Failed to cancel ingestion for user {current_user.id}: {e}")
-        # Try to update status anyway (thread-safe)
-        with _services_lock:
-            _ingestion_statuses[current_user.id] = {"state": "cancelled", "progress": 0, "step": "Cancellation attempted"}
-        return {"status": "cancelled", "message": f"Cancellation requested (service may not be initialized): {str(e)}"}
+        print(f"[CANCEL] Error cancelling service (non-critical): {e}", flush=True)
+        # Don't fail - cancellation flag is already set, which is what matters
+        pass
+    
+    logger.info(f"🛑 Ingestion cancellation requested via API for user_id={current_user.id}")
+    return {"status": "cancelled", "message": "Ingestion cancellation requested"}
 
 @api_router.post("/ingest/reset")
 def reset_ingestion_status(
