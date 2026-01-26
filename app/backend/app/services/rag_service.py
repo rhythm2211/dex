@@ -56,7 +56,14 @@ class RAGService:
     def answer_query(self, query_text: str) -> dict:
         # 1. Hybrid Retrieval
         # Returns a JSON string with separated contexts
-        retrieval_result = self.retriever.retrieve(query_text)
+        try:
+            retrieval_result = self.retriever.retrieve(query_text)
+        except Exception as e:
+            logger.error(f"Retrieval failed completely: {e}", exc_info=True)
+            return {
+                "answer": f"I encountered an error while searching the codebase: {str(e)}. Please check the logs for more details.",
+                "context_used": ""
+            }
         
         # 2. Parse Contexts
         try:
@@ -89,17 +96,51 @@ class RAGService:
             }
         
         # Check if we have meaningful context (either code or graph)
-        has_code_context = code_context and "No relevant code" not in code_context and "⚠️ ERROR" not in code_context
-        has_graph_context = graph_context and "No graph context" not in graph_context and "Graph query failed" not in graph_context and "Error querying" not in graph_context
+        # Be more lenient - check for actual content, not just absence of error messages
+        has_code_context = (
+            code_context and 
+            len(code_context.strip()) > 0 and
+            "No relevant code snippets found" not in code_context and 
+            "⚠️ ERROR" not in code_context
+        )
+        has_graph_context = (
+            graph_context and 
+            len(graph_context.strip()) > 0 and
+            "No graph context" not in graph_context and 
+            "Graph query failed" not in graph_context and 
+            "Error querying" not in graph_context and
+            "No structural relationships found" not in graph_context
+        )
         
         # Log what we found for debugging
-        logger.info(f"Query: '{query_text[:100]}...' | Code context: {bool(has_code_context)} | Graph context: {bool(has_graph_context)}")
+        logger.info(f"Query: '{query_text[:100]}...' | Code context: {bool(has_code_context)} ({len(code_context) if code_context else 0} chars) | Graph context: {bool(has_graph_context)} ({len(graph_context) if graph_context else 0} chars)")
+        if code_context:
+            logger.debug(f"Code context preview: {code_context[:200]}...")
+        if graph_context:
+            logger.debug(f"Graph context preview: {graph_context[:200]}...")
         
         # Only fail if we have neither code nor graph context
         if not has_code_context and not has_graph_context:
             logger.warning(f"No context found for query: {query_text[:100]}")
+            logger.warning(f"Code context was: {code_context[:100] if code_context else 'None'}...")
+            logger.warning(f"Graph context was: {graph_context[:100] if graph_context else 'None'}...")
+            
+            # Provide helpful diagnostic message
+            diagnostic_msg = (
+                "I couldn't find enough context in the codebase to answer that.\n\n"
+                "**Possible reasons:**\n"
+                "1. The repository hasn't been ingested yet - please run ingestion first\n"
+                "2. The database might be empty - check if vectors exist in the database\n"
+                "3. There might be a dimension mismatch - run the migration script if you recently changed embedding providers\n"
+                "4. Your query might be too specific - try a more general query\n\n"
+                "**To diagnose:**\n"
+                "- Check backend logs for detailed error messages\n"
+                "- Verify the database has vectors: run `python app/check_vectors.py`\n"
+                "- Ensure ingestion completed successfully"
+            )
+            
             return {
-                "answer": "I couldn't find enough context in the codebase to answer that. Please ensure the repository is ingested and your query is specific.",
+                "answer": diagnostic_msg,
                 "context_used": ""
             }
         

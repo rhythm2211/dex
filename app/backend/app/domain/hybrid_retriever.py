@@ -134,6 +134,14 @@ class HybridRetriever:
             for doc in docs:
                 filename = doc.metadata.get('file_name', 'unknown')
                 code_context.append(f"--- SNIPPET ({filename}) ---\n{doc.page_content}")
+            
+            # Log results for debugging
+            if not docs:
+                logger.warning(f"Vector search returned 0 results for query: '{query[:100]}' (k={k_vectors})")
+                logger.warning("This might indicate: 1) Database is empty, 2) Dimension mismatch, 3) Query too specific")
+            else:
+                logger.info(f"Vector search returned {len(docs)} results for query: '{query[:100]}'")
+                
         except Exception as e:
             error_msg = str(e).lower()
             # Check for dimension mismatch errors
@@ -147,7 +155,7 @@ class HybridRetriever:
                     "than the current embedding model. Please run the migration script and re-ingest the repository."
                 )
             else:
-                logger.error(f"Vector search failed: {e}")
+                logger.error(f"Vector search failed with exception: {e}", exc_info=True)
                 # Continue even if vector search fails, we might have person query or node query
 
         # Step 2: Graph Context - Multiple paths:
@@ -185,8 +193,18 @@ class HybridRetriever:
             graph_context = "No graph context available."
 
         # Step 3: Fuse Contexts
+        # Format code context - if empty, return a message that won't trigger false negatives
+        if code_context:
+            code_context_str = "\n\n".join(code_context)
+        else:
+            code_context_str = "No relevant code snippets found in vector database."
+            logger.warning(f"No code context found. Code context list was empty. Graph context: {bool(graph_context)}")
+        
+        # Log final context summary
+        logger.info(f"Final context summary - Code: {len(code_context)} snippets, Graph: {bool(graph_context)}")
+        
         return json.dumps({
-            "code_context": "\n\n".join(code_context) if code_context else "No relevant code snippets found.",
+            "code_context": code_context_str,
             "graph_context": graph_context
         }, indent=2)
     
