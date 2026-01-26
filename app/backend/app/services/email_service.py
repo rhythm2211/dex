@@ -22,6 +22,9 @@ class EmailService:
             self.resend_emails = resend.Emails()
             self.resend_enabled = True
             logger.info(f"Email service enabled. From: {self.resend_from_name} <{self.resend_from_email}>")
+            # Warn if still using test domain
+            if "resend.dev" in self.resend_from_email:
+                logger.warning(f"⚠️ Using test domain '{self.resend_from_email}'. Emails can only be sent to your Resend account email. Update RESEND_FROM_EMAIL to use your verified domain (e.g., noreply@dex.net.in)")
         else:
             self.resend_emails = None
             self.resend_enabled = False
@@ -56,6 +59,7 @@ class EmailService:
             }
             
             logger.info(f"Attempting to send welcome email to {user_email}")
+            logger.info(f"Using from address: {params['from']}")
             logger.debug(f"Email params: from={params['from']}, to={params['to']}, subject={params['subject']}")
             
             result = self.resend_emails.send(params)
