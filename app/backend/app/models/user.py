@@ -252,8 +252,10 @@ def get_db():
     pool_pre_ping=True already handles connection health checks.
     """
     import time
+    import logging
     from sqlalchemy.exc import OperationalError, TimeoutError as SQLTimeoutError
     
+    logger = logging.getLogger("dex-core")
     start_time = time.time()
     db = None
     

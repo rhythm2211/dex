@@ -423,12 +423,23 @@ async def get_team_topology(
     import asyncio
     try:
         loop = asyncio.get_event_loop()
-        ingestion_service = await loop.run_in_executor(
-            None, 
-            get_ingestion_service, 
-            current_user.id, 
-            repository_id
-        )
+        
+        # Get ingestion service with error handling
+        try:
+            ingestion_service = await loop.run_in_executor(
+                None, 
+                get_ingestion_service, 
+                current_user.id, 
+                repository_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to get ingestion service for team topology (user_id={current_user.id}): {e}", exc_info=True)
+            return {"nodes": [], "links": []}
+        
+        if not ingestion_service:
+            logger.warning(f"Ingestion service is None for user {current_user.id}")
+            return {"nodes": [], "links": []}
+        
         engine = ingestion_service.graph_engine
         
         if not engine or not engine.driver:
@@ -468,19 +479,24 @@ async def get_team_topology(
         
         # Run Neo4j query in thread pool to avoid blocking
         def run_query():
-            nodes = set()
-            links = []
-            with engine.driver.session(database=engine.database) as session:
-                result = session.run(query, **params)
-                for record in result:
-                    a1 = record["author1"]
-                    a2 = record["author2"]
-                    w = record["weight"]
-                    
-                    nodes.add(a1)
-                    nodes.add(a2)
-                    links.append({"source": a1, "target": a2, "value": w})
-            return nodes, links
+            try:
+                nodes = set()
+                links = []
+                with engine.driver.session(database=engine.database) as session:
+                    result = session.run(query, **params)
+                    for record in result:
+                        a1 = record.get("author1")
+                        a2 = record.get("author2")
+                        w = record.get("weight", 0)
+                        
+                        if a1 and a2:
+                            nodes.add(a1)
+                            nodes.add(a2)
+                            links.append({"source": a1, "target": a2, "value": w})
+                return nodes, links
+            except Exception as e:
+                logger.error(f"Neo4j query failed in team topology: {e}", exc_info=True)
+                return set(), []
         
         try:
             nodes, links = await loop.run_in_executor(None, run_query)
@@ -488,8 +504,10 @@ async def get_team_topology(
             node_list = [{"id": name, "group": "person", "radius": 20} for name in nodes]
             return {"nodes": node_list, "links": links}
         except Exception as e:
+            logger.error(f"Failed to execute team topology query: {e}", exc_info=True)
             return {"nodes": [], "links": []}
     except Exception as e:
+        logger.error(f"Unexpected error in get_team_topology (user_id={current_user.id}): {e}", exc_info=True)
         return {"nodes": [], "links": []}
 
 @api_router.get("/onboarding/active-zones")
@@ -507,24 +525,45 @@ async def get_active_zones(
     try:
         # Get user-specific history path - run in thread pool to avoid blocking
         loop = asyncio.get_event_loop()
-        ingestion_service = await loop.run_in_executor(
-            None, 
-            get_ingestion_service, 
-            current_user.id, 
-            repository_id
-        )
+        
+        # Get ingestion service with error handling
+        try:
+            ingestion_service = await loop.run_in_executor(
+                None, 
+                get_ingestion_service, 
+                current_user.id, 
+                repository_id
+            )
+        except Exception as e:
+            logger.error(f"Failed to get ingestion service for active zones (user_id={current_user.id}): {e}", exc_info=True)
+            return {"zones": [], "msg": "Service initialization failed. Please try again."}
+        
+        if not ingestion_service:
+            logger.warning(f"Ingestion service is None for user {current_user.id}")
+            return {"zones": [], "msg": "Service not available. Please run ingestion first."}
+        
         history_path = ingestion_service.history_path
         
-        if not os.path.exists(history_path):
+        if not history_path or not os.path.exists(history_path):
             return {"zones": [], "msg": "No history found. Run ingestion first."}
         
         # Read file in thread pool to avoid blocking
         def read_timeline():
-            with open(history_path, 'r') as f:
-                return json.load(f)
+            try:
+                with open(history_path, 'r') as f:
+                    return json.load(f)
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in history file {history_path}: {e}")
+                return []
+            except Exception as e:
+                logger.error(f"Failed to read history file {history_path}: {e}")
+                return []
         
         try:
             timeline = await loop.run_in_executor(None, read_timeline)
+            
+            if not timeline or not isinstance(timeline, list):
+                return {"zones": [], "msg": "No timeline data available."}
                 
             # 2. Filter by Date
             cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
@@ -533,10 +572,20 @@ async def get_active_zones(
             zone_heat = Counter()
             
             for commit in timeline:
-                if commit["date"] < cutoff_date:
+                if not isinstance(commit, dict):
                     continue
                     
-                for file_path in commit.get("files", []):
+                commit_date = commit.get("date")
+                if not commit_date or commit_date < cutoff_date:
+                    continue
+                    
+                files = commit.get("files", [])
+                if not isinstance(files, list):
+                    continue
+                    
+                for file_path in files:
+                    if not isinstance(file_path, str):
+                        continue
                     # Logic: Get top-level folder (or 'root' if file is at base)
                     # Example: "backend/app/main.py" -> "backend/app"
                     parts = file_path.split('/')
@@ -563,11 +612,11 @@ async def get_active_zones(
             return {"zones": results}
             
         except Exception as e:
-            logger.error(f"Heatmap generation failed for user {current_user.id}: {e}")
+            logger.error(f"Heatmap generation failed for user {current_user.id}: {e}", exc_info=True)
             # Return empty list rather than 500 to keep UI stable
             return {"zones": []}
     except Exception as e:
-        logger.error(f"Failed to get active zones for user {current_user.id}: {e}")
+        logger.error(f"Unexpected error in get_active_zones (user_id={current_user.id}): {e}", exc_info=True)
         return {"zones": []}
 
 # ==========================================
