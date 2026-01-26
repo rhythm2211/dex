@@ -134,7 +134,13 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
     Run ingestion sequence for a specific user.
     Now supports multi-tenant isolation with user_id and repository_id.
     """
+    # Force log flush to ensure logs are visible immediately
+    import sys
+    sys.stdout.flush()
+    sys.stderr.flush()
+    
     logger.info(f"📋 Background task started for user_id={user_id}, repo_path={repo_path}")
+    sys.stdout.flush()  # Flush after each critical log
     
     # Generate repository_id from repo_path if not provided
     if not repository_id:
@@ -487,7 +493,9 @@ async def trigger_ingestion(
 
         # Start background task - this should return immediately
         # Service initialization will happen in the background task, not here
+        logger.info(f"📤 Adding background task for user_id={current_user.id}, repository_id={repository_id}, repo_path={repo_path}")
         background_tasks.add_task(run_ingestion_sequence, repo_path, current_user.id, repository_id)
+        logger.info(f"✅ Background task added successfully for user_id={current_user.id}")
         
         logger.info(f"Ingestion request accepted for user_id={current_user.id}, repository_id={repository_id}, repo_path={repo_path}")
         return {

@@ -77,13 +77,51 @@ def get_user_profile(user_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     return user.to_dict()
 
+# Simple in-memory cache for user lookups (TTL: 30 seconds)
+# This reduces database load from frequent polling
+_user_cache: dict[str, tuple[dict, float]] = {}  # email -> (user_data, timestamp)
+_cache_ttl = 30  # seconds
+
 @router.get("/users/email/{email}", response_model=UserProfileResponse)
 def get_user_by_email(email: str, db: Session = Depends(get_db)):
-    """Get user profile by email"""
+    """
+    Get user profile by email.
+    Uses simple in-memory cache (30s TTL) to reduce database load from frequent polling.
+    """
+    import time
+    current_time = time.time()
+    
+    # Check cache first
+    if email in _user_cache:
+        cached_data, cache_time = _user_cache[email]
+        if current_time - cache_time < _cache_ttl:
+            # Return cached data
+            return cached_data
+        else:
+            # Cache expired, remove it
+            _user_cache.pop(email, None)
+    
+    # Fetch from database
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return user.to_dict()
+    
+    user_dict = user.to_dict()
+    
+    # Cache the result
+    _user_cache[email] = (user_dict, current_time)
+    
+    # Clean up old cache entries periodically (keep cache size reasonable)
+    if len(_user_cache) > 1000:
+        # Remove entries older than TTL
+        expired_keys = [
+            key for key, (_, timestamp) in _user_cache.items()
+            if current_time - timestamp >= _cache_ttl
+        ]
+        for key in expired_keys:
+            _user_cache.pop(key, None)
+    
+    return user_dict
 
 @router.post("/users/upsert", response_model=UserProfileResponse, status_code=200)
 def upsert_user_profile(profile: UserProfileCreate, db: Session = Depends(get_db)):

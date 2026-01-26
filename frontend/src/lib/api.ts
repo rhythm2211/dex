@@ -153,20 +153,37 @@ class DexClient {
     // Add request interceptor to include user context
     this.client.interceptors.request.use(async (config) => {
       // Try to get user session if available (client-side only)
-      if (typeof window !== 'undefined' && this.getUserSession) {
+      if (typeof window !== 'undefined') {
         try {
-          const session = await this.getUserSession();
-          if (session?.user) {
-            // Add user email or ID to headers
-            if (session.user.email) {
-              config.headers['X-User-Email'] = session.user.email;
+          // Retry logic: wait for session getter to be set (with timeout)
+          let retries = 3;
+          while (!this.getUserSession && retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            retries--;
+          }
+          
+          if (this.getUserSession) {
+            const session = await this.getUserSession();
+            if (session?.user) {
+              // Add user email or ID to headers
+              if (session.user.email) {
+                config.headers['X-User-Email'] = session.user.email;
+              }
+              if (session.user.id) {
+                config.headers['X-User-Id'] = session.user.id;
+              }
+            } else {
+              // Session is null - user might not be logged in
+              // This is okay for some endpoints, backend will handle auth requirements
+              console.debug('No user session available for request:', config.url);
             }
-            if (session.user.id) {
-              config.headers['X-User-Id'] = session.user.id;
-            }
+          } else {
+            // Session getter not set yet - might be initializing
+            console.debug('Session getter not initialized yet for request:', config.url);
           }
         } catch (error) {
-          // Silently fail - user might not be logged in
+          // Log error but don't block the request
+          // The backend will return 401 if auth is required
           console.debug('Could not get user session for API request:', error);
         }
       }

@@ -175,17 +175,43 @@ const handler = NextAuth({
     },
     async session({ session, token }) {
       // Add user profile completion status to session
+      // Cache the profile_completed status in the token to avoid excessive API calls
+      // Only fetch once per session or when explicitly needed
       if (session?.user?.email) {
-        try {
-          const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-          const response = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`);
-          
-          if (response.ok) {
-            const userData = await response.json();
-            (session.user as any).profile_completed = userData.profile_completed || false;
+        // Only fetch if we don't have it cached in the token
+        // This prevents excessive API calls on every session check
+        if (token.profile_completed === undefined) {
+          try {
+            const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+            
+            const response = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`, {
+              signal: controller.signal,
+              // Don't cache this request - we want fresh data when token is missing
+              cache: 'no-store',
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              const userData = await response.json();
+              token.profile_completed = userData.profile_completed || false;
+              (session.user as any).profile_completed = token.profile_completed;
+            } else {
+              // If API call fails, set default to avoid repeated failures
+              token.profile_completed = false;
+              (session.user as any).profile_completed = false;
+            }
+          } catch (error) {
+            // Silently fail - don't spam logs for network issues
+            // Set default value to avoid repeated failures
+            token.profile_completed = false;
+            (session.user as any).profile_completed = false;
           }
-        } catch (error) {
-          console.error("Failed to fetch user profile:", error);
+        } else {
+          // Use cached value from token
+          (session.user as any).profile_completed = token.profile_completed;
         }
       }
       return session;

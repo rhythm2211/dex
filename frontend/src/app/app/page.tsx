@@ -173,25 +173,39 @@ export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
 
   // Set up user session getter for API client
+  // This must run before any API calls are made
   useEffect(() => {
     if (typeof window !== 'undefined') {
       // Import getSession dynamically to avoid SSR issues
-      import('next-auth/react').then(({ getSession }) => {
-        dexApi.setUserSessionGetter(async () => {
-          const session = await getSession();
-          if (!session || !session.user) {
-            return { user: null };
-          }
-          // Transform NextAuth Session to match expected type
-          // Convert null email to undefined, and extract id if available
-          return {
-            user: {
-              email: session.user.email ?? undefined,
-              id: (session.user as any).id ?? undefined,
+      const setupSessionGetter = async () => {
+        try {
+          const { getSession } = await import('next-auth/react');
+          dexApi.setUserSessionGetter(async () => {
+            try {
+              const session = await getSession();
+              if (!session || !session.user) {
+                return { user: null };
+              }
+              // Transform NextAuth Session to match expected type
+              // Convert null email to undefined, and extract id if available
+              return {
+                user: {
+                  email: session.user.email ?? undefined,
+                  id: (session.user as any).id ?? undefined,
+                }
+              };
+            } catch (error) {
+              console.debug('Error getting session:', error);
+              return { user: null };
             }
-          };
-        });
-      });
+          });
+          console.log('✅ Session getter initialized for API client');
+        } catch (error) {
+          console.error('Failed to set up session getter:', error);
+        }
+      };
+      
+      setupSessionGetter();
     }
   }, []);
   const [query, setQuery] = useState('');
@@ -368,7 +382,15 @@ export default function Dashboard() {
   // ---------------------------------------------------------------------------
   // API
   // ---------------------------------------------------------------------------
-  const loadGraph = useCallback(async () => { const data = await dexApi.getGraphData(); if(data?.nodes?.length) setGraphData(data); }, []);
+  const loadGraph = useCallback(async () => { 
+    try {
+      const data = await dexApi.getGraphData(); 
+      if(data?.nodes?.length) setGraphData(data); 
+    } catch (error) {
+      // Silently handle errors - might be auth issues or no data yet
+      console.debug('Could not load graph data:', error);
+    }
+  }, []);
 
   const pollIngestion = useCallback(() => {
     const i = setInterval(async () => {
@@ -398,7 +420,14 @@ export default function Dashboard() {
   }, [loadGraph]);
 
   useEffect(() => {
-    dexApi.getIngestStatus().then(s => {
+    // Wait for session to be set up before making API calls
+    // This ensures authentication headers are available
+    const setupAndCheckStatus = async () => {
+      // Wait a bit for session getter to be initialized
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      try {
+        const s = await dexApi.getIngestStatus();
         if(s.state === 'running') {
             setIngesting(true); 
             const interval = pollIngestion();
@@ -407,9 +436,21 @@ export default function Dashboard() {
             // Load graph data if ingestion is already completed
             loadGraph();
         }
-    }).catch(() => {});
-    // Also try to load graph data on mount in case there's existing data
-    loadGraph();
+      } catch (error) {
+        // Silently handle auth errors - user might not be logged in yet
+        console.debug('Could not check ingestion status:', error);
+      }
+      
+      // Also try to load graph data on mount in case there's existing data
+      try {
+        await loadGraph();
+      } catch (error) {
+        // Silently handle auth errors
+        console.debug('Could not load graph data:', error);
+      }
+    };
+    
+    setupAndCheckStatus();
     
     // Cleanup interval on unmount
     return () => {
