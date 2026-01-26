@@ -184,9 +184,8 @@ class HybridRetriever:
                                 for content, metadata, file_name, source, similarity in results:
                                     filename = file_name or source or 'unknown'
                                     anchors.add(filename)
-                                    # Parse metadata if it's a string
+                                    # Parse metadata if it's a string (json module is imported at top of file)
                                     if isinstance(metadata, str):
-                                        import json
                                         try:
                                             metadata = json.loads(metadata)
                                         except:
@@ -375,12 +374,14 @@ class HybridRetriever:
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    return session.run(query, node_names=node_names)
+                    result = session.run(query, node_names=node_names)
+                    # Fetch all records before session closes to avoid ResultConsumedError
+                    return list(result)
             
-            result = _execute_query()
+            records = _execute_query()
             
             found_nodes = {}
-            for record in result:
+            for record in records:
                 n = record["n"]
                 r = record["r"]
                 m = record["m"]
@@ -537,11 +538,13 @@ Person name:"""
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    return session.run(query, person_name=person_lower)
+                    result = session.run(query, person_name=person_lower)
+                    # Fetch all records before session closes to avoid ResultConsumedError
+                    return list(result)
             
-            result = _execute_query()
+            records = _execute_query()
             
-            for record in result:
+            for record in records:
                 n = record["n"]
                 r = record["r"]
                 m = record["m"]
@@ -665,11 +668,13 @@ Person name:"""
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    return session.run(query, anchors=file_anchors)
+                    result = session.run(query, anchors=file_anchors)
+                    # Fetch all records before session closes to avoid ResultConsumedError
+                    return list(result)
             
-            result = _execute_query()
+            records = _execute_query()
             
-            for record in result:
+            for record in records:
                 n = record["n"]
                 r = record["r"]
                 m = record["m"]
