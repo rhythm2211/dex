@@ -52,7 +52,12 @@ origins = [
     "http://frontend:3000",       # Docker service name
     "https://dex.net.in",         # Production frontend
     "https://www.dex.net.in",     # Production frontend (www)
+    "https://dex-production-6dd4.up.railway.app",  # Railway backend (for direct access)
 ]
+
+# Log allowed origins for debugging
+logger.info(f"🌐 CORS allowed origins: {origins}")
+print(f"[CORS] Allowed origins: {origins}", flush=True)
 
 # If settings provide more origins, add them
 if settings.BACKEND_CORS_ORIGINS:
@@ -67,8 +72,9 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Explicitly include OPTIONS
-    allow_headers=["*"],  # Allow Content-Type, Authorization, etc.
+    allow_headers=["*"],  # Allow Content-Type, Authorization, X-User-Email, X-User-Id, etc.
     expose_headers=["*"],  # Expose all headers in response
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # --- Request Interceptor (Performance & Auditing) ---
@@ -78,11 +84,15 @@ async def request_interceptor(request: Request, call_next):
     start_time = time.perf_counter()
     
     # Log origin for CORS debugging (only for non-OPTIONS to avoid conflicts)
+    origin = request.headers.get("origin", "no-origin")
     if request.method != "OPTIONS":
-        origin = request.headers.get("origin", "no-origin")
         logger.info(f"Incoming Request | ID: {request_id} | Method: {request.method} | Path: {request.url.path} | Origin: {origin}")
         # Also print to stdout for immediate visibility
         print(f"[MIDDLEWARE] {request.method} {request.url.path} | Origin: {origin}", flush=True)
+    else:
+        # Log OPTIONS requests for CORS debugging
+        logger.info(f"CORS Preflight | ID: {request_id} | Path: {request.url.path} | Origin: {origin}")
+        print(f"[CORS] OPTIONS {request.url.path} | Origin: {origin}", flush=True)
     
     try:
         response = await call_next(request)
