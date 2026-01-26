@@ -69,11 +69,39 @@ class RAGService:
             graph_context = "Graph context unavailable."
         
         # 3. Validation
-        if not code_context or "No relevant code" in code_context:
+        # Check for dimension mismatch error
+        if code_context and "⚠️ ERROR: Dimension mismatch" in code_context:
+            return {
+                "answer": (
+                    "⚠️ **Dimension Mismatch Detected**\n\n"
+                    "The database contains embeddings with a different dimension than the current embedding model. "
+                    "This happens when you switch embedding providers (e.g., from 768-dim to 1024-dim).\n\n"
+                    "**To fix this:**\n"
+                    "1. Run the migration script to update the database schema:\n"
+                    "   ```bash\n"
+                    "   cd app/backend\n"
+                    "   python -m backend.app.scripts.migrate_embeddings\n"
+                    "   ```\n"
+                    "2. Re-ingest your repository to generate new embeddings with the correct dimensions.\n\n"
+                    "**Note:** The migration will delete existing embeddings, so re-ingestion is required."
+                ),
+                "context_used": ""
+            }
+        
+        # Check if we have meaningful context (either code or graph)
+        has_code_context = code_context and "No relevant code" not in code_context and "⚠️ ERROR" not in code_context
+        has_graph_context = graph_context and "No graph context" not in graph_context and "Graph query failed" not in graph_context
+        
+        # Only fail if we have neither code nor graph context
+        if not has_code_context and not has_graph_context:
             return {
                 "answer": "I couldn't find enough context in the codebase to answer that. Please ensure the repository is ingested and your query is specific.",
                 "context_used": ""
             }
+        
+        # If we only have graph context (no code), still proceed but note it
+        if not has_code_context and has_graph_context:
+            code_context = "No specific code snippets found, but structural information is available from the knowledge graph."
         
         # 4. Deep Tech Prompt (The "Architect" Persona)
         # [UPDATED] Enhanced for architecture questions and better context synthesis

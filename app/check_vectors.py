@@ -36,7 +36,7 @@ def check_vectors():
         )
         
         table_name = settings.POSTGRES_VECTOR_TABLE
-        expected_dim = getattr(settings, 'EMBEDDING_DIMENSION', 768)
+        expected_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage/Cohere
         
         print(f"🔍 Checking vector database state...")
         print(f"   Table: {table_name}")

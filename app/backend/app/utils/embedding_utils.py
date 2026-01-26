@@ -48,17 +48,23 @@ def _get_voyage_embeddings() -> Embeddings:
             "Install it with: pip install langchain-voyageai"
         )
     
-    if not settings.VOYAGE_API_KEY:
-        raise ValueError(
-            "VOYAGE_API_KEY is required for Voyage AI embeddings. "
-            "Please set it in your environment variables."
+    # Check if API key is missing or empty
+    voyage_key = settings.VOYAGE_API_KEY.strip() if settings.VOYAGE_API_KEY else ""
+    if not voyage_key:
+        error_msg = (
+            "VOYAGE_API_KEY is required for Voyage AI embeddings but is not set. "
+            "Please either:\n"
+            "  1. Set VOYAGE_API_KEY in your .env file (get key from https://www.voyageai.com), OR\n"
+            "  2. Change EMBEDDING_PROVIDER to 'local' or another provider in your .env file"
         )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     
     model_name = settings.EMBEDDING_MODEL_NAME or "voyage-3"
     logger.info(f"Initializing Voyage AI embeddings with model: {model_name}")
     
     return VoyageAIEmbeddings(
-        voyage_api_key=settings.VOYAGE_API_KEY,
+        voyage_api_key=voyage_key,
         model=model_name
     )
 
