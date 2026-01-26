@@ -134,18 +134,26 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
     Run ingestion sequence for a specific user.
     Now supports multi-tenant isolation with user_id and repository_id.
     """
+    logger.info(f"📋 Background task started for user_id={user_id}, repo_path={repo_path}")
+    
     # Generate repository_id from repo_path if not provided
     if not repository_id:
         # Use repo URL as repository_id (sanitized)
         import re
         repository_id = re.sub(r'[^a-zA-Z0-9_-]', '_', repo_path)[:100]
     
-    # Reset cancellation flag for this user (thread-safe)
+    # Set initial status immediately (before any service initialization)
     with _services_lock:
         _cancellation_requests[user_id] = False
+        _ingestion_statuses[user_id] = {"state": "running", "progress": 0, "step": "Initializing services..."}
+    
+    logger.info(f"✅ Status initialized for user_id={user_id}, repository_id={repository_id}")
     
     try:
+        logger.info(f"🔧 Getting ingestion service for user_id={user_id}, repository_id={repository_id}")
         ingestion_service = get_ingestion_service(user_id, repository_id)
+        logger.info(f"✅ Ingestion service obtained for user_id={user_id}")
+        
         # Sync status immediately after initialization (thread-safe)
         with _services_lock:
             _ingestion_statuses[user_id] = ingestion_service.get_current_status()
@@ -167,16 +175,22 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
         else:
             logger.error(f"❌ Ingestion failed: {result.get('error')}")
     except Exception as e:
-        logger.exception(f"Background task crashed for user {user_id}: {e}")
+        logger.exception(f"❌ Background task crashed for user {user_id}: {e}", exc_info=True)
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         try:
+            logger.info(f"🔄 Attempting to update error status via service for user_id={user_id}")
             ingestion_service = get_ingestion_service(user_id, repository_id)
             ingestion_service._update_status("error", 0, f"System Error: {str(e)}")
             with _services_lock:
                 _ingestion_statuses[user_id] = ingestion_service.get_current_status()
-        except:
+            logger.info(f"✅ Error status updated via service for user_id={user_id}")
+        except Exception as service_error:
+            logger.error(f"⚠️ Failed to update status via service: {service_error}")
             # If service initialization fails, update lightweight status (thread-safe)
             with _services_lock:
                 _ingestion_statuses[user_id] = {"state": "error", "progress": 0, "step": f"System Error: {str(e)}"}
+            logger.info(f"✅ Error status updated via lightweight method for user_id={user_id}")
 
 # --- Endpoints ---
 

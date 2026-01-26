@@ -66,18 +66,20 @@ class UserCredentials(Base):
 # Increased pool size to support 15-20 concurrent users
 engine = create_engine(
     settings.DATABASE_URL, 
-    pool_pre_ping=True, 
-    pool_size=20,  # Increased from 5 to 20 for better concurrency
-    max_overflow=15,  # Increased from 10 to 15 for peak loads
+    pool_pre_ping=True,  # Verify connections before using
+    pool_size=30,  # Increased from 20 to 30 for better concurrency
+    max_overflow=20,  # Increased from 15 to 20 for peak loads (50 total connections)
     pool_recycle=3600,  # Recycle connections after 1 hour
+    pool_timeout=60,  # Increased from default 30 to 60 seconds - wait longer for available connection
     connect_args={
-        "connect_timeout": 10,  # 10 second timeout
+        "connect_timeout": 10,  # 10 second timeout for initial connection
         # Note: statement_timeout removed - not supported by Neon DB connection pooler
         # If needed, set it after connection is established using SQLAlchemy events
         "sslmode": "require",  # Require SSL for secure connections (especially for Neon DB)
         # For Neon DB, hostname is kept for SNI support
         # If hostname is used, psycopg2 will do its own resolution
-    }
+    },
+    echo=False  # Set to True for SQL query logging (useful for debugging)
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -241,9 +243,17 @@ def init_db():
                 return
 
 def get_db():
-    """Dependency for getting database session"""
+    """
+    Database session dependency for FastAPI.
+    Ensures sessions are properly closed after use.
+    Uses connection pooling for efficient resource management.
+    """
     db = SessionLocal()
     try:
         yield db
+        db.commit()  # Commit successful transactions
+    except Exception:
+        db.rollback()  # Rollback on error
+        raise
     finally:
-        db.close()
+        db.close()  # Always close session to return connection to pool
