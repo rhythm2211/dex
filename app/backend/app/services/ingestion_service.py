@@ -208,7 +208,8 @@ class IngestionService:
                 pass
 
     def _update_status(self, state: str, progress: int, step: str):
-        self._status = {"state": state, "progress": progress, "step": step}
+        from datetime import datetime
+        self._status = {"state": state, "progress": progress, "step": step, "_last_update": datetime.now().isoformat()}
         logger.info(f"Ingestion Status: [{progress}%] {step}")
         
         # Also update the global status dictionary for API polling (thread-safe)

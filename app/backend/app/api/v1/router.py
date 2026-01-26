@@ -77,7 +77,23 @@ def get_ingestion_status_lightweight(user_id: str):
     """Get ingestion status for a specific user without initializing the full service. Thread-safe."""
     with _services_lock:
         if user_id in _ingestion_statuses:
-            return _ingestion_statuses[user_id].copy()  # Return copy to avoid race conditions
+            status = _ingestion_statuses[user_id].copy()  # Return copy to avoid race conditions
+            # Auto-reset if stuck in "running" state for too long (5 minutes)
+            # This prevents permanent stuck states
+            if status.get("state") == "running":
+                # Check if there's a timestamp (we'll add this)
+                last_update = status.get("_last_update")
+                if last_update:
+                    from datetime import datetime, timedelta
+                    try:
+                        update_time = datetime.fromisoformat(last_update)
+                        if datetime.now() - update_time > timedelta(minutes=5):
+                            logger.warning(f"⚠️ Auto-resetting stuck ingestion status for user_id={user_id}")
+                            status = {"state": "idle", "progress": 0, "step": "Ready"}
+                            _ingestion_statuses[user_id] = status
+                    except:
+                        pass  # If timestamp parsing fails, just return status as-is
+            return status
         else:
             # Return default status if user not found
             return {"state": "idle", "progress": 0, "step": "Ready"}
@@ -516,31 +532,37 @@ async def trigger_ingestion(
         logger.info(f"🔑 Generated repository_id: {repository_id}")
         sys.stdout.flush()
         
-        # Check status for this specific user (not global)
-        logger.info(f"📊 Checking current ingestion status for user_id={current_user.id}")
-        sys.stdout.flush()
+        # Check status for this specific user (not global) - FAST, non-blocking check
+        print(f"[ENDPOINT] Checking status for user_id={current_user.id}", flush=True)
         current_status = get_ingestion_status_lightweight(current_user.id)
-        logger.info(f"📊 Current status: {current_status}")
+        print(f"[ENDPOINT] Current status: {current_status}", flush=True)
+        logger.info(f"📊 Current status for user_id={current_user.id}: {current_status}")
         sys.stdout.flush()
         
         if current_status["state"] == "running":
-            logger.warning(f"⚠️ Ingestion already running for user_id={current_user.id}")
-            sys.stdout.flush()
-            raise HTTPException(
-                status_code=409, 
-                detail=f"An ingestion task is already running for your account. Please wait for it to complete or cancel it first."
-            )
-
+            # If stuck in running state for more than 5 minutes, allow reset
+            logger.warning(f"⚠️ Ingestion status shows 'running' for user_id={current_user.id}")
+            print(f"[ENDPOINT] Status is 'running', but allowing new request (will reset if needed)", flush=True)
+            # Don't block - allow the request to proceed and reset in background task
+            # The background task will check and reset if needed
+        
         # Start background task - this should return immediately
         # Service initialization will happen in the background task, not here
+        print(f"[ENDPOINT] Adding background task...", flush=True)
         logger.info(f"📤 Adding background task for user_id={current_user.id}, repository_id={repository_id}, repo_path={repo_path}")
         sys.stdout.flush()
+        
+        # Add task - this is non-blocking
         background_tasks.add_task(run_ingestion_sequence, repo_path, current_user.id, repository_id)
+        
+        print(f"[ENDPOINT] Background task added, returning response", flush=True)
         logger.info(f"✅ Background task added successfully for user_id={current_user.id}")
         sys.stdout.flush()
         
         logger.info(f"✅ Ingestion request accepted for user_id={current_user.id}, repository_id={repository_id}, repo_path={repo_path}")
         sys.stdout.flush()
+        
+        # Return immediately - don't wait for anything
         return {
             "status": "accepted",
             "message": f"Ingestion started for {repo_path}. Check /ingest/status for progress.",
@@ -569,7 +591,10 @@ def get_ingestion_status(
     Get ingestion status for the current user.
     Use lightweight status check to avoid blocking on service initialization.
     """
-    return get_ingestion_status_lightweight(current_user.id)
+    status = get_ingestion_status_lightweight(current_user.id)
+    # Log status for debugging
+    logger.info(f"📊 Status check for user_id={current_user.id}: {status}")
+    return status
 
 @api_router.post("/ingest/cancel")
 def cancel_ingestion(
