@@ -77,13 +77,17 @@ def get_ingestion_status_lightweight(user_id: str):
     """Get ingestion status for a specific user without initializing the full service. Thread-safe and fast."""
     # Use timeout on lock acquisition to prevent hanging
     import threading
+    import time
+    
+    # Try to acquire lock with very short timeout (10ms) to prevent blocking
+    # This gives enough time for normal operations but fails fast if there's contention
     lock_acquired = False
+    start_time = time.time()
+    
     try:
-        # Try to acquire lock with reasonable timeout (50ms) to prevent blocking
-        # This gives enough time for normal operations but fails fast if there's contention
-        lock_acquired = _services_lock.acquire(timeout=0.05)  # 50ms timeout
+        lock_acquired = _services_lock.acquire(timeout=0.01)  # Reduced to 10ms for faster fail
         if not lock_acquired:
-            # If lock is busy, try to read without lock (might get stale data, but better than blocking)
+            # If lock is busy, return cached status without lock (might get stale data, but better than blocking)
             # This is a fallback - we prefer to get the lock but won't block forever
             if user_id in _ingestion_statuses:
                 # Return a copy without lock (slight race condition risk, but acceptable for status polling)
@@ -113,6 +117,9 @@ def get_ingestion_status_lightweight(user_id: str):
             return {"state": "idle", "progress": 0, "step": "Ready"}
     except Exception as e:
         # If anything fails, return default - don't block
+        elapsed = time.time() - start_time
+        if elapsed > 0.1:  # Log if operation took too long
+            logger.warning(f"get_ingestion_status_lightweight took {elapsed:.3f}s for user_id={user_id}: {e}")
         return {"state": "idle", "progress": 0, "step": "Ready"}
     finally:
         if lock_acquired:

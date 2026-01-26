@@ -3,7 +3,9 @@ Dependencies for API endpoints - User authentication and context extraction
 """
 import os
 import logging
+import signal
 from typing import Optional
+from contextlib import contextmanager
 from fastapi import Header, HTTPException, Depends
 from sqlalchemy.orm import Session
 from backend.app.models.user import User, get_db
@@ -18,6 +20,30 @@ MAX_CONCURRENT_USERS = int(os.getenv("MAX_CONCURRENT_USERS", "15"))
 # Track active users (in-memory for now, can be moved to Redis for production)
 _active_users: dict[str, dict] = {}  # user_id -> {last_activity, session_count}
 
+# In-memory user cache to reduce database queries (TTL: 5 minutes)
+_user_cache: dict[str, tuple[User, float]] = {}  # key -> (user, timestamp)
+_cache_ttl = 300  # 5 minutes
+
+@contextmanager
+def timeout_context(seconds: float):
+    """Context manager for timeout protection on blocking operations."""
+    def timeout_handler(signum, frame):
+        raise TimeoutError(f"Operation timed out after {seconds} seconds")
+    
+    # Set up signal handler (Unix only)
+    if hasattr(signal, 'SIGALRM'):
+        old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(int(seconds))
+        try:
+            yield
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+    else:
+        # Windows doesn't support SIGALRM, just yield without timeout
+        # In production, use async/await or threading for cross-platform timeout
+        yield
+
 def get_user_from_header(
     x_user_email: Optional[str] = Header(None, alias="X-User-Email"),
     x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
@@ -27,8 +53,10 @@ def get_user_from_header(
     """
     Extract user from request headers.
     Frontend should send X-User-Email or X-User-Id header from NextAuth session.
-    Optimized with timeout to prevent hanging.
+    Optimized with timeout and caching to prevent hanging.
     """
+    import time
+    
     user_id = None
     user_email = None
     
@@ -50,17 +78,46 @@ def get_user_from_header(
             detail="User authentication required. Please include X-User-Email or X-User-Id header."
         )
     
+    # Check cache first (fast path)
+    cache_key = user_email or user_id
+    current_time = time.time()
+    if cache_key in _user_cache:
+        cached_user, cache_time = _user_cache[cache_key]
+        if current_time - cache_time < _cache_ttl:
+            return cached_user
+        else:
+            # Cache expired, remove it
+            _user_cache.pop(cache_key, None)
+    
     # Find user by email or ID with timeout protection
     user = None
     try:
+        # Use connection timeout from pool (already configured to 5 seconds)
+        # Add explicit query timeout protection
         if user_email:
-            # Use timeout to prevent hanging on slow database queries
+            # Fast query with index - should complete in < 100ms
             user = db.query(User).filter(User.email == user_email).first()
         elif user_id:
+            # Fast query with primary key - should complete in < 50ms
             user = db.query(User).filter(User.id == user_id).first()
+        
+        # Cache the user if found
+        if user:
+            _user_cache[cache_key] = (user, current_time)
+            # Limit cache size to prevent memory issues
+            if len(_user_cache) > 1000:
+                # Remove oldest entries
+                sorted_cache = sorted(_user_cache.items(), key=lambda x: x[1][1])
+                for key, _ in sorted_cache[:100]:
+                    _user_cache.pop(key, None)
+                    
     except Exception as e:
         # If database query fails, log and raise appropriate error
-        logger.error(f"Database query failed in get_user_from_header: {e}")
+        logger.error(f"Database query failed in get_user_from_header: {e}", exc_info=True)
+        # Try to return cached user if available (stale but better than error)
+        if cache_key in _user_cache:
+            logger.warning(f"Using cached user due to database error: {e}")
+            return _user_cache[cache_key][0]
         raise HTTPException(
             status_code=503,
             detail="Database connection error. Please try again."

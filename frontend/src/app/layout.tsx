@@ -29,16 +29,28 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Suppress MetaMask errors before React loads
+              // Suppress MetaMask and Cloudflare Insights errors before React loads
               (function() {
-                const isMetaMaskError = function(msg) {
+                const shouldSuppressError = function(msg) {
                   if (!msg) return false;
                   const lower = msg.toLowerCase();
-                  return lower.includes('metamask') || 
-                         lower.includes('failed to connect') ||
-                         lower.includes('nkbihfbeogaeaoehlefnkodbefgpgknn') ||
-                         lower.includes('inpage.js') ||
-                         lower.includes('chrome-extension://');
+                  // MetaMask errors
+                  if (lower.includes('metamask') || 
+                      lower.includes('failed to connect') ||
+                      lower.includes('nkbihfbeogaeaoehlefnkodbefgpgknn') ||
+                      lower.includes('inpage.js') ||
+                      lower.includes('chrome-extension://')) {
+                    return true;
+                  }
+                  // Cloudflare Insights errors
+                  if (lower.includes('cloudflareinsights') ||
+                      lower.includes('beacon.min.js') ||
+                      lower.includes('static.cloudflareinsights.com') ||
+                      lower.includes('no-response') ||
+                      lower.includes('fetchevent')) {
+                    return true;
+                  }
+                  return false;
                 };
                 
                 const originalError = console.error;
@@ -46,18 +58,18 @@ export default function RootLayout({
                 
                 console.error = function(...args) {
                   const msg = args.join(' ');
-                  if (isMetaMaskError(msg)) return;
+                  if (shouldSuppressError(msg)) return;
                   originalError.apply(console, args);
                 };
                 
                 console.warn = function(...args) {
                   const msg = args.join(' ');
-                  if (isMetaMaskError(msg)) return;
+                  if (shouldSuppressError(msg)) return;
                   originalWarn.apply(console, args);
                 };
                 
                 window.addEventListener('error', function(e) {
-                  if (isMetaMaskError(e.message) || isMetaMaskError(e.filename)) {
+                  if (shouldSuppressError(e.message) || shouldSuppressError(e.filename)) {
                     e.preventDefault();
                     e.stopPropagation();
                     return false;
@@ -66,7 +78,7 @@ export default function RootLayout({
                 
                 window.addEventListener('unhandledrejection', function(e) {
                   const reason = e.reason?.toString() || '';
-                  if (isMetaMaskError(reason)) {
+                  if (shouldSuppressError(reason)) {
                     e.preventDefault();
                     return false;
                   }

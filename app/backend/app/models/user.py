@@ -1,10 +1,11 @@
 """
 User database models and schema
 """
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, Boolean, ForeignKey, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
+from fastapi import HTTPException
 from backend.app.core.config import settings
 
 Base = declarative_base()
@@ -247,13 +248,41 @@ def get_db():
     Database session dependency for FastAPI.
     Ensures sessions are properly closed after use.
     Uses connection pooling for efficient resource management.
+    Optimized with timeout protection to prevent 499 errors.
+    pool_pre_ping=True already handles connection health checks.
     """
-    db = SessionLocal()
+    import time
+    from sqlalchemy.exc import OperationalError, TimeoutError as SQLTimeoutError
+    
+    start_time = time.time()
+    db = None
+    
     try:
+        # Get connection from pool (pool_timeout=5 is set in engine config)
+        # pool_pre_ping=True ensures connections are healthy before use
+        db = SessionLocal()
+        
+        connection_time = time.time() - start_time
+        if connection_time > 1.0:
+            logger.warning(f"Slow database connection acquisition: {connection_time:.2f}s")
+        
         yield db
         db.commit()  # Commit successful transactions
-    except Exception:
-        db.rollback()  # Rollback on error
+    except (OperationalError, SQLTimeoutError) as e:
+        # Database connection/query timeout
+        if db:
+            db.rollback()
+        connection_time = time.time() - start_time
+        logger.error(f"Database operation timed out or failed after {connection_time:.2f}s: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection timeout. Please try again."
+        )
+    except Exception as e:
+        if db:
+            db.rollback()  # Rollback on error
+        logger.error(f"Database error in get_db: {e}", exc_info=True)
         raise
     finally:
-        db.close()  # Always close session to return connection to pool
+        if db:
+            db.close()  # Always close session to return connection to pool

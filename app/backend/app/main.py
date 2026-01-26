@@ -80,6 +80,7 @@ app.add_middleware(
 # --- Request Interceptor (Performance & Auditing) ---
 @app.middleware("http")
 async def request_interceptor(request: Request, call_next):
+    import asyncio
     request_id = str(uuid.uuid4())
     start_time = time.perf_counter()
     
@@ -105,19 +106,42 @@ async def request_interceptor(request: Request, call_next):
         logger.info(f"CORS Preflight | ID: {request_id} | Path: {request.url.path} | Origin: {origin} | {user_info}")
         print(f"[CORS] OPTIONS {request.url.path} | Origin: {origin} | {user_info}", flush=True)
     
+    # Set request timeout based on endpoint type
+    # Status endpoints should be fast (< 2s), ingestion endpoints can take longer (< 30s)
+    timeout_seconds = 30.0  # Default timeout
+    if "/ingest/status" in request.url.path:
+        timeout_seconds = 2.0  # Status checks must be fast
+    elif "/ingest/cancel" in request.url.path:
+        timeout_seconds = 5.0  # Cancel should be quick
+    elif "/ingest" in request.url.path and request.method == "POST":
+        timeout_seconds = 15.0  # Ingestion start should be quick
+    
     try:
-        response = await call_next(request)
+        # Wrap request in timeout to prevent hanging
+        response = await asyncio.wait_for(call_next(request), timeout=timeout_seconds)
         process_time = time.perf_counter() - start_time
         
         # Inject Proprietary Metrics Headers
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time"] = str(round(process_time, 4))
         
+        # Warn if request took too long
+        if process_time > 5.0:
+            logger.warning(f"Slow Request | ID: {request_id} | Duration: {process_time:.4f}s | Path: {request.url.path} | {user_info}")
+        
         logger.info(f"Request Completed | ID: {request_id} | Status: {response.status_code} | Duration: {process_time:.4f}s | {user_info}")
         return response
         
+    except asyncio.TimeoutError:
+        process_time = time.perf_counter() - start_time
+        logger.error(f"Request Timeout | ID: {request_id} | Duration: {process_time:.4f}s | Path: {request.url.path} | {user_info}")
+        return JSONResponse(
+            status_code=504,
+            content={"error": "Request timeout", "request_id": request_id, "message": "The request took too long to process. Please try again."}
+        )
     except Exception as error:
-        logger.error(f"System Failure | ID: {request_id} | Error: {str(error)} | {user_info}", exc_info=True)
+        process_time = time.perf_counter() - start_time
+        logger.error(f"System Failure | ID: {request_id} | Error: {str(error)} | Duration: {process_time:.4f}s | {user_info}", exc_info=True)
         # Provide more helpful error messages for common issues
         error_str = str(error)
         error_type = type(error).__name__
