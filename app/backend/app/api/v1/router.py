@@ -53,14 +53,22 @@ def get_ingestion_service(user_id: str, repository_id: str = None) -> IngestionS
             # Check again after acquiring lock (double-check)
             if service_key not in _ingestion_services:
                 try:
+                    logger.info(f"Creating IngestionService instance for user_id={user_id}, repository_id={repository_id}")
+                    import sys
+                    sys.stdout.flush()
                     _ingestion_services[service_key] = IngestionService(user_id=user_id, repository_id=repository_id)
+                    logger.info(f"IngestionService instance created successfully")
+                    sys.stdout.flush()
                     # Initialize status for this user (thread-safe)
                     with _services_lock:
                         if user_id not in _ingestion_statuses:
                             _ingestion_statuses[user_id] = {"state": "idle", "progress": 0, "step": "Ready"}
                     logger.info(f"Created IngestionService for user_id={user_id}, repository_id={repository_id}")
+                    sys.stdout.flush()
                 except Exception as e:
                     logger.exception(f"Failed to initialize IngestionService for user {user_id}: {e}", exc_info=True)
+                    import sys
+                    sys.stdout.flush()
                     raise RuntimeError(f"Failed to initialize ingestion service: {str(e)}") from e
     
     return _ingestion_services[service_key]
@@ -159,10 +167,13 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
         # Update status to show we're initializing the service
         with _services_lock:
             _ingestion_statuses[user_id] = {"state": "running", "progress": 0, "step": "Initializing services..."}
+        sys.stdout.flush()
         
         logger.info(f"🔧 Getting ingestion service for user_id={user_id}, repository_id={repository_id}")
+        sys.stdout.flush()
         ingestion_service = get_ingestion_service(user_id, repository_id)
         logger.info(f"✅ Ingestion service obtained for user_id={user_id}")
+        sys.stdout.flush()
         
         # Sync status immediately after initialization (thread-safe)
         with _services_lock:

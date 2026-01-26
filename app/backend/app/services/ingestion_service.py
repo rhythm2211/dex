@@ -138,8 +138,17 @@ class IngestionService:
         self.repository_id = repository_id
         
         # Initialize the Neo4j-backed Graph Engine
+        logger.info(f"Initializing GraphEngine for user_id={user_id}, repository_id={repository_id}")
+        import sys
+        sys.stdout.flush()
         self.graph_engine = GraphEngine()
+        logger.info(f"GraphEngine initialized successfully")
+        sys.stdout.flush()
+        logger.info(f"Initializing embeddings model...")
+        sys.stdout.flush()
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        logger.info(f"Embeddings model initialized successfully")
+        sys.stdout.flush()
         
         # Paths - user-scoped if user_id provided
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))

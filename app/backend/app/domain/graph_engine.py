@@ -93,93 +93,58 @@ class GraphEngine:
         """
         Initialize GraphEngine using shared Neo4j driver.
         This optimizes connection pooling by sharing a single driver across all users.
-        Index creation is now lazy (non-blocking) to prevent hanging during initialization.
         """
         from backend.app.utils.neo4j_driver_manager import neo4j_driver_manager
         
         # Use shared driver manager instead of creating new driver
         self.driver = neo4j_driver_manager.get_driver()
         self.database = neo4j_driver_manager.get_database()
-        self._indices_created = False  # Track if indices have been created
-        self._indices_creating = False  # Track if index creation is in progress
-        import threading
-        self._indices_lock = threading.Lock()  # Lock for index creation
         
-        if not self.driver:
+        if self.driver:
+            # Create indices in background to avoid blocking initialization
+            import threading
+            def create_indices_async():
+                try:
+                    self._create_indices()
+                except Exception as e:
+                    logger.warning(f"Background index creation failed: {e}")
+            
+            index_thread = threading.Thread(target=create_indices_async, daemon=True)
+            index_thread.start()
+        else:
             logger.error("❌ Neo4j driver not available. Graph operations will fail.")
-        # Note: Index creation is now lazy - done on first use, not during init
-        # This prevents blocking during ingestion service initialization
 
     def close(self):
         if self.driver: self.driver.close()
 
     def _create_indices(self):
-        """Create Neo4j indices if not already created. Non-blocking - runs in background."""
+        """Create Neo4j indices if not already created."""
         if not self.driver:
             return
-        
-        # Check if already created or in progress (thread-safe)
-        with self._indices_lock:
-            if self._indices_created or self._indices_creating:
-                return
-            self._indices_creating = True
-        
-        import threading
-        
-        def create_indices_background():
-            """Create indices in a separate thread to avoid blocking."""
-            try:
-                # Create indices with IF NOT EXISTS (idempotent)
-                # These queries should be fast, but we run them in background anyway
-                # Use _skip_index_check=True to prevent recursive calls
-                self._safe_session_run(
-                    "CREATE CONSTRAINT node_id_unique IF NOT EXISTS FOR (n:CodeNode) REQUIRE n.id IS UNIQUE",
-                    _skip_index_check=True
-                )
-                # Create index on user_id and repository_id for faster filtering
-                self._safe_session_run(
-                    "CREATE INDEX user_id_index IF NOT EXISTS FOR (n:CodeNode) ON (n.user_id)",
-                    _skip_index_check=True
-                )
-                self._safe_session_run(
-                    "CREATE INDEX repository_id_index IF NOT EXISTS FOR (n:CodeNode) ON (n.repository_id)",
-                    _skip_index_check=True
-                )
-                with self._indices_lock:
-                    self._indices_created = True
-                    self._indices_creating = False
-                logger.info("✅ Neo4j indices created successfully")
-            except Exception as e:
-                # Log warning but don't fail - indices are optional for basic operation
-                logger.warning(f"⚠️ Neo4j index creation failed (non-blocking, will retry later): {e}")
-                with self._indices_lock:
-                    self._indices_creating = False
-                # Don't set _indices_created = True so we can retry later
-        
-        # Run index creation in background thread to avoid blocking initialization
-        index_thread = threading.Thread(target=create_indices_background, daemon=True)
-        index_thread.start()
-        
-        # Don't wait for completion - let it run in background
-        # Indices will be created eventually, but won't block ingestion
+        try:
+            self._safe_session_run(
+                "CREATE CONSTRAINT node_id_unique IF NOT EXISTS FOR (n:CodeNode) REQUIRE n.id IS UNIQUE"
+            )
+            # Create index on user_id and repository_id for faster filtering
+            self._safe_session_run(
+                "CREATE INDEX user_id_index IF NOT EXISTS FOR (n:CodeNode) ON (n.user_id)"
+            )
+            self._safe_session_run(
+                "CREATE INDEX repository_id_index IF NOT EXISTS FOR (n:CodeNode) ON (n.repository_id)"
+            )
+        except Exception as e:
+            logger.warning(f"Neo4j index skipped: {e}")
     
     @retry_on_connection_error(max_retries=3, delay=1.0)
-    def _safe_session_run(self, query: str, _skip_index_check=False, **params):
-        """Execute a Neo4j query with retry logic and timeout protection."""
+    def _safe_session_run(self, query: str, **params):
+        """Execute a Neo4j query with retry logic."""
         if not self.driver:
             raise RuntimeError("Neo4j driver not initialized")
         
-        # Verify connection before use (with timeout)
-        try:
-            if not verify_neo4j_connection(self.driver, database=self.database):
-                logger.warning("Neo4j connection lost, attempting to reconnect...")
-                # Driver will attempt to reconnect automatically on next query
-        except Exception as e:
-            logger.warning(f"Neo4j connection check failed (non-blocking): {e}")
-        
-        # Create indices lazily on first use (skip if we're already creating indices)
-        if not _skip_index_check and not self._indices_created:
-            self._create_indices()
+        # Verify connection before use
+        if not verify_neo4j_connection(self.driver, database=self.database):
+            logger.warning("Neo4j connection lost, attempting to reconnect...")
+            # Driver will attempt to reconnect automatically on next query
         
         with self.driver.session(database=self.database) as session:
             return session.run(query, **params)

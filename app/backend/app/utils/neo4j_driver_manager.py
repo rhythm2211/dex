@@ -67,12 +67,9 @@ class Neo4jDriverManager:
                     )
                     
                     if self._driver:
-                        # Verify connection
-                        if verify_neo4j_connection(self._driver, database=self._database):
-                            logger.info("✅ Shared Neo4j driver created and verified")
-                        else:
-                            logger.error("❌ Neo4j driver created but connection verification failed")
-                            self._driver = None
+                        # Driver is created and verified in create_neo4j_driver()
+                        # No need to verify again here to avoid blocking initialization
+                        logger.info("✅ Shared Neo4j driver created (verified during creation)")
                     else:
                         logger.error("❌ Failed to create shared Neo4j driver")
         
