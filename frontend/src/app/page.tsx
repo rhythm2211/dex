@@ -341,119 +341,6 @@ const GlobalStyles = () => (
         transition-duration: 0.01ms !important;
       }
     }
-    
-    /* --- NEW ZONE STYLES --- */
-    .zone-container {
-      position: relative;
-      overflow: hidden;
-    }
-    
-    /* Zone Background Gradients - Always Visible */
-    .zone-indigo-bg {
-      position: relative;
-    }
-    .zone-indigo-bg::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 120%;
-      height: 120%;
-      background: radial-gradient(circle at center, rgba(99, 102, 241, 0.12) 0%, rgba(99, 102, 241, 0.05) 40%, transparent 70%);
-      pointer-events: none;
-      z-index: 0;
-    }
-    
-    .zone-emerald-bg {
-      position: relative;
-    }
-    .zone-emerald-bg::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 120%;
-      height: 120%;
-      background: radial-gradient(circle at center, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.05) 40%, transparent 70%);
-      pointer-events: none;
-      z-index: 0;
-    }
-    
-    .zone-purple-bg {
-      position: relative;
-    }
-    .zone-purple-bg::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 120%;
-      height: 120%;
-      background: radial-gradient(circle at center, rgba(168, 85, 247, 0.12) 0%, rgba(168, 85, 247, 0.05) 40%, transparent 70%);
-      pointer-events: none;
-      z-index: 0;
-    }
-    
-    .zone-orange-bg {
-      position: relative;
-    }
-    .zone-orange-bg::before {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 120%;
-      height: 120%;
-      background: radial-gradient(circle at center, rgba(249, 115, 22, 0.12) 0%, rgba(249, 115, 22, 0.05) 40%, transparent 70%);
-      pointer-events: none;
-      z-index: 0;
-    }
-    
-    /* The "Shape" Glows - Enhanced */
-    .zone-glow-indigo {
-      background: radial-gradient(circle at center, rgba(99, 102, 241, 0.25) 0%, rgba(99, 102, 241, 0.1) 50%, transparent 80%);
-      pointer-events: none;
-    }
-    .zone-glow-emerald {
-      background: radial-gradient(circle at center, rgba(16, 185, 129, 0.25) 0%, rgba(16, 185, 129, 0.1) 50%, transparent 80%);
-      pointer-events: none;
-    }
-    .zone-glow-purple {
-      background: radial-gradient(circle at center, rgba(168, 85, 247, 0.25) 0%, rgba(168, 85, 247, 0.1) 50%, transparent 80%);
-      pointer-events: none;
-    }
-
-    /* Bento Grid Card Styling */
-    .bento-card {
-      background: rgba(10, 10, 12, 0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.2);
-      transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    }
-    .bento-card:hover {
-      border-color: rgba(255, 255, 255, 0.15);
-      transform: translateY(-2px);
-      box-shadow: 0 20px 40px -4px rgba(0, 0, 0, 0.4);
-    }
-
-    /* Specific Zone Borders on Hover */
-    .zone-indigo .bento-card:hover { border-color: rgba(99, 102, 241, 0.4); box-shadow: 0 0 40px -10px rgba(99, 102, 241, 0.2); }
-    .zone-emerald .bento-card:hover { border-color: rgba(16, 185, 129, 0.4); box-shadow: 0 0 40px -10px rgba(16, 185, 129, 0.2); }
-    .zone-purple .bento-card:hover { border-color: rgba(168, 85, 247, 0.4); box-shadow: 0 0 40px -10px rgba(168, 85, 247, 0.2); }
-
-    /* Geometric Background Shapes */
-    .bg-shape-grid {
-      background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-      background-size: 32px 32px;
-      mask-image: radial-gradient(circle at 50% 50%, black 40%, transparent 80%);
-    }
   `}</style>
 );
 
@@ -1171,227 +1058,6 @@ const TeamInsightsPreview = () => {
 };
 
 // -----------------------------------------------------------------------------
-// REFACTORED COMPONENT: GITHUB INTEGRATION (Shape & Zone)
-// -----------------------------------------------------------------------------
-const GitHubShapeSection = () => {
-  return (
-    <section className="relative mx-auto max-w-7xl px-6 py-24 overflow-hidden zone-indigo-bg">
-      {/* 1. Zone Background Coloring - Enhanced */}
-      <div className="absolute top-1/2 left-1/4 w-1/2 h-full bg-indigo-500/15 blur-[120px] -translate-y-1/2 -z-10 rounded-full"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/8 rounded-full blur-3xl -z-10"></div>
-
-      <div className="relative z-10">
-        <ScrollAnimated animation="fade-in-scale" delay={0}>
-          <div className="relative grid lg:grid-cols-12 gap-12 items-center">
-          
-          {/* 2. The Shape (Emerging from left) */}
-          <div className="lg:col-span-4 relative h-full min-h-[300px] flex items-center justify-center">
-             {/* The Container Shape - Visual only */}
-             <div className="absolute inset-0 border border-indigo-500/20 rounded-[2rem] -rotate-6 scale-90 opacity-40"></div>
-             <div className="absolute inset-0 border border-white/5 rounded-[2rem] rotate-3 scale-95 bg-[#050505]/50 backdrop-blur-sm z-0"></div>
-             
-             {/* The Octocat SVG acting as a "Shape" */}
-             <div className="relative z-10 w-48 h-48 md:w-64 md:h-64 text-slate-200/10 hover:text-indigo-500/20 transition-colors duration-700">
-               <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full drop-shadow-[0_0_15px_rgba(99,102,241,0.2)]">
-                 <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-               </svg>
-             </div>
-
-             {/* Connecting Lines */}
-             <div className="absolute top-1/2 right-0 w-24 h-px bg-gradient-to-r from-indigo-500/50 to-transparent hidden lg:block"></div>
-          </div>
-
-          {/* 3. The Content Container (Bento Style) */}
-          <div className="lg:col-span-8 zone-indigo">
-            <div className="bento-card rounded-3xl p-8 md:p-12 relative overflow-hidden group">
-              {/* Zone Glow Effect */}
-              <div className="absolute inset-0 zone-glow-indigo opacity-40 group-hover:opacity-60 transition-opacity duration-500"></div>
-              
-              <div className="absolute top-0 right-0 w-full h-px bg-gradient-to-l from-indigo-500/50 to-transparent opacity-50"></div>
-              <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-indigo-500/50 to-transparent opacity-50"></div>
-              
-              <div className="relative z-10">
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shadow-[0_0_20px_rgba(99,102,241,0.15)]">
-                    <Github size={28} />
-                  </div>
-                  <h3 className="text-3xl font-bold text-white">Seamless Integration</h3>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-6">
-                    <p className="text-slate-400 leading-relaxed">
-                      Connect your repository in one click. DEX automatically builds a <span className="text-indigo-300">Semantic Graph</span> of your codebase, tracking every commit and pull request in real-time.
-                    </p>
-                    <ul className="space-y-3">
-                      {[
-                        { icon: GitBranch, text: "Automated Branch Tracking" },
-                        { icon: GitMerge, text: "PR Context Analysis" },
-                        { icon: GitCommit, text: "Historical Commit Replay" }
-                      ].map((item, i) => (
-                        <li key={i} className="flex items-center gap-3 text-sm text-slate-300">
-                          <item.icon size={16} className="text-indigo-400" />
-                          {item.text}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Mini Stats Floating Card */}
-                  <div className="relative mt-6 md:mt-0">
-                    <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full"></div>
-                    <div className="relative bg-[#050505] border border-white/10 rounded-2xl p-6 flex flex-col gap-4">
-                      <div className="flex justify-between items-center pb-4 border-b border-white/5">
-                        <span className="text-xs font-mono text-slate-500">REPO_STATUS</span>
-                        <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
-                      </div>
-                      <div className="flex justify-between items-end">
-                        <div>
-                          <div className="text-2xl font-bold text-white">98.4%</div>
-                          <div className="text-[10px] text-slate-500 uppercase tracking-widest">Indexed</div>
-                        </div>
-                        <div className="h-8 w-24 flex items-end gap-1">
-                          {[40, 70, 50, 90, 60, 80].map((h, i) => (
-                            <div key={i} className="w-full bg-indigo-500/40 rounded-t-sm" style={{ height: `${h}%` }}></div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </ScrollAnimated>
-      </div>
-    </section>
-  );
-};
-
-// -----------------------------------------------------------------------------
-// REFACTORED COMPONENT: BENTO FEATURES (Zone Based)
-// -----------------------------------------------------------------------------
-const FeaturesBento = () => {
-  return (
-    <section id="features" className="mx-auto max-w-7xl px-6 py-24 relative zone-indigo-bg">
-      {/* Background Shape */}
-      <div className="absolute inset-0 bg-shape-grid opacity-30 pointer-events-none z-0"></div>
-      
-      {/* Zone Background Glow - Indigo */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none z-0"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-purple-500/8 rounded-full blur-3xl pointer-events-none z-0"></div>
-
-      <div className="relative z-10">
-        <ScrollAnimated animation="fade-in" delay={0}>
-          <div className="text-center mb-20">
-            <h2 className="text-3xl md:text-5xl font-semibold text-white mb-6">
-              Engineered for <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Scale</span>
-            </h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-               Built on a foundation of secure enclaves and semantic graph theory.
-            </p>
-          </div>
-        </ScrollAnimated>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 auto-rows-[minmax(250px,auto)]">
-          
-          {/* Large Item - Zone Indigo */}
-          <ScrollAnimated animation="fade-in-scale" delay={100} className="md:col-span-2 zone-indigo">
-            <div className="bento-card h-full rounded-3xl p-8 relative group overflow-hidden">
-              {/* Zone Glow Effect */}
-              <div className="absolute inset-0 zone-glow-indigo opacity-30 group-hover:opacity-50 transition-opacity duration-500"></div>
-              
-              <div className="absolute top-0 right-0 p-8 opacity-20 group-hover:opacity-40 transition-opacity transform group-hover:scale-110 duration-700">
-                 <Network size={200} className="text-indigo-500" />
-              </div>
-              
-              <div className="relative z-10 flex flex-col h-full justify-between">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-6">
-                  <Network size={24} />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-white mb-3">Visual Dependency Mapping</h3>
-                  <p className="text-slate-400 max-w-md">
-                    Stop guessing. Instantly visualize how modules, functions, and database schemas interact across your entire repository.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </ScrollAnimated>
-
-          {/* Tall Item - Zone Emerald */}
-          <ScrollAnimated animation="fade-in-scale" delay={200} className="md:row-span-2 zone-emerald">
-            <div className="bento-card h-full rounded-3xl p-8 relative group overflow-hidden flex flex-col">
-              {/* Zone Glow Effect - Always visible, stronger on hover */}
-              <div className="zone-glow-emerald absolute inset-0 opacity-40 group-hover:opacity-60 transition-opacity duration-500"></div>
-              
-              <div className="relative z-10">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-6">
-                  <ShieldCheck size={24} />
-                </div>
-                
-                <h3 className="text-2xl font-bold text-white mb-3">SOC2 Compliant</h3>
-                <p className="text-slate-400 text-sm mb-8 flex-grow">
-                  Your intellectual property never leaves our encrypted enclaves. We process ephemeral indexes without data retention.
-                </p>
-
-                <div className="space-y-3 mt-auto">
-                  {['End-to-End Encryption', 'Zero Retention', 'VPC Peering'].map((feat, i) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/10">
-                       <CheckCircle size={14} className="text-emerald-500" />
-                       <span className="text-xs font-medium text-emerald-100">{feat}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </ScrollAnimated>
-
-          {/* Medium Item - Zone Purple */}
-          <ScrollAnimated animation="fade-in-scale" delay={300} className="zone-purple">
-            <div className="bento-card h-full rounded-3xl p-8 relative group overflow-hidden">
-               {/* Zone Glow Effect */}
-               <div className="absolute inset-0 zone-glow-purple opacity-30 group-hover:opacity-50 transition-opacity duration-500"></div>
-               
-               <div className="relative z-10">
-                 <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/20 flex items-center justify-center text-purple-400 mb-6">
-                   <Zap size={24} />
-                 </div>
-                 <h3 className="text-xl font-bold text-white mb-2">Real-time Indexing</h3>
-                 <p className="text-slate-400 text-sm">
-                   DEX listens to webhooks. As soon as you push code, the graph updates instantly.
-                 </p>
-               </div>
-            </div>
-          </ScrollAnimated>
-
-          {/* Medium Item - Zone Pink/Purple */}
-          <ScrollAnimated animation="fade-in-scale" delay={400} className="zone-purple">
-             <div className="bento-card h-full rounded-3xl p-8 relative group overflow-hidden">
-               {/* Zone Glow Effect */}
-               <div className="absolute inset-0 zone-glow-purple opacity-30 group-hover:opacity-50 transition-opacity duration-500"></div>
-               
-               <div className="relative z-10">
-                 <div className="w-12 h-12 rounded-2xl bg-pink-500/20 border border-pink-500/20 flex items-center justify-center text-pink-400 mb-6">
-                   <MessageSquare size={24} />
-                 </div>
-                 <h3 className="text-xl font-bold text-white mb-2">Contextual AI</h3>
-                 <p className="text-slate-400 text-sm">
-                   Ask questions in plain English. Answers are grounded in file references, not hallucinations.
-                 </p>
-               </div>
-            </div>
-          </ScrollAnimated>
-
-        </div>
-      </div>
-    </section>
-  );
-};
-
-// -----------------------------------------------------------------------------
 // MAIN PAGE
 // -----------------------------------------------------------------------------
 export default function HomePage() {
@@ -1656,9 +1322,9 @@ export default function HomePage() {
           <div className="relative z-10">
             <ScrollAnimated animation="fade-in" delay={0}>
               <div className="text-center mb-12">
-                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 mb-6 backdrop-blur-sm hover:border-emerald-500/50 hover:bg-emerald-500/15 transition-all">
-                  <Github size={14} className="text-emerald-400" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 mb-6 backdrop-blur-sm hover:border-indigo-500/30 hover:bg-indigo-500/10 transition-all">
+                  <Github size={14} className="text-slate-400 group-hover:text-indigo-400 transition-colors" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 group-hover:text-indigo-300 transition-colors">
                     Live Integration
                   </span>
                 </div>
@@ -1704,9 +1370,8 @@ export default function HomePage() {
             {/* Feature Highlights */}
             <div className="grid md:grid-cols-3 gap-6 mt-8 relative z-10">
             <ScrollAnimated animation="fade-in-scale" delay={100}>
-              <div className="p-6 rounded-xl border border-indigo-500/20 bg-[#0A0A0A] hover:border-indigo-500/40 hover:bg-indigo-500/10 transition-all hover-lift h-full flex flex-col group relative overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500/50 to-transparent"></div>
-                <div className="w-10 h-10 rounded-lg bg-indigo-500/30 flex items-center justify-center text-indigo-400 mb-4 group-hover:bg-indigo-500/40 group-hover:scale-110 transition-all shadow-[0_0_20px_rgba(99,102,241,0.2)]">
+              <div className="p-6 rounded-xl border border-white/10 bg-[#0A0A0A] hover:border-indigo-500/30 hover:bg-indigo-500/5 transition-all hover-lift h-full flex flex-col group">
+                <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 group-hover:bg-indigo-500/30 group-hover:scale-110 transition-all">
                   <Github size={20} />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-indigo-300 transition-colors">GitHub Integration</h3>
@@ -1717,9 +1382,8 @@ export default function HomePage() {
             </ScrollAnimated>
 
             <ScrollAnimated animation="fade-in-scale" delay={200}>
-              <div className="p-6 rounded-xl border border-emerald-500/20 bg-[#0A0A0A] hover:border-emerald-500/40 hover:bg-emerald-500/10 transition-all hover-lift h-full flex flex-col group relative overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500/50 to-transparent"></div>
-                <div className="w-10 h-10 rounded-lg bg-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 group-hover:bg-emerald-500/40 group-hover:scale-110 transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+              <div className="p-6 rounded-xl border border-white/10 bg-[#0A0A0A] hover:border-emerald-500/30 hover:bg-emerald-500/5 transition-all hover-lift h-full flex flex-col group">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 group-hover:bg-emerald-500/30 group-hover:scale-110 transition-all">
                   <TreePine size={20} />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-emerald-300 transition-colors">Dependency Trees</h3>
@@ -1730,9 +1394,8 @@ export default function HomePage() {
             </ScrollAnimated>
 
             <ScrollAnimated animation="fade-in-scale" delay={300}>
-              <div className="p-6 rounded-xl border border-purple-500/20 bg-[#0A0A0A] hover:border-purple-500/40 hover:bg-purple-500/10 transition-all hover-lift h-full flex flex-col group relative overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500/50 to-transparent"></div>
-                <div className="w-10 h-10 rounded-lg bg-purple-500/30 flex items-center justify-center text-purple-400 mb-4 group-hover:bg-purple-500/40 group-hover:scale-110 transition-all shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+              <div className="p-6 rounded-xl border border-white/10 bg-[#0A0A0A] hover:border-purple-500/30 hover:bg-purple-500/5 transition-all hover-lift h-full flex flex-col group">
+                <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 mb-4 group-hover:bg-purple-500/30 group-hover:scale-110 transition-all">
                   <MessageSquare size={20} />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-purple-300 transition-colors">AI Chatbot</h3>
@@ -1779,8 +1442,7 @@ export default function HomePage() {
                                   const Icon = item.icon;
                                   return (
                                    <ScrollAnimated key={i} animation="fade-in" delay={item.delay}>
-                                     <div className={`flex gap-4 p-4 rounded-xl border ${item.colorClass === 'text-emerald-500' ? 'border-emerald-500/30' : item.colorClass === 'text-indigo-500' ? 'border-indigo-500/30' : 'border-emerald-500/30'} bg-white/[0.02] hover:bg-white/[0.05] ${item.borderClass} transition-all duration-300 hover-lift relative overflow-hidden`}>
-                                         <div className={`absolute top-0 left-0 w-1 h-full ${item.colorClass === 'text-emerald-500' ? 'bg-emerald-500/60' : item.colorClass === 'text-indigo-500' ? 'bg-indigo-500/60' : 'bg-emerald-500/60'}`}></div>
+                                     <div className={`flex gap-4 p-4 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] ${item.borderClass} transition-all duration-300 hover-lift`}>
                                          <div className="mt-1">
                                              <Icon size={18} className={`${item.colorClass} group-hover:scale-110 transition-transform`} />
                                          </div>
@@ -1833,27 +1495,140 @@ export default function HomePage() {
         {/* ===========================================================================
             ZONE 3: FEATURES BENTO GRID
         ============================================================================ */}
-        <FeaturesBento />
+        <section id="features" className="mx-auto max-w-6xl px-6 py-12 relative" style={{ contain: 'layout style paint' }}>
+          <div className="relative z-10">
+            <ScrollAnimated animation="fade-in" delay={0}>
+              <div className="text-center mb-16">
+                   <h2 className="text-3xl font-semibold text-white mb-4">Engineered for Engineers</h2>
+                   <p className="text-slate-400 mb-2">Everything you need to navigate complexity.</p>
+                   <p className="text-slate-500 text-sm max-w-2xl mx-auto">
+                     From onboarding new team members to debugging production issues, DEX provides the context and insights you need to move fast without breaking things.
+                   </p>
+              </div>
+            </ScrollAnimated>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch relative z-10" style={{ willChange: 'auto' }}>
+                
+                {/* Item 1: Visual Dependency Mapping */}
+                <ScrollAnimated animation="fade-in-scale" delay={100}>
+                  <div className="rounded-2xl border border-indigo-500/20 bg-[#0A0A0A] overflow-hidden relative group hover-lift h-full hover:border-indigo-500/40" style={{ willChange: 'transform' }}>
+                    <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="p-8 relative z-10 h-full flex flex-col">
+                         <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 group-hover:bg-indigo-500/30 group-hover:scale-110 transition-all duration-200">
+                           <Network size={24} />
+                         </div>
+                         <h3 className="text-xl font-bold text-white group-hover:text-indigo-300 transition-colors mb-3">Visual Dependency Mapping</h3>
+                         <p className="text-slate-400 text-sm flex-grow">Instantly generate a visual map of how your modules, functions, and database schemas interact.</p>
+                    </div>
+                  </div>
+                </ScrollAnimated>
+
+                {/* Item 2: SOC2 Compliant */}
+                <ScrollAnimated animation="fade-in-scale" delay={200}>
+                  <div className="rounded-2xl border border-emerald-500/20 bg-[#0A0A0A] overflow-hidden relative group hover-lift h-full hover:border-emerald-500/40" style={{ willChange: 'transform' }}>
+                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-transparent"></div>
+                     <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                     <div className="p-8 h-full flex flex-col relative z-10">
+                        <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 group-hover:bg-emerald-500/30 group-hover:scale-110 transition-all duration-200">
+                          <Lock size={24} />
+                        </div>
+                        <h3 className="text-xl font-bold text-white mb-2 group-hover:text-emerald-300 transition-colors">SOC2 Compliant</h3>
+                        <p className="text-slate-400 text-sm mb-6 flex-grow">We take code security seriously. Your intellectual property never leaves the encrypted enclave.</p>
+                        
+                        <div className="space-y-2 mt-auto">
+                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-emerald-500/5 border border-emerald-500/10 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/30 transition-all">
+                                <ShieldCheck size={12} className="text-emerald-400" /> End-to-End Encryption
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-emerald-500/5 border border-emerald-500/10 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/30 transition-all">
+                                <Database size={12} className="text-emerald-400" /> No Data Retention
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-emerald-500/5 border border-emerald-500/10 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/30 transition-all">
+                                <Layers size={12} className="text-emerald-400" /> VPC Peering Available
+                            </div>
+                        </div>
+                     </div>
+                  </div>
+                </ScrollAnimated>
+
+                {/* Item 3: One-Click Sync */}
+                <ScrollAnimated animation="fade-in-scale" delay={300}>
+                  <div className="rounded-2xl border border-slate-500/20 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full hover:border-slate-500/40" style={{ willChange: 'transform' }}>
+                     <div className="absolute inset-0 bg-gradient-to-br from-slate-500/10 via-slate-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-500 to-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                     <div className="relative z-10 h-full flex flex-col">
+                       <div className="w-12 h-12 rounded-lg bg-slate-500/20 flex items-center justify-center mb-4 group-hover:bg-slate-500/30 group-hover:scale-110 transition-all">
+                         <Github className="text-slate-300 group-hover:text-white transition-colors" size={32} />
+                       </div>
+                       <h3 className="text-lg font-bold text-white group-hover:text-slate-100 transition-colors mb-2">One-Click Sync</h3>
+                       <p className="text-slate-400 text-sm flex-grow">Connect your GitHub or GitLab repository and start indexing in seconds.</p>
+                     </div>
+                  </div>
+                </ScrollAnimated>
+
+                {/* Item 4: Real-time Indexing */}
+                <ScrollAnimated animation="fade-in-scale" delay={400}>
+                  <div className="rounded-2xl border border-yellow-500/20 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full hover:border-yellow-500/40" style={{ willChange: 'transform' }}>
+                     <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 via-yellow-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-500 to-amber-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                     <div className="relative z-10 h-full flex flex-col">
+                       <div className="w-12 h-12 rounded-lg bg-yellow-500/20 flex items-center justify-center mb-4 group-hover:bg-yellow-500/30 group-hover:scale-110 transition-all">
+                         <Zap className="text-yellow-400 group-hover:text-yellow-300 transition-colors" size={32} />
+                       </div>
+                       <h3 className="text-lg font-bold text-white group-hover:text-yellow-100 transition-colors mb-2">Real-time Indexing</h3>
+                       <p className="text-slate-400 text-sm flex-grow">DEX listens to webhooks. As soon as you push code, the graph updates.</p>
+                     </div>
+                  </div>
+                </ScrollAnimated>
+                
+                {/* Item 5: Built for Teams */}
+                <ScrollAnimated animation="fade-in-scale" delay={500}>
+                  <div className="rounded-2xl border border-purple-500/20 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full hover:border-purple-500/40" style={{ willChange: 'transform' }}>
+                    <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-pink-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="relative z-10 h-full flex flex-col">
+                      <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 mb-4 group-hover:bg-purple-500/30 group-hover:scale-110 transition-all">
+                        <Users size={24} />
+                      </div>
+                      <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors mb-3">Built for Teams</h3>
+                      <p className="text-slate-400 text-sm flex-grow">Share context links, annotated graphs, and onboarding guides automatically generated from the codebase.</p>
+                    </div>
+                  </div>
+                </ScrollAnimated>
+
+                {/* Item 6: AI Chatbot */}
+                <ScrollAnimated animation="fade-in-scale" delay={600}>
+                  <div className="rounded-2xl border border-pink-500/20 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full hover:border-pink-500/40" style={{ willChange: 'transform' }}>
+                    <div className="absolute inset-0 bg-gradient-to-br from-pink-500/10 via-pink-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 to-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <div className="relative z-10 h-full flex flex-col">
+                      <div className="w-10 h-10 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400 mb-4 group-hover:bg-pink-500/30 group-hover:scale-110 transition-all">
+                        <MessageSquare size={24} />
+                      </div>
+                      <h3 className="text-xl font-bold text-white group-hover:text-pink-300 transition-colors mb-3">AI Chatbot</h3>
+                      <p className="text-slate-400 text-sm flex-grow">Ask questions in plain English. Get answers grounded in your actual code with file references and dependency context.</p>
+                    </div>
+                  </div>
+                </ScrollAnimated>
+            </div>
+          </div>
+        </section>
 
         {/* ===========================================================================
             ZONE 3.5: INSIGHTS PREVIEW
         ============================================================================ */}
-        <section id="insights" className="mx-auto max-w-6xl px-6 py-24 relative zone-orange-bg">
-          {/* Zone Background Glow - Orange */}
-          <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-orange-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none z-0"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-orange-500/6 rounded-full blur-3xl pointer-events-none z-0"></div>
-          
+        <section id="insights" className="mx-auto max-w-6xl px-6 py-24 relative">
           {/* Animated background particles - Reduced count for performance */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none z-0" style={{ contain: 'layout style paint' }}>
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ contain: 'layout style paint' }}>
             <ParticleBackground count={12} opacity={0.25} minDuration={15} maxDuration={25} />
           </div>
 
           <div className="relative z-10">
             <ScrollAnimated animation="fade-in" delay={0}>
               <div className="text-center mb-12">
-                <div className="inline-flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/10 px-3 py-1 mb-6 backdrop-blur-sm hover:border-orange-500/50 hover:bg-orange-500/15 transition-all">
-                  <TrendingUp size={14} className="text-orange-400" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-orange-300">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 mb-6 backdrop-blur-sm hover:border-indigo-500/30 hover:bg-indigo-500/10 transition-all">
+                  <TrendingUp size={14} className="text-slate-400 group-hover:text-indigo-400 transition-colors" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 group-hover:text-indigo-300 transition-colors">
                     New Insights
                   </span>
                 </div>
@@ -1886,7 +1661,7 @@ export default function HomePage() {
               <div className="mt-8 text-center">
                 <Link 
                   href="/insights/activity" 
-                  className="inline-flex items-center gap-2 text-sm text-orange-400 hover:text-orange-300 transition-colors group px-4 py-2 rounded-lg border border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/15 hover:border-orange-500/50"
+                  className="inline-flex items-center gap-2 text-sm text-indigo-400 hover:text-indigo-300 transition-colors group px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-indigo-500/10 hover:border-indigo-500/30"
                 >
                   Explore all insights
                   <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
@@ -1899,7 +1674,125 @@ export default function HomePage() {
         {/* ===========================================================================
             ZONE 3.6: GITHUB SHAPE EMERGING FROM LEFT
         ============================================================================ */}
-        <GitHubShapeSection />
+        <section className="mx-auto max-w-6xl px-6 py-16 relative">
+          <ScrollAnimated animation="slide-right" delay={0}>
+            <div className="relative z-10">
+              {/* GitHub Shape Emerging from Left */}
+              <div className="relative flex items-center gap-8">
+                {/* GitHub Octocat Shape (Left Side) */}
+                <div className="flex-shrink-0 relative z-10">
+                <div className="relative w-32 h-32 md:w-40 md:h-40 lg:w-48 lg:h-48">
+                  {/* GitHub Octocat SVG Shape */}
+                  <svg 
+                    viewBox="0 0 24 24" 
+                    className="w-full h-full text-slate-200 opacity-90"
+                    fill="currentColor"
+                  >
+                    {/* Simplified GitHub Octocat shape */}
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                  </svg>
+                  
+                  {/* Glow effect */}
+                  <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full -z-10 animate-pulse-glow"></div>
+                  
+                  {/* Animated particles around GitHub */}
+                  <div className="absolute -top-2 -right-2 w-3 h-3 bg-indigo-400 rounded-full animate-pulse"></div>
+                  <div className="absolute -bottom-2 -left-2 w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-300"></div>
+                  <div className="absolute top-1/2 -left-4 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse delay-500"></div>
+                </div>
+              </div>
+
+              {/* Content Area */}
+              <div className="flex-1 relative z-10">
+                <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-sm p-8 md:p-10 hover:border-indigo-500/30 transition-all group">
+                  {/* Header */}
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-all">
+                      <Github size={20} className="text-indigo-400" />
+                    </div>
+                    <h3 className="text-2xl font-semibold text-white group-hover:text-indigo-300 transition-colors">Seamless GitHub Integration</h3>
+                  </div>
+
+                  {/* Content Grid */}
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-indigo-500/20 transition-all group/item">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center flex-shrink-0 group-hover/item:bg-indigo-500/30 group-hover/item:scale-110 transition-all">
+                          <GitBranch size={16} className="text-indigo-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-white mb-1 group-hover/item:text-indigo-300 transition-colors">Branch Tracking</h4>
+                          <p className="text-xs text-slate-400">Monitor all branches, track merges, and visualize your repository structure in real-time.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-emerald-500/20 transition-all group/item">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0 group-hover/item:bg-emerald-500/30 group-hover/item:scale-110 transition-all">
+                          <GitCommit size={16} className="text-emerald-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-white mb-1 group-hover/item:text-emerald-300 transition-colors">Commit Analysis</h4>
+                          <p className="text-xs text-slate-400">Analyze commit patterns, identify hotspots, and understand code evolution over time.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-purple-500/20 transition-all group/item">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0 group-hover/item:bg-purple-500/30 group-hover/item:scale-110 transition-all">
+                          <GitMerge size={16} className="text-purple-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-white mb-1 group-hover/item:text-purple-300 transition-colors">Merge Intelligence</h4>
+                          <p className="text-xs text-slate-400">Detect merge conflicts, track PR status, and visualize code changes before merging.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-indigo-500/20 transition-all group/item">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center flex-shrink-0 group-hover/item:bg-indigo-500/30 group-hover/item:scale-110 transition-all">
+                          <Code size={16} className="text-indigo-400" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-white mb-1 group-hover/item:text-indigo-300 transition-colors">Code Insights</h4>
+                          <p className="text-xs text-slate-400">Get AI-powered insights on code quality, dependencies, and potential improvements.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stats Bar */}
+                  <div className="mt-8 pt-6 border-t border-white/5 flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-6">
+                      <div>
+                        <div className="text-xs text-slate-500 mb-1">Repositories</div>
+                        <div className="text-xl font-bold text-white">24</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 mb-1">Total Commits</div>
+                        <div className="text-xl font-bold text-white">1.2K</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 mb-1">Active PRs</div>
+                        <div className="text-xl font-bold text-white">8</div>
+                      </div>
+                    </div>
+                    <Link 
+                      href="/app" 
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-500 transition-colors shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)]"
+                    >
+                      Connect Repository
+                      <ArrowRight size={14} />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            </div>
+          </ScrollAnimated>
+        </section>
 
         {/* ===========================================================================
             ZONE 4: FINAL CTA WITH ANIMATED BACKGROUND
