@@ -134,7 +134,12 @@ class IngestionService:
         
         # Initialize the Neo4j-backed Graph Engine
         self.graph_engine = GraphEngine()
-        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        # Use configurable embedding model (default: all-mpnet-base-v2 for better quality)
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name=settings.EMBEDDING_MODEL_NAME,
+            model_kwargs={'device': 'cpu'},  # Use CPU for local models
+            encode_kwargs={'normalize_embeddings': True}  # Normalize for better cosine similarity
+        )
         
         # Paths
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))

@@ -67,6 +67,16 @@ class Settings(BaseSettings):
     GITHUB_TOKEN: str = "" 
     OPENAI_API_KEY: str = ""
     
+    # Embedding Model Configuration
+    # Options:
+    # - "sentence-transformers/all-MiniLM-L6-v2" (384 dims, fast, basic)
+    # - "sentence-transformers/all-MiniLM-L12-v2" (384 dims, better quality)
+    # - "sentence-transformers/all-mpnet-base-v2" (768 dims, high quality, recommended)
+    # - "BAAI/bge-base-en-v1.5" (768 dims, excellent for code)
+    # - "BAAI/bge-large-en-v1.5" (1024 dims, best quality but slower)
+    EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/all-mpnet-base-v2")
+    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "768"))  # Default 768 for all-mpnet-base-v2
+    
     @field_validator("POSTGRES_PASSWORD", mode="before")
     def validate_postgres_password(cls, v):
         """Warn if PostgreSQL password is missing in production."""

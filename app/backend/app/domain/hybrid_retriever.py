@@ -21,7 +21,12 @@ class HybridRetriever:
             temperature=0,
             groq_api_key=settings.GROQ_API_KEY
         )
-        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        # Use configurable embedding model (default: all-mpnet-base-v2 for better quality)
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name=settings.EMBEDDING_MODEL_NAME,
+            model_kwargs={'device': 'cpu'},  # Use CPU for local models
+            encode_kwargs={'normalize_embeddings': True}  # Normalize for better cosine similarity
+        )
         
         # --- NEO4J CONNECTION (Read-Only access for RAG) ---
         uri = settings.NEO4J_URI
@@ -49,18 +54,31 @@ class HybridRetriever:
         """
         pass
 
-    def retrieve(self, query: str, k_vectors: int = 10) -> str:
+    def retrieve(self, query: str, k_vectors: int = 20) -> str:
         """
-        Enhanced Hybrid Retrieval with Person Query Detection:
+        Enhanced Hybrid Retrieval with Person Query Detection and Adaptive Retrieval:
         1. Detect if query is about a person/author
-        2. Find the code (Vector Search)
-        3. Find the context (Graph Lookup via Neo4j)
-        4. If person query, also search Neo4j directly for author/owner info
+        2. Detect if query is about architecture (increase k for better coverage)
+        3. Find the code (Vector Search)
+        4. Find the context (Graph Lookup via Neo4j)
+        5. If person query, also search Neo4j directly for author/owner info
         """
         # Step 0: Detect Person Query
         person_name = self._extract_person_name(query)
         
-        # Step 1: Semantic Search (PGVector) - increase k for better coverage
+        # Step 0.5: Detect Architecture Query - increase k for better coverage
+        query_lower = query.lower()
+        architecture_keywords = ['architecture', 'architect', 'structure', 'design', 'system', 'component', 
+                                'module', 'dependency', 'relationship', 'overview', 'explain the', 'how does',
+                                'path to', 'selected node']
+        is_architecture_query = any(keyword in query_lower for keyword in architecture_keywords)
+        
+        # Increase k for architecture queries to get more comprehensive context
+        if is_architecture_query:
+            k_vectors = max(k_vectors, 30)  # Get more context for architecture questions
+            logger.info(f"Architecture query detected, increasing k to {k_vectors}")
+        
+        # Step 1: Semantic Search (PGVector) - adaptive k based on query type
         code_context = []
         anchors = set()
         
@@ -92,7 +110,11 @@ class HybridRetriever:
                     graph_context += "\n\n--- Related Files ---\n" + anchor_context
         elif anchors:
             # Standard query: Expand file anchors
-            graph_context = self._expand_anchors_neo4j(list(anchors))
+            # For architecture queries, get more comprehensive graph context
+            if is_architecture_query:
+                graph_context = self._expand_anchors_neo4j(list(anchors), limit=50)
+            else:
+                graph_context = self._expand_anchors_neo4j(list(anchors))
         else:
             graph_context = "No graph context available."
 
@@ -276,10 +298,14 @@ Person name:"""
         
         return "\n".join(result_parts)
 
-    def _expand_anchors_neo4j(self, file_anchors: List[str]) -> str:
+    def _expand_anchors_neo4j(self, file_anchors: List[str], limit: int = 20) -> str:
         """
         Queries Neo4j to find structural relationships & Git metadata 
         for the identified anchor files.
+        
+        Args:
+            file_anchors: List of file paths to expand
+            limit: Maximum number of relationships to return (default: 20, higher for architecture queries)
         """
         if not self.driver or not file_anchors:
             return "No graph context available (DB disconnected or no anchors)."
@@ -288,13 +314,14 @@ Person name:"""
         # 1. Match nodes that START with the filename (File node + its Classes/Functions)
         # 2. Find incoming/outgoing relationships (r) to other nodes (m)
         # 3. Return the triple + metadata
-        query = """
+        # For architecture queries with higher limit, we get more comprehensive context
+        query = f"""
         UNWIND $anchors AS filename
         MATCH (n:CodeNode) 
         WHERE n.id STARTS WITH filename
         OPTIONAL MATCH (n)-[r]-(m:CodeNode)
         RETURN n, r, m
-        LIMIT 20
+        LIMIT {limit}
         """
         
         relevant_info = set()
@@ -316,18 +343,25 @@ Person name:"""
                 meta_str = ""
                 if n.get("last_author"):
                     meta_str = f" [Author: {n.get('last_author')}, Mod: {n.get('last_modified')}]"
+                
+                # Add node type and name for better context
+                node_type = n.get("type", "unknown")
+                node_name = n.get("name", n.get("id", "unknown"))
+                node_info = f"{node_name} ({node_type})"
 
                 # 2. Format Relationship
                 # If we found a relationship, format it: A -[REL]-> B
                 if r and m:
                     rel_type = r.type
+                    m_type = m.get("type", "unknown")
+                    m_name = m.get("name", m.get("id", "unknown"))
                     # Direction check (simplified for context string)
                     # We just want to know A relates to B
-                    info_str = f"{n['id']} --[{rel_type}]--> {m['id']}{meta_str}"
+                    info_str = f"{node_info} --[{rel_type}]--> {m_name} ({m_type}){meta_str}"
                     relevant_info.add(info_str)
                 else:
                     # Isolated node (just file info)
-                    relevant_info.add(f"Node: {n['id']}{meta_str}")
+                    relevant_info.add(f"Node: {node_info}{meta_str}")
 
         except Exception as e:
             logger.error(f"Neo4j Context Query Failed: {e}")

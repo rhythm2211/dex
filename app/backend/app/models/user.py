@@ -174,12 +174,13 @@ def init_db():
                     
                     # Create document_vectors table if it doesn't exist
                     table_name = settings.POSTGRES_VECTOR_TABLE or "document_vectors"
+                    embedding_dim = getattr(settings, 'EMBEDDING_DIMENSION', 768)
                     conn.execute(text(f"""
                         CREATE TABLE IF NOT EXISTS {table_name} (
                             id SERIAL PRIMARY KEY,
                             content TEXT NOT NULL,
                             metadata JSONB,
-                            embedding vector(384),
+                            embedding vector({embedding_dim}),
                             file_name TEXT,
                             source TEXT,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

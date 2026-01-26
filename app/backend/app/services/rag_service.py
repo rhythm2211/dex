@@ -22,7 +22,12 @@ class RAGService:
         
         try:
             # Initialize Embeddings & Vector Store once
-            self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            # Use configurable embedding model (default: all-mpnet-base-v2 for better quality)
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name=settings.EMBEDDING_MODEL_NAME,
+                model_kwargs={'device': 'cpu'},  # Use CPU for local models
+                encode_kwargs={'normalize_embeddings': True}  # Normalize for better cosine similarity
+            )
             
             # Initialize PGVector store
             self.vector_store = PGVector(
@@ -75,26 +80,43 @@ class RAGService:
             }
         
         # 4. Deep Tech Prompt (The "Architect" Persona)
-        # [UPDATED] Added specific instructions for Social/Risk data and Person queries
+        # [UPDATED] Enhanced for architecture questions and better context synthesis
         prompt = ChatPromptTemplate.from_template(
-            """You are a Senior Software Architect and Team Lead reviewing a codebase.
+            """You are a Senior Software Architect and Team Lead reviewing a codebase. Your expertise includes system design, code architecture, component relationships, and team dynamics.
             
             I have retrieved two types of context for you:
             
-            === PART 1: SOURCE CODE (Implementation) ===
+            === PART 1: SOURCE CODE (Implementation Details) ===
             {code_context}
             
-            === PART 2: KNOWLEDGE GRAPH (Architecture & Team Context) ===
+            === PART 2: KNOWLEDGE GRAPH (Architecture, Dependencies & Team Context) ===
             {graph_context}
             
             USER QUESTION: {question}
 
             INSTRUCTIONS:
-            - Use PART 1 to explain *how* the specific logic works.
-            - Use PART 2 to explain *where* these components fit (imports, dependencies).
-            - **CRITICAL:** Look at PART 2 for 'Owner' and 'Risk Score' metadata. 
-              - If an 'Owner' is listed, mention them (e.g., "This module is primarily maintained by Alice").
-              - If 'Risk Score' is high (>0.7), warn the user about stability issues.
+            - **ARCHITECTURE QUESTIONS:** If the question asks about architecture, system design, or overall structure:
+              - Use PART 2 (Knowledge Graph) as the PRIMARY source - it contains structural relationships, dependencies, and component hierarchy
+              - Identify major components, modules, and their relationships from PART 2
+              - Use PART 1 (Source Code) to provide implementation details and examples
+              - Explain how components connect, what they depend on, and their roles in the system
+              - If PART 2 shows relationships (e.g., "A --[IMPORTS]--> B"), explain what this means architecturally
+              - Describe the overall system structure, data flow, and component interactions
+            
+            - **IMPLEMENTATION QUESTIONS:** If the question asks about how something works:
+              - Use PART 1 to explain *how* the specific logic works with code examples
+              - Use PART 2 to explain *where* these components fit (imports, dependencies, relationships)
+            
+            - **COMPONENT/CODE QUESTIONS:** If asking about specific nodes, files, or paths:
+              - Combine information from both PART 1 and PART 2
+              - PART 2 shows the structural context (what depends on it, what it depends on)
+              - PART 1 shows the actual implementation
+            
+            - **CRITICAL METADATA:** Always check PART 2 for:
+              - 'Owner' and 'Risk Score' metadata
+              - If an 'Owner' is listed, mention them (e.g., "This module is primarily maintained by Alice")
+              - If 'Risk Score' is high (>0.7), warn about stability/bus factor issues
+            
             - **PERSON QUERIES:** If the question is about what a person is working on:
               - Focus on PART 2 which contains detailed information about their contributions
               - List the specific files, modules, or components they own or contribute to
@@ -102,11 +124,14 @@ class RAGService:
               - Include commit counts and last modified dates when available
               - Summarize their main areas of work and responsibilities
               - If PART 2 shows "No work found", say so clearly instead of making up information
-            - Synthesize all technical and social context into a coherent answer.
-            - Do not mention "Part 1" or "Part 2" in your final answer.
-            - If you don't have enough information, say so clearly rather than speculating.
             
-            Provide a technical, markdown-formatted response."""
+            - **SYNTHESIS:** 
+              - Synthesize all technical and social context into a coherent, comprehensive answer
+              - Do not mention "Part 1" or "Part 2" in your final answer
+              - If you don't have enough information, say so clearly rather than speculating
+              - For architecture questions, provide a high-level overview first, then dive into details
+            
+            Provide a technical, well-structured, markdown-formatted response with clear sections."""
         )
         
         # 5. Execution

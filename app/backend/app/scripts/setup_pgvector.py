@@ -44,17 +44,56 @@ def setup_pgvector():
                 conn.commit()
                 logger.info("✅ pgvector extension enabled")
                 
-                # 2. Create vector table
-                # Using 384 dimensions for sentence-transformers/all-MiniLM-L6-v2
+                # 2. Create or migrate vector table
+                # Support configurable embedding dimensions (default: 768 for all-mpnet-base-v2)
                 table_name = settings.POSTGRES_VECTOR_TABLE
-                logger.info(f"Creating vector table '{table_name}'...")
+                embedding_dim = getattr(settings, 'EMBEDDING_DIMENSION', 768)
+                logger.info(f"Creating/migrating vector table '{table_name}' with {embedding_dim} dimensions...")
                 
+                # Check if table exists and get current dimension
+                cur.execute(f"""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = '{table_name}'
+                    );
+                """)
+                table_exists = cur.fetchone()[0]
+                
+                if table_exists:
+                    # Check current embedding dimension
+                    cur.execute(f"""
+                        SELECT atttypmod FROM pg_attribute 
+                        WHERE attrelid = '{table_name}'::regclass 
+                        AND attname = 'embedding';
+                    """)
+                    result = cur.fetchone()
+                    if result and result[0]:
+                        # Extract dimension from typmod (format: -1 for variable, or positive for fixed)
+                        # For vector type, typmod contains dimension info
+                        cur.execute(f"""
+                            SELECT a.atttypmod 
+                            FROM pg_attribute a
+                            JOIN pg_class c ON a.attrelid = c.oid
+                            WHERE c.relname = '{table_name}' AND a.attname = 'embedding';
+                        """)
+                        typmod_result = cur.fetchone()
+                        if typmod_result and typmod_result[0] and typmod_result[0] > 0:
+                            current_dim = typmod_result[0]
+                            if current_dim != embedding_dim:
+                                logger.info(f"⚠️  Table exists with {current_dim} dimensions, but config requires {embedding_dim}.")
+                                logger.info(f"⚠️  You need to migrate the table. Dropping and recreating...")
+                                # Drop old table and recreate (data will be lost - user should re-ingest)
+                                cur.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE;")
+                                conn.commit()
+                                logger.info(f"✅ Dropped old table. Recreating with {embedding_dim} dimensions...")
+                
+                # Create table with correct dimensions
                 create_table_sql = f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
                     id SERIAL PRIMARY KEY,
                     content TEXT NOT NULL,
                     metadata JSONB,
-                    embedding vector(384),
+                    embedding vector({embedding_dim}),
                     file_name TEXT,
                     source TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
