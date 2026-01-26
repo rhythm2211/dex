@@ -3,11 +3,11 @@ import json
 # Explicitly import pgvector before PGVector to ensure it's available
 import pgvector  # Required for LangChain's PGVector implementation
 from langchain_community.vectorstores import PGVector
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from backend.app.core.config import settings
 from backend.app.domain.hybrid_retriever import HybridRetriever
+from backend.app.utils.embedding_utils import get_embeddings
 
 logger = logging.getLogger("dex-core")
 
@@ -22,12 +22,8 @@ class RAGService:
         
         try:
             # Initialize Embeddings & Vector Store once
-            # Use configurable embedding model (default: all-mpnet-base-v2 for better quality)
-            self.embeddings = HuggingFaceEmbeddings(
-                model_name=settings.EMBEDDING_MODEL_NAME,
-                model_kwargs={'device': 'cpu'},  # Use CPU for local models
-                encode_kwargs={'normalize_embeddings': True}  # Normalize for better cosine similarity
-            )
+            # Use configurable embedding provider (supports local, Voyage AI, Cohere, OpenAI, etc.)
+            self.embeddings = get_embeddings()
             
             # Initialize PGVector store
             self.vector_store = PGVector(

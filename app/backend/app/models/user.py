@@ -174,7 +174,7 @@ def init_db():
                     
                     # Create document_vectors table if it doesn't exist
                     table_name = settings.POSTGRES_VECTOR_TABLE or "document_vectors"
-                    embedding_dim = getattr(settings, 'EMBEDDING_DIMENSION', 768)
+                    embedding_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage AI
                     conn.execute(text(f"""
                         CREATE TABLE IF NOT EXISTS {table_name} (
                             id SERIAL PRIMARY KEY,

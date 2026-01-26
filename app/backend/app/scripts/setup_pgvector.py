@@ -45,9 +45,9 @@ def setup_pgvector():
                 logger.info("✅ pgvector extension enabled")
                 
                 # 2. Create or migrate vector table
-                # Support configurable embedding dimensions (default: 768 for all-mpnet-base-v2)
+                # Support configurable embedding dimensions (default: 1024 for Voyage AI)
                 table_name = settings.POSTGRES_VECTOR_TABLE
-                embedding_dim = getattr(settings, 'EMBEDDING_DIMENSION', 768)
+                embedding_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage AI
                 logger.info(f"Creating/migrating vector table '{table_name}' with {embedding_dim} dimensions...")
                 
                 # Check if table exists and get current dimension

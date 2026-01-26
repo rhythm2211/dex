@@ -15,11 +15,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # Explicitly import pgvector before PGVector to ensure it's available
 import pgvector  # Required for LangChain's PGVector implementation
 from langchain_community.vectorstores import PGVector
-from langchain_huggingface import HuggingFaceEmbeddings
 import psycopg
 from psycopg.conninfo import make_conninfo
 from backend.app.core.config import settings
 from backend.app.domain.graph_engine import GraphEngine
+from backend.app.utils.embedding_utils import get_embeddings
 
 # Setup Logging first
 logger = logging.getLogger("dex-core")
@@ -134,12 +134,8 @@ class IngestionService:
         
         # Initialize the Neo4j-backed Graph Engine
         self.graph_engine = GraphEngine()
-        # Use configurable embedding model (default: all-mpnet-base-v2 for better quality)
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.EMBEDDING_MODEL_NAME,
-            model_kwargs={'device': 'cpu'},  # Use CPU for local models
-            encode_kwargs={'normalize_embeddings': True}  # Normalize for better cosine similarity
-        )
+        # Use configurable embedding provider (supports local, Voyage AI, Cohere, OpenAI, etc.)
+        self.embeddings = get_embeddings()
         
         # Paths
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -995,10 +991,60 @@ class IngestionService:
             logger.info(f"   Embedding batch size: {embedding_batch_size}, DB insert batch size: {db_batch_size}")
             
             if vector_chunks:
-                # Initialize PGVector store (just to ensure table exists)
+                # Initialize PGVector store and verify table dimension
                 try:
                     self._update_status("running", 80, f"Generating embeddings (0/{total_chunks})...")
                     logger.info(f"🔧 Initializing PGVector store...")
+                    
+                    # Verify table dimension before proceeding
+                    conninfo_check = make_conninfo(
+                        host=settings.POSTGRES_HOST,
+                        port=settings.POSTGRES_PORT,
+                        user=settings.POSTGRES_USER,
+                        password=settings.POSTGRES_PASSWORD,
+                        dbname=settings.POSTGRES_DB
+                    )
+                    expected_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage AI
+                    
+                    with psycopg.connect(conninfo_check) as conn:
+                        with conn.cursor() as cur:
+                            # Check if table exists
+                            cur.execute(f"""
+                                SELECT EXISTS (
+                                    SELECT FROM information_schema.tables 
+                                    WHERE table_name = %s
+                                );
+                            """, (settings.POSTGRES_VECTOR_TABLE,))
+                            table_exists = cur.fetchone()[0]
+                            
+                            if table_exists:
+                                # Check dimension
+                                cur.execute(f"""
+                                    SELECT pg_catalog.format_type(a.atttypid, a.atttypmod) as type
+                                    FROM pg_attribute a
+                                    JOIN pg_class c ON a.attrelid = c.oid
+                                    WHERE c.relname = %s AND a.attname = 'embedding';
+                                """, (settings.POSTGRES_VECTOR_TABLE,))
+                                type_result = cur.fetchone()
+                                
+                                if type_result:
+                                    import re
+                                    match = re.search(r'vector\((\d+)\)', type_result[0])
+                                    if match:
+                                        table_dim = int(match.group(1))
+                                        if table_dim != expected_dim:
+                                            error_msg = (
+                                                f"❌ CRITICAL: Dimension mismatch detected!\n"
+                                                f"   Table '{settings.POSTGRES_VECTOR_TABLE}' has {table_dim} dimensions\n"
+                                                f"   But code expects {expected_dim} dimensions (model: {settings.EMBEDDING_MODEL_NAME})\n"
+                                                f"   You must run the migration script:\n"
+                                                f"   python migrate_embeddings_standalone.py"
+                                            )
+                                            logger.error(error_msg)
+                                            raise RuntimeError(error_msg)
+                                        else:
+                                            logger.info(f"✅ Verified table dimension: {table_dim} (matches expected {expected_dim})")
+                    
                     # Create a minimal store just to ensure table exists
                     dummy_store = PGVector(
                         connection_string=settings.POSTGRES_CONNECTION_STRING,
@@ -1007,6 +1053,8 @@ class IngestionService:
                         use_jsonb=True
                     )
                     logger.info(f"✅ PGVector store initialized")
+                except RuntimeError:
+                    raise  # Re-raise dimension mismatch errors
                 except Exception as e:
                     logger.error(f"❌ PGVector initialization failed: {e}")
                     raise RuntimeError(f"Failed to initialize vector store: {e}")
@@ -1086,6 +1134,30 @@ class IngestionService:
                         try:
                             with psycopg.connect(conninfo) as conn:
                                 with conn.cursor() as cur:
+                                    # Verify table dimension before inserting
+                                    cur.execute(f"""
+                                        SELECT pg_catalog.format_type(a.atttypid, a.atttypmod) as type
+                                        FROM pg_attribute a
+                                        JOIN pg_class c ON a.attrelid = c.oid
+                                        WHERE c.relname = %s AND a.attname = 'embedding';
+                                    """, (table_name,))
+                                    type_result = cur.fetchone()
+                                    
+                                    if type_result:
+                                        import re
+                                        match = re.search(r'vector\((\d+)\)', type_result[0])
+                                        if match:
+                                            table_dim = int(match.group(1))
+                                            expected_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage AI
+                                            if table_dim != expected_dim:
+                                                error_msg = (
+                                                    f"Dimension mismatch: Table has {table_dim} dimensions, "
+                                                    f"but code expects {expected_dim}. "
+                                                    f"Run migration script to fix."
+                                                )
+                                                logger.error(f"❌ {error_msg}")
+                                                raise RuntimeError(error_msg)
+                                    
                                     cur.executemany(insert_query, insert_data)
                                     conn.commit()
                                     

@@ -66,16 +66,21 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GITHUB_TOKEN: str = "" 
     OPENAI_API_KEY: str = ""
+    VOYAGE_API_KEY: str = ""
+    COHERE_API_KEY: str = ""
+    HUGGINGFACE_API_KEY: str = ""
+    
+    # Embedding Provider Configuration
+    # Options: "local", "hf_inference", "cohere", "openai", "voyage"
+    EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "local")
     
     # Embedding Model Configuration
-    # Options:
-    # - "sentence-transformers/all-MiniLM-L6-v2" (384 dims, fast, basic)
-    # - "sentence-transformers/all-MiniLM-L12-v2" (384 dims, better quality)
-    # - "sentence-transformers/all-mpnet-base-v2" (768 dims, high quality, recommended)
-    # - "BAAI/bge-base-en-v1.5" (768 dims, excellent for code)
-    # - "BAAI/bge-large-en-v1.5" (1024 dims, best quality but slower)
+    # For local/HF: "sentence-transformers/all-mpnet-base-v2" (768 dims), "BAAI/bge-large-en-v1.5" (1024 dims)
+    # For Voyage AI: "voyage-3", "voyage-3-lite", "voyage-large-2", "voyage-code-2" (1024 dims)
+    # For Cohere: "embed-english-v3.0" (1024 dims)
+    # For OpenAI: "text-embedding-3-large" (3072 dims), "text-embedding-3-small" (1536 dims)
     EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/all-mpnet-base-v2")
-    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "768"))  # Default 768 for all-mpnet-base-v2
+    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "1024"))  # Default 1024 for Voyage AI
     
     @field_validator("POSTGRES_PASSWORD", mode="before")
     def validate_postgres_password(cls, v):

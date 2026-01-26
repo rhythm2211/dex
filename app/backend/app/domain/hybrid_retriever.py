@@ -4,12 +4,12 @@ import logging
 from typing import List, Union
 from langchain_community.vectorstores import PGVector
 from langchain_core.vectorstores import VectorStore
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, TransientError
 from backend.app.core.config import settings
 from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection, retry_on_connection_error
+from backend.app.utils.embedding_utils import get_embeddings
 
 logger = logging.getLogger("dex-core")
 
@@ -21,12 +21,8 @@ class HybridRetriever:
             temperature=0,
             groq_api_key=settings.GROQ_API_KEY
         )
-        # Use configurable embedding model (default: all-mpnet-base-v2 for better quality)
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=settings.EMBEDDING_MODEL_NAME,
-            model_kwargs={'device': 'cpu'},  # Use CPU for local models
-            encode_kwargs={'normalize_embeddings': True}  # Normalize for better cosine similarity
-        )
+        # Use configurable embedding provider (supports local, Voyage AI, Cohere, OpenAI, etc.)
+        self.embeddings = get_embeddings()
         
         # --- NEO4J CONNECTION (Read-Only access for RAG) ---
         uri = settings.NEO4J_URI

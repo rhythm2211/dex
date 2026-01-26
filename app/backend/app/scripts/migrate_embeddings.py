@@ -1,9 +1,9 @@
 """
-Migration script to upgrade embedding dimensions from 384 to 768.
+Migration script to upgrade embedding dimensions to match the configured model.
 This script migrates the document_vectors table to support the new embedding model.
 
 WARNING: This will require re-ingestion of your repository data!
-The existing 384-dimensional embeddings are incompatible with 768-dimensional embeddings.
+Embeddings with different dimensions are incompatible (e.g., 384 vs 768 vs 1024).
 
 Usage:
     # From app/backend directory:
@@ -42,7 +42,8 @@ logger = logging.getLogger(__name__)
 
 def migrate_embeddings():
     """
-    Migrates the document_vectors table from 384 to 768 dimensions.
+    Migrates the document_vectors table to the dimension specified in EMBEDDING_DIMENSION.
+    Supports migration to any dimension (e.g., 384, 768, 1024).
     This requires dropping the old table and recreating it.
     """
     try:
@@ -57,7 +58,7 @@ def migrate_embeddings():
         logger.info(f"Connecting to PostgreSQL at {settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}")
         
         table_name = settings.POSTGRES_VECTOR_TABLE
-        new_dim = getattr(settings, 'EMBEDDING_DIMENSION', 768)
+        new_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage AI
         
         with psycopg.connect(conninfo) as conn:
             with conn.cursor() as cur:

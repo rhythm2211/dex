@@ -15,6 +15,7 @@ langchain
 langchain-community
 langchain-groq
 langchain-huggingface
+langchain-voyageai  # Voyage AI embeddings (1024 dimensions)
 
 # --- Vector Database (PostgreSQL + pgvector) ---
 # Note: pgvector PostgreSQL extension must be installed in the database: CREATE EXTENSION vector;
