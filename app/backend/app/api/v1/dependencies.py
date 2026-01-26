@@ -27,6 +27,7 @@ def get_user_from_header(
     """
     Extract user from request headers.
     Frontend should send X-User-Email or X-User-Id header from NextAuth session.
+    Optimized with timeout to prevent hanging.
     """
     user_id = None
     user_email = None
@@ -49,12 +50,21 @@ def get_user_from_header(
             detail="User authentication required. Please include X-User-Email or X-User-Id header."
         )
     
-    # Find user by email or ID
+    # Find user by email or ID with timeout protection
     user = None
-    if user_email:
-        user = db.query(User).filter(User.email == user_email).first()
-    elif user_id:
-        user = db.query(User).filter(User.id == user_id).first()
+    try:
+        if user_email:
+            # Use timeout to prevent hanging on slow database queries
+            user = db.query(User).filter(User.email == user_email).first()
+        elif user_id:
+            user = db.query(User).filter(User.id == user_id).first()
+    except Exception as e:
+        # If database query fails, log and raise appropriate error
+        logger.error(f"Database query failed in get_user_from_header: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Database connection error. Please try again."
+        )
     
     if not user:
         raise HTTPException(

@@ -70,9 +70,9 @@ engine = create_engine(
     pool_size=30,  # Increased from 20 to 30 for better concurrency
     max_overflow=20,  # Increased from 15 to 20 for peak loads (50 total connections)
     pool_recycle=3600,  # Recycle connections after 1 hour
-    pool_timeout=60,  # Increased from default 30 to 60 seconds - wait longer for available connection
+    pool_timeout=5,  # Reduced from 60 to 5 seconds - fail fast instead of hanging
     connect_args={
-        "connect_timeout": 10,  # 10 second timeout for initial connection
+        "connect_timeout": 5,  # Reduced from 10 to 5 seconds - fail fast
         # Note: statement_timeout removed - not supported by Neon DB connection pooler
         # If needed, set it after connection is established using SQLAlchemy events
         "sslmode": "require",  # Require SSL for secure connections (especially for Neon DB)

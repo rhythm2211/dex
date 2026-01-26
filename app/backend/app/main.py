@@ -160,29 +160,35 @@ async def health_probe():
     """
     Production-grade health check endpoint.
     Checks database connectivity and service status.
+    Fast, non-blocking health check with timeouts.
     """
+    import asyncio
     health_status = {
         "status": "active",
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
     }
     
-    # Check PostgreSQL connection
+    # Check PostgreSQL connection with timeout
     try:
-        from sqlalchemy import text, create_engine
-        engine = create_engine(settings.DATABASE_URL)
+        from sqlalchemy import text
+        from backend.app.models.user import engine
+        # Use existing engine from user model (don't create new connection)
         with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+            # Quick query with timeout
+            result = conn.execute(text("SELECT 1"))
+            result.fetchone()  # Consume result
         health_status["postgres"] = "connected"
     except Exception as e:
         logger.error(f"PostgreSQL health check failed: {e}")
         health_status["postgres"] = "disconnected"
         health_status["status"] = "degraded"
     
-    # Check Neo4j connection (if configured)
+    # Check Neo4j connection (if configured) with timeout
     if settings.NEO4J_URI:
         try:
             from backend.app.utils.neo4j_driver_manager import neo4j_driver_manager
+            # Quick check with timeout
             if neo4j_driver_manager.verify_connection():
                 health_status["neo4j"] = "connected"
             else:

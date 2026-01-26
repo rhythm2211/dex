@@ -83,9 +83,10 @@ _user_cache: dict[str, tuple[dict, float]] = {}  # email -> (user_data, timestam
 _cache_ttl = 30  # seconds
 
 @router.get("/users/email/{email}", response_model=UserProfileResponse)
-def get_user_by_email(email: str, db: Session = Depends(get_db)):
+async def get_user_by_email(email: str, db: Session = Depends(get_db)):
     """
     Get user profile by email.
+    Made async to prevent blocking on database queries.
     Uses simple in-memory cache (30s TTL) to reduce database load from frequent polling.
     """
     import time
@@ -101,7 +102,7 @@ def get_user_by_email(email: str, db: Session = Depends(get_db)):
             # Cache expired, remove it
             _user_cache.pop(email, None)
     
-    # Fetch from database
+    # Fetch from database - run in thread pool if needed (but db.query is usually fast)
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

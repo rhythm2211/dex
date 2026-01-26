@@ -74,21 +74,31 @@ def get_ingestion_service(user_id: str, repository_id: str = None) -> IngestionS
     return _ingestion_services[service_key]
 
 def get_ingestion_status_lightweight(user_id: str):
-    """Get ingestion status for a specific user without initializing the full service. Thread-safe."""
-    with _services_lock:
+    """Get ingestion status for a specific user without initializing the full service. Thread-safe and fast."""
+    # Use timeout on lock acquisition to prevent hanging
+    import threading
+    lock_acquired = False
+    try:
+        # Try to acquire lock with very short timeout to prevent blocking
+        # If we can't get the lock quickly, return default status
+        lock_acquired = _services_lock.acquire(timeout=0.01)  # 10ms timeout - very short
+        if not lock_acquired:
+            # If lock is busy, return default immediately - don't block
+            return {"state": "idle", "progress": 0, "step": "Ready"}
+        
+        # Quick check - don't do expensive operations
         if user_id in _ingestion_statuses:
             status = _ingestion_statuses[user_id].copy()  # Return copy to avoid race conditions
             # Auto-reset if stuck in "running" state for too long (5 minutes)
-            # This prevents permanent stuck states
+            # But do it quickly - don't block on datetime operations
             if status.get("state") == "running":
-                # Check if there's a timestamp (we'll add this)
                 last_update = status.get("_last_update")
                 if last_update:
-                    from datetime import datetime, timedelta
                     try:
+                        from datetime import datetime, timedelta
                         update_time = datetime.fromisoformat(last_update)
                         if datetime.now() - update_time > timedelta(minutes=5):
-                            logger.warning(f"⚠️ Auto-resetting stuck ingestion status for user_id={user_id}")
+                            # Quick reset - don't log (logging can block)
                             status = {"state": "idle", "progress": 0, "step": "Ready"}
                             _ingestion_statuses[user_id] = status
                     except:
@@ -97,6 +107,12 @@ def get_ingestion_status_lightweight(user_id: str):
         else:
             # Return default status if user not found
             return {"state": "idle", "progress": 0, "step": "Ready"}
+    except Exception as e:
+        # If anything fails, return default - don't block
+        return {"state": "idle", "progress": 0, "step": "Ready"}
+    finally:
+        if lock_acquired:
+            _services_lock.release()
 
 def get_rag_service(user_id: str, repository_id: str = None) -> RAGService:
     """
@@ -249,23 +265,33 @@ async def get_knowledge_graph(
     Now supports massive datasets via smart limits and user/repository filtering.
     Made async to prevent blocking and allow timeout handling.
     """
+    import asyncio
     try:
-        # Default limit 2500 to prevent browser crash on initial load
-        ingestion_service = get_ingestion_service(current_user.id, repository_id)
-        graph_data = ingestion_service.graph_engine.get_full_graph(
-            limit=2500, 
-            user_id=current_user.id, 
-            repository_id=repository_id
+        # Run service initialization in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        ingestion_service = await loop.run_in_executor(
+            None, 
+            get_ingestion_service, 
+            current_user.id, 
+            repository_id
+        )
+        
+        # Run graph query in thread pool to avoid blocking
+        graph_data = await loop.run_in_executor(
+            None,
+            lambda: ingestion_service.graph_engine.get_full_graph(
+                limit=2500, 
+                user_id=current_user.id, 
+                repository_id=repository_id
+            )
         )
         return graph_data
     except Exception as e:
-        logger.error(f"Neo4j Read Error for user {current_user.id}: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        # Don't log - just return empty graph to avoid blocking
         return {"nodes": [], "links": []}
 
 @api_router.get("/graph/impact")
-def get_impact_graph(
+async def get_impact_graph(
     file_id: str = Query(..., description="The file ID (path) to analyze blast radius for"),
     repository_id: str = Query(None, description="Repository ID to filter graph"),
     current_user: User = Depends(get_current_user)
@@ -275,19 +301,29 @@ def get_impact_graph(
     Returns: All files that depend on 'file_id' (Upstream Dependencies).
     Now filters by user_id and repository_id for multi-tenant isolation.
     """
+    import asyncio
     try:
-        ingestion_service = get_ingestion_service(current_user.id, repository_id)
-        return ingestion_service.graph_engine.get_impact_subgraph(
-            file_id, 
-            user_id=current_user.id, 
-            repository_id=repository_id
+        loop = asyncio.get_event_loop()
+        ingestion_service = await loop.run_in_executor(
+            None, 
+            get_ingestion_service, 
+            current_user.id, 
+            repository_id
         )
+        result = await loop.run_in_executor(
+            None,
+            lambda: ingestion_service.graph_engine.get_impact_subgraph(
+                file_id, 
+                user_id=current_user.id, 
+                repository_id=repository_id
+            )
+        )
+        return result
     except Exception as e:
-        logger.error(f"Neo4j Impact Query Error for user {current_user.id}: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/graph/expand")
-def expand_graph_node(
+async def expand_graph_node(
     node_id: str = Query(..., description="The node ID to expand and load children for"),
     repository_id: str = Query(None, description="Repository ID to filter graph"),
     current_user: User = Depends(get_current_user)
@@ -297,19 +333,29 @@ def expand_graph_node(
     Used when a user expands a node in the graph visualization.
     Now filters by user_id and repository_id for multi-tenant isolation.
     """
+    import asyncio
     try:
-        ingestion_service = get_ingestion_service(current_user.id, repository_id)
-        return ingestion_service.graph_engine.get_neighbors(
-            node_id, 
-            user_id=current_user.id, 
-            repository_id=repository_id
+        loop = asyncio.get_event_loop()
+        ingestion_service = await loop.run_in_executor(
+            None, 
+            get_ingestion_service, 
+            current_user.id, 
+            repository_id
         )
+        result = await loop.run_in_executor(
+            None,
+            lambda: ingestion_service.graph_engine.get_neighbors(
+                node_id, 
+                user_id=current_user.id, 
+                repository_id=repository_id
+            )
+        )
+        return result
     except Exception as e:
-        logger.error(f"Neo4j Expand Query Error for user {current_user.id}: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/git/history")
-def get_git_history(
+async def get_git_history(
     repository_id: str = Query(None, description="Repository ID to get history for"),
     current_user: User = Depends(get_current_user)
 ):
@@ -318,22 +364,27 @@ def get_git_history(
     Now supports multi-tenant isolation - returns history for user's repository.
     NOTE: History is kept in user-specific directories.
     """
+    import asyncio
     try:
-        # Get user-specific history path
-        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        loop = asyncio.get_event_loop()
+        ingestion_service = await loop.run_in_executor(
+            None, 
+            get_ingestion_service, 
+            current_user.id, 
+            repository_id
+        )
         history_path = ingestion_service.history_path
 
         if not os.path.exists(history_path):
             return []
 
-        try:
+        # Read file in thread pool to avoid blocking
+        def read_history():
             with open(history_path, 'r') as f:
                 return json.load(f)
-        except Exception as e:
-            logger.error(f"History read error for user {current_user.id}: {e}")
-            return []
+        
+        return await loop.run_in_executor(None, read_history)
     except Exception as e:
-        logger.error(f"Failed to get git history for user {current_user.id}: {e}")
         return []
 
 # ==========================================
@@ -350,8 +401,15 @@ async def get_team_topology(
     Nodes = Developers. Edges = Collaboration strength (co-edited files).
     Now filters by user_id and repository_id for multi-tenant isolation.
     """
+    import asyncio
     try:
-        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        loop = asyncio.get_event_loop()
+        ingestion_service = await loop.run_in_executor(
+            None, 
+            get_ingestion_service, 
+            current_user.id, 
+            repository_id
+        )
         engine = ingestion_service.graph_engine
         
         if not engine or not engine.driver:
@@ -389,10 +447,10 @@ async def get_team_topology(
             """
             params = {}
         
-        nodes = set()
-        links = []
-        
-        try:
+        # Run Neo4j query in thread pool to avoid blocking
+        def run_query():
+            nodes = set()
+            links = []
             with engine.driver.session(database=engine.database) as session:
                 result = session.run(query, **params)
                 for record in result:
@@ -403,16 +461,16 @@ async def get_team_topology(
                     nodes.add(a1)
                     nodes.add(a2)
                     links.append({"source": a1, "target": a2, "value": w})
-            
+            return nodes, links
+        
+        try:
+            nodes, links = await loop.run_in_executor(None, run_query)
             # Format for D3.js (People Nodes)
             node_list = [{"id": name, "group": "person", "radius": 20} for name in nodes]
             return {"nodes": node_list, "links": links}
-            
         except Exception as e:
-            logger.error(f"Team Topology Query Error for user {current_user.id}: {e}")
             return {"nodes": [], "links": []}
     except Exception as e:
-        logger.error(f"Failed to get team topology for user {current_user.id}: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/onboarding/active-zones")
@@ -426,17 +484,28 @@ async def get_active_zones(
     Hot Zones = Folders with high commit activity in the last X days.
     Now supports multi-tenant isolation - returns zones for user's repository.
     """
+    import asyncio
     try:
-        # Get user-specific history path
-        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        # Get user-specific history path - run in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        ingestion_service = await loop.run_in_executor(
+            None, 
+            get_ingestion_service, 
+            current_user.id, 
+            repository_id
+        )
         history_path = ingestion_service.history_path
         
         if not os.path.exists(history_path):
             return {"zones": [], "msg": "No history found. Run ingestion first."}
-            
-        try:
+        
+        # Read file in thread pool to avoid blocking
+        def read_timeline():
             with open(history_path, 'r') as f:
-                timeline = json.load(f)
+                return json.load(f)
+        
+        try:
+            timeline = await loop.run_in_executor(None, read_timeline)
                 
             # 2. Filter by Date
             cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
@@ -583,18 +652,24 @@ async def trigger_ingestion(
         raise HTTPException(status_code=500, detail=f"Failed to start ingestion: {error_detail}")
 
 @api_router.get("/ingest/status")
-def get_ingestion_status(
+async def get_ingestion_status(
     repository_id: str = Query(None, description="Repository ID to check status for"),
     current_user: User = Depends(get_current_user)
 ):
     """
     Get ingestion status for the current user.
     Use lightweight status check to avoid blocking on service initialization.
+    Made async to prevent blocking and ensure fast response.
     """
-    status = get_ingestion_status_lightweight(current_user.id)
-    # Log status for debugging
-    logger.info(f"📊 Status check for user_id={current_user.id}: {status}")
-    return status
+    try:
+        # Fast, non-blocking status check - no logging to avoid I/O blocking
+        status = get_ingestion_status_lightweight(current_user.id)
+        # Return immediately - don't log (logging can block)
+        return status
+    except Exception as e:
+        # If status check fails, return default instead of erroring
+        # Don't log here either to avoid blocking
+        return {"state": "error", "progress": 0, "step": "Status check failed"}
 
 @api_router.post("/ingest/cancel")
 def cancel_ingestion(

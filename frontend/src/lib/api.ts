@@ -263,12 +263,22 @@ class DexClient {
       // Provide more detailed error information
       let errorMessage = "Failed to start ingestion";
       
-      if (error?.code === 'ECONNREFUSED' || error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
+      // Check for ERR_BLOCKED_BY_CLIENT (browser extension blocking)
+      if (error?.code === 'ERR_BLOCKED_BY_CLIENT' || 
+          error?.message?.includes('ERR_BLOCKED_BY_CLIENT') ||
+          error?.message?.includes('blocked by client')) {
+        errorMessage = `Request was blocked by browser extension (ad blocker/privacy tool). Please disable extensions for this site or try in incognito mode.`;
+        console.error("🚫 Request blocked by browser extension. Try disabling ad blockers or privacy extensions.");
+      } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
         errorMessage = `Cannot connect to backend at ${this.baseURL}. Please check if the backend is running and accessible.`;
       } else if (error?.response?.status === 400) {
         errorMessage = error.response.data?.detail || "Invalid request. Please check the repository URL.";
       } else if (error?.response?.status === 409) {
         errorMessage = error.response.data?.detail || "An ingestion task is already running.";
+      } else if (error?.response?.status === 401) {
+        errorMessage = "Authentication required. Please log in again.";
+      } else if (error?.response?.status === 403) {
+        errorMessage = "Access forbidden. Please check your permissions.";
       } else if (error?.response?.data?.detail) {
         errorMessage = error.response.data.detail;
       } else if (error?.message) {

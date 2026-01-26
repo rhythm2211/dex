@@ -468,6 +468,15 @@ export default function Dashboard() {
           setPollInterval(interval);
       } catch (err: any) { 
           console.error("Ingestion error:", err);
+          
+          // Check for browser extension blocking
+          if (err?.message?.includes("blocked by browser extension") || 
+              err?.message?.includes("ERR_BLOCKED_BY_CLIENT")) {
+              setIngesting(false);
+              alert(`🚫 Request blocked by browser extension.\n\nPlease:\n1. Disable ad blockers/privacy extensions for this site\n2. Or try in incognito/private mode\n3. Or whitelist ${window.location.hostname}`);
+              return;
+          }
+          
           // If error is 409 (already running), try to reset and retry
           if (err?.message?.includes("already running") || err?.response?.status === 409) {
               try {
