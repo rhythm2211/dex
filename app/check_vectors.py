@@ -11,6 +11,12 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Fix Windows console encoding for emojis
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 # Load environment variables
 env_path = Path(__file__).parent / ".env"
 if env_path.exists():
@@ -100,21 +106,9 @@ def check_vectors():
                 else:
                     print(f"✅ {count} vectors found")
                 
-                # Check sample vector dimension
-                if count > 0:
-                    cur.execute(f"""
-                        SELECT array_length(embedding::float[], 1) as dim
-                        FROM {table_name}
-                        LIMIT 1;
-                    """)
-                    sample_dim = cur.fetchone()[0]
-                    print(f"   Sample vector dimension: {sample_dim}")
-                    
-                    if sample_dim != expected_dim:
-                        print(f"⚠️  Sample vector dimension mismatch!")
-                        print(f"   Sample has {sample_dim} dimensions")
-                        print(f"   Expected {expected_dim} dimensions")
-                        return False
+                # Note: We already verified dimension from table schema above
+                # The vector type in pgvector can't be cast to float[], so we skip sample check
+                # The schema dimension check is the authoritative source
                 
                 # Check recent vectors
                 cur.execute(f"""

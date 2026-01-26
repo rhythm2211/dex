@@ -106,9 +106,13 @@ class HybridRetriever:
         anchors.update(node_file_paths)
         
         try:
+            # Log the query and parameters for debugging
+            logger.debug(f"Starting vector search with k={k_vectors}, query='{query[:100]}'")
+            
             # If we have specific file paths, try to search within those files first
             if node_file_paths:
                 # Search with higher k to get more context from the specific files
+                logger.debug(f"Node file paths found, searching with k={k_vectors * 2}")
                 docs = self.vector_store.similarity_search(query, k=k_vectors * 2)
                 # Prioritize docs from the files we found
                 prioritized_docs = []
@@ -125,6 +129,7 @@ class HybridRetriever:
                 # Combine: prioritized first, then others
                 docs = prioritized_docs + other_docs[:k_vectors]
             else:
+                logger.debug(f"No node file paths, using standard search with k={k_vectors}")
                 docs = self.vector_store.similarity_search(query, k=k_vectors)
                 for doc in docs:
                     filename = doc.metadata.get('file_name')
@@ -139,14 +144,69 @@ class HybridRetriever:
             if not docs:
                 logger.warning(f"Vector search returned 0 results for query: '{query[:100]}' (k={k_vectors})")
                 logger.warning("This might indicate: 1) Database is empty, 2) Dimension mismatch, 3) Query too specific")
+                logger.warning("Attempting fallback: direct SQL query to document_vectors table...")
+                
+                # Fallback: Try direct SQL query if PGVector returns nothing
+                # This handles cases where PGVector's collection system doesn't match our direct inserts
+                try:
+                    import psycopg
+                    from psycopg.conninfo import make_conninfo
+                    from backend.app.core.config import settings
+                    
+                    # Generate query embedding
+                    query_embedding = self.embeddings.embed_query(query)
+                    embedding_str = '[' + ','.join(str(float(x)) for x in query_embedding) + ']'
+                    
+                    # Direct SQL similarity search using cosine distance
+                    conninfo = make_conninfo(
+                        host=settings.POSTGRES_HOST,
+                        port=settings.POSTGRES_PORT,
+                        user=settings.POSTGRES_USER,
+                        password=settings.POSTGRES_PASSWORD,
+                        dbname=settings.POSTGRES_DB
+                    )
+                    
+                    with psycopg.connect(conninfo) as conn:
+                        with conn.cursor() as cur:
+                            # Use cosine distance for similarity search
+                            sql_query = f"""
+                                SELECT content, metadata, file_name, source,
+                                       1 - (embedding <=> %s::vector) as similarity
+                                FROM {settings.POSTGRES_VECTOR_TABLE}
+                                ORDER BY embedding <=> %s::vector
+                                LIMIT %s
+                            """
+                            cur.execute(sql_query, (embedding_str, embedding_str, k_vectors))
+                            results = cur.fetchall()
+                            
+                            if results:
+                                logger.info(f"Fallback SQL query returned {len(results)} results")
+                                for content, metadata, file_name, source, similarity in results:
+                                    filename = file_name or source or 'unknown'
+                                    anchors.add(filename)
+                                    # Parse metadata if it's a string
+                                    if isinstance(metadata, str):
+                                        import json
+                                        try:
+                                            metadata = json.loads(metadata)
+                                        except:
+                                            metadata = {}
+                                    code_context.append(f"--- SNIPPET ({filename}) ---\n{content}")
+                            else:
+                                logger.error("Fallback SQL query also returned 0 results - database might be empty or dimension mismatch")
+                except Exception as fallback_e:
+                    logger.error(f"Fallback SQL query failed: {fallback_e}", exc_info=True)
             else:
                 logger.info(f"Vector search returned {len(docs)} results for query: '{query[:100]}'")
+                logger.debug(f"First result filename: {docs[0].metadata.get('file_name', 'unknown') if docs else 'N/A'}")
                 
         except Exception as e:
             error_msg = str(e).lower()
+            logger.error(f"Vector search exception: {e}", exc_info=True)
+            
             # Check for dimension mismatch errors
-            if "dimension" in error_msg or "vector" in error_msg:
-                logger.error(f"❌ Vector search failed due to dimension mismatch: {e}")
+            if "dimension" in error_msg or "vector" in error_msg or "cannot cast" in error_msg:
+                logger.error(f"❌ Vector search failed due to dimension/type mismatch: {e}")
                 logger.error("❌ This usually means the database has embeddings with different dimensions than the current model.")
                 logger.error("❌ Solution: Run the migration script to update the database schema, then re-ingest the repository.")
                 # Return a helpful error message in the context
@@ -154,9 +214,15 @@ class HybridRetriever:
                     "⚠️ ERROR: Dimension mismatch detected. The database embeddings have a different dimension "
                     "than the current embedding model. Please run the migration script and re-ingest the repository."
                 )
+            elif "connection" in error_msg or "timeout" in error_msg or "network" in error_msg:
+                logger.error(f"❌ Vector search failed due to connection issue: {e}")
+                code_context.append(
+                    "⚠️ ERROR: Database connection failed. Please check your PostgreSQL connection settings."
+                )
             else:
-                logger.error(f"Vector search failed with exception: {e}", exc_info=True)
+                logger.error(f"Vector search failed with unexpected exception: {e}", exc_info=True)
                 # Continue even if vector search fails, we might have person query or node query
+                # But log the full exception for debugging
 
         # Step 2: Graph Context - Multiple paths:
         #   a) If person query: Direct Neo4j search for person's work
