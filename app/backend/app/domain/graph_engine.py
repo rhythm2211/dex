@@ -153,7 +153,7 @@ class GraphEngine:
             
             query = """
             UNWIND $nodes AS node
-            MERGE (n:CodeNode {id: node.id, user_id: $user_id, repository_id: $repository_id})
+            MERGE (n:CodeNode {id: node.id})
             SET n.name = node.name,
                 n.type = node.type,
                 n.val = node.val,
@@ -220,35 +220,20 @@ class GraphEngine:
                 edges_by_type[rel_type].append(edge)
             
             # Insert each relationship type in a separate query
+            # Match only on id (the unique constraint) to avoid constraint violations
             for rel_type, type_edges in edges_by_type.items():
-                if user_id and repository_id:
-                    query = f"""
-                    UNWIND $edges AS edge
-                    MATCH (a:CodeNode {{id: edge.source, user_id: $user_id, repository_id: $repository_id}})
-                    MATCH (b:CodeNode {{id: edge.target, user_id: $user_id, repository_id: $repository_id}})
-                    MERGE (a)-[:{rel_type}]->(b)
-                    """
-                    params = {
-                        "edges": [
-                            {"source": edge.get("source"), "target": edge.get("target")}
-                            for edge in type_edges
-                        ],
-                        "user_id": user_id,
-                        "repository_id": repository_id
-                    }
-                else:
-                    query = f"""
-                    UNWIND $edges AS edge
-                    MATCH (a:CodeNode {{id: edge.source}})
-                    MATCH (b:CodeNode {{id: edge.target}})
-                    MERGE (a)-[:{rel_type}]->(b)
-                    """
-                    params = {
-                        "edges": [
-                            {"source": edge.get("source"), "target": edge.get("target")}
-                            for edge in type_edges
-                        ]
-                    }
+                query = f"""
+                UNWIND $edges AS edge
+                MATCH (a:CodeNode {{id: edge.source}})
+                MATCH (b:CodeNode {{id: edge.target}})
+                MERGE (a)-[:{rel_type}]->(b)
+                """
+                params = {
+                    "edges": [
+                        {"source": edge.get("source"), "target": edge.get("target")}
+                        for edge in type_edges
+                    ]
+                }
                 
                 try:
                     self._safe_session_run(query, **params)
@@ -271,7 +256,8 @@ class GraphEngine:
             if user_id and repository_id:
                 # Only wipe specific user's repository
                 query = """
-                MATCH (n:CodeNode {user_id: $user_id, repository_id: $repository_id})
+                MATCH (n:CodeNode)
+                WHERE n.user_id = $user_id AND n.repository_id = $repository_id
                 DETACH DELETE n
                 """
                 self._safe_session_run(query, user_id=user_id, repository_id=repository_id)
@@ -289,8 +275,9 @@ class GraphEngine:
         
         # [NEW] Added 'owner' and 'collaborators' properties
         # [NEW] Added user_id and repository_id for multi-tenant isolation
+        # MERGE only on id (the unique constraint), then SET all properties
         query = """
-        MERGE (n:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id})
+        MERGE (n:CodeNode {id: $id})
         SET n.name = $name,
             n.type = $type,
             n.val = $val,
@@ -328,8 +315,8 @@ class GraphEngine:
         if not self.driver: return
         rel_type = "DEPENDS_ON" if relation == "IMPORTS" else relation
         query = f"""
-        MATCH (a:CodeNode {{id: $source, user_id: $user_id, repository_id: $repository_id}})
-        MATCH (b:CodeNode {{id: $target, user_id: $user_id, repository_id: $repository_id}})
+        MATCH (a:CodeNode {{id: $source}})
+        MATCH (b:CodeNode {{id: $target}})
         MERGE (a)-[:{rel_type}]->(b)
         """
         try:
@@ -615,8 +602,10 @@ class GraphEngine:
                 with self.driver.session(database=self.database) as session:
                     # First, get all nodes (up to limit) - filtered by user_id and repository_id
                     if user_id and repository_id:
+                        # Use WHERE clause to handle empty strings and ensure proper filtering
                         nodes_query = """
-                        MATCH (n:CodeNode {user_id: $user_id, repository_id: $repository_id})
+                        MATCH (n:CodeNode)
+                        WHERE n.user_id = $user_id AND n.repository_id = $repository_id
                         RETURN n
                         LIMIT $limit
                         """
@@ -706,7 +695,10 @@ class GraphEngine:
         # Filter by user_id and repository_id if provided
         if user_id and repository_id:
             query = """
-            MATCH (p:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id})-[r]->(c:CodeNode {user_id: $user_id, repository_id: $repository_id})
+            MATCH (p:CodeNode {id: $id})
+            WHERE p.user_id = $user_id AND p.repository_id = $repository_id
+            MATCH (p)-[r]->(c:CodeNode)
+            WHERE c.user_id = $user_id AND c.repository_id = $repository_id
             RETURN p, r, c
             LIMIT 500
             """
@@ -762,7 +754,7 @@ class GraphEngine:
         with self.driver.session(database=self.database) as session:
             # We first fetch the target node details to be safe
             if user_id and repository_id:
-                target_query = "MATCH (n:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id}) RETURN n"
+                target_query = "MATCH (n:CodeNode {id: $id}) WHERE n.user_id = $user_id AND n.repository_id = $repository_id RETURN n"
                 target_res = session.run(target_query, id=target_id, user_id=user_id, repository_id=repository_id)
             else:
                 target_query = "MATCH (n:CodeNode {id: $id}) RETURN n"
@@ -786,10 +778,17 @@ class GraphEngine:
             # We use a union to get immediate edges for visualization
             if user_id and repository_id:
                 simple_query = """
-                MATCH (t:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id})<-[r:DEPENDS_ON]-(s:CodeNode {user_id: $user_id, repository_id: $repository_id})
+                MATCH (t:CodeNode {id: $id})
+                WHERE t.user_id = $user_id AND t.repository_id = $repository_id
+                MATCH (t)<-[r:DEPENDS_ON]-(s:CodeNode)
+                WHERE s.user_id = $user_id AND s.repository_id = $repository_id
                 RETURN s, r, t
                 UNION
-                MATCH (t:CodeNode {id: $id, user_id: $user_id, repository_id: $repository_id})<-[:DEPENDS_ON]-(inter:CodeNode {user_id: $user_id, repository_id: $repository_id})<-[r:DEPENDS_ON]-(s:CodeNode {user_id: $user_id, repository_id: $repository_id})
+                MATCH (t:CodeNode {id: $id})
+                WHERE t.user_id = $user_id AND t.repository_id = $repository_id
+                MATCH (t)<-[:DEPENDS_ON]-(inter:CodeNode)<-[r:DEPENDS_ON]-(s:CodeNode)
+                WHERE inter.user_id = $user_id AND inter.repository_id = $repository_id
+                  AND s.user_id = $user_id AND s.repository_id = $repository_id
                 RETURN s, r, inter as t
                 """
                 result = session.run(simple_query, id=target_id, user_id=user_id, repository_id=repository_id)

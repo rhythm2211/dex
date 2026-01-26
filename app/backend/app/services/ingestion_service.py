@@ -4,6 +4,7 @@ import logging
 import tempfile
 import json
 import threading
+import time
 import re
 from datetime import datetime
 from collections import Counter
@@ -176,23 +177,39 @@ class IngestionService:
         self._update_status("cancelled", self._status.get("progress", 0), "Cancellation requested...")
 
     def _check_cancelled(self):
-        """Check if cancellation was requested and raise if so."""
+        """Check if cancellation was requested and raise if so. Thread-safe."""
+        # Check local flag first (fast path)
         if self._cancelled:
             logger.info("🛑 Ingestion cancelled by user")
             self._update_status("cancelled", self._status.get("progress", 0), "Cancelled")
             raise RuntimeError("Ingestion cancelled by user")
+        
+        # Also check global cancellation requests (thread-safe)
+        if self.user_id:
+            try:
+                from backend.app.api.v1.router import _cancellation_requests, _services_lock
+                with _services_lock:
+                    if _cancellation_requests.get(self.user_id, False):
+                        self._cancelled = True
+                        logger.info("🛑 Ingestion cancelled by user (via global flag)")
+                        self._update_status("cancelled", self._status.get("progress", 0), "Cancelled")
+                        raise RuntimeError("Ingestion cancelled by user")
+            except (ImportError, AttributeError):
+                # If import fails, just continue (shouldn't happen in normal operation)
+                pass
 
     def _update_status(self, state: str, progress: int, step: str):
         self._status = {"state": state, "progress": progress, "step": step}
         logger.info(f"Ingestion Status: [{progress}%] {step}")
         
-        # Also update the global status dictionary for API polling
+        # Also update the global status dictionary for API polling (thread-safe)
         # Use lazy import to avoid circular dependency (import happens at method call time,
         # after router.py has already finished loading)
         if self.user_id:
             try:
-                from backend.app.api.v1.router import _ingestion_statuses
-                _ingestion_statuses[self.user_id] = self._status
+                from backend.app.api.v1.router import _ingestion_statuses, _services_lock
+                with _services_lock:
+                    _ingestion_statuses[self.user_id] = self._status.copy()  # Store copy to avoid race conditions
             except (ImportError, AttributeError):
                 # If import fails (shouldn't happen in normal operation), just log a debug message
                 logger.debug(f"Could not update global status for user {self.user_id}")
@@ -1061,20 +1078,39 @@ class IngestionService:
                 all_metadatas = [doc.metadata for doc in vector_chunks]
                 all_embeddings = []
                 
-                # Generate embeddings in batches
-                for i in range(0, total_chunks, embedding_batch_size):
+                # Warmup: Process a small batch first to initialize the model (prevents first-batch slowdown)
+                if total_chunks > 0:
+                    warmup_size = min(10, total_chunks)  # Small warmup batch
+                    logger.info(f"🔥 Warming up embedding model with {warmup_size} chunks...")
+                    warmup_start = time.time()
+                    try:
+                        warmup_texts = all_texts[:warmup_size]
+                        warmup_embeddings = self.embeddings.embed_documents(warmup_texts)
+                        all_embeddings.extend(warmup_embeddings)
+                        warmup_time = time.time() - warmup_start
+                        logger.info(f"✅ Model warmup completed in {warmup_time:.2f}s")
+                    except Exception as e:
+                        logger.error(f"❌ Embedding warmup failed: {e}")
+                        raise RuntimeError(f"Failed to warmup embedding model: {e}")
+                
+                # Generate embeddings in batches (skip warmup batch)
+                for i in range(warmup_size, total_chunks, embedding_batch_size):
                     self._check_cancelled()
                     batch_texts = all_texts[i:i + embedding_batch_size]
                     batch_progress = 80 + int((i / total_chunks) * 10) # 80% -> 90%
+                    batch_num = (i // embedding_batch_size) + 1
+                    total_batches = (total_chunks - warmup_size + embedding_batch_size - 1) // embedding_batch_size
                     self._update_status("running", batch_progress, f"Generating embeddings ({i}/{total_chunks})...")
                     
-                    if (i // embedding_batch_size) % 10 == 0 or i == 0:
-                        logger.info(f"  🧮 Generating embeddings: batch {i//embedding_batch_size + 1}, chunks {i} to {min(i+embedding_batch_size, total_chunks)}")
+                    logger.info(f"  🧮 Generating embeddings: batch {batch_num}/{total_batches}, chunks {i} to {min(i+embedding_batch_size, total_chunks)}")
                     
                     # Use the embedding model's embed_documents method (optimized for batch processing)
                     try:
+                        batch_start = time.time()
                         batch_embeddings = self.embeddings.embed_documents(batch_texts)
+                        batch_time = time.time() - batch_start
                         all_embeddings.extend(batch_embeddings)
+                        logger.info(f"  ✅ Batch {batch_num} completed in {batch_time:.2f}s ({len(batch_texts)} chunks)")
                     except Exception as e:
                         logger.error(f"❌ Embedding generation failed for batch starting at {i}: {e}")
                         raise RuntimeError(f"Failed to generate embeddings: {e}")

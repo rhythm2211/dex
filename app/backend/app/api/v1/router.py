@@ -26,8 +26,11 @@ api_router.include_router(health_router, prefix="/health", tags=["health"])
 
 # --- Multi-Tenant Service Management ---
 # Store services per user for isolation
-_ingestion_services: dict[str, IngestionService] = {}  # user_id -> IngestionService
-_rag_services: dict[str, RAGService] = {}  # user_id -> RAGService
+# Thread-safe dictionaries with locks for concurrent access
+import threading
+_services_lock = threading.Lock()
+_ingestion_services: dict[str, IngestionService] = {}  # service_key -> IngestionService
+_rag_services: dict[str, RAGService] = {}  # service_key -> RAGService
 # Track ingestion status per user
 _ingestion_statuses: dict[str, dict] = {}  # user_id -> status dict
 # Track cancellation requests per user
@@ -37,46 +40,62 @@ def get_ingestion_service(user_id: str, repository_id: str = None) -> IngestionS
     """
     Get or create ingestion service for a specific user.
     Each user gets their own service instance for isolation.
+    Thread-safe implementation.
     """
+    # Normalize repository_id to avoid key collisions (None vs empty string)
+    normalized_repo_id = repository_id or 'default'
     # Create a unique key for user+repository combination
-    service_key = f"{user_id}:{repository_id or 'default'}"
+    service_key = f"{user_id}:{normalized_repo_id}"
     
+    # Double-check locking pattern for thread safety
     if service_key not in _ingestion_services:
-        try:
-            _ingestion_services[service_key] = IngestionService(user_id=user_id, repository_id=repository_id)
-            # Initialize status for this user
-            if user_id not in _ingestion_statuses:
-                _ingestion_statuses[user_id] = {"state": "idle", "progress": 0, "step": "Ready"}
-            logger.info(f"Created IngestionService for user_id={user_id}, repository_id={repository_id}")
-        except Exception as e:
-            logger.exception(f"Failed to initialize IngestionService for user {user_id}: {e}", exc_info=True)
-            raise RuntimeError(f"Failed to initialize ingestion service: {str(e)}") from e
+        with _services_lock:
+            # Check again after acquiring lock (double-check)
+            if service_key not in _ingestion_services:
+                try:
+                    _ingestion_services[service_key] = IngestionService(user_id=user_id, repository_id=repository_id)
+                    # Initialize status for this user (thread-safe)
+                    with _services_lock:
+                        if user_id not in _ingestion_statuses:
+                            _ingestion_statuses[user_id] = {"state": "idle", "progress": 0, "step": "Ready"}
+                    logger.info(f"Created IngestionService for user_id={user_id}, repository_id={repository_id}")
+                except Exception as e:
+                    logger.exception(f"Failed to initialize IngestionService for user {user_id}: {e}", exc_info=True)
+                    raise RuntimeError(f"Failed to initialize ingestion service: {str(e)}") from e
     
     return _ingestion_services[service_key]
 
 def get_ingestion_status_lightweight(user_id: str):
-    """Get ingestion status for a specific user without initializing the full service."""
-    if user_id in _ingestion_statuses:
-        return _ingestion_statuses[user_id]
-    else:
-        # Return default status if user not found
-        return {"state": "idle", "progress": 0, "step": "Ready"}
+    """Get ingestion status for a specific user without initializing the full service. Thread-safe."""
+    with _services_lock:
+        if user_id in _ingestion_statuses:
+            return _ingestion_statuses[user_id].copy()  # Return copy to avoid race conditions
+        else:
+            # Return default status if user not found
+            return {"state": "idle", "progress": 0, "step": "Ready"}
 
 def get_rag_service(user_id: str, repository_id: str = None) -> RAGService:
     """
     Get or create RAG service for a specific user.
     Each user gets their own service instance for isolation.
+    Thread-safe implementation.
     """
+    # Normalize repository_id to avoid key collisions
+    normalized_repo_id = repository_id or 'default'
     # Create a unique key for user+repository combination
-    service_key = f"{user_id}:{repository_id or 'default'}"
+    service_key = f"{user_id}:{normalized_repo_id}"
     
+    # Double-check locking pattern for thread safety
     if service_key not in _rag_services:
-        try:
-            _rag_services[service_key] = RAGService(user_id=user_id, repository_id=repository_id)
-            logger.info(f"Created RAGService for user_id={user_id}, repository_id={repository_id}")
-        except Exception as e:
-            logger.exception(f"Failed to initialize RAGService for user {user_id}: {e}", exc_info=True)
-            raise RuntimeError(f"Failed to initialize RAG service: {str(e)}") from e
+        with _services_lock:
+            # Check again after acquiring lock (double-check)
+            if service_key not in _rag_services:
+                try:
+                    _rag_services[service_key] = RAGService(user_id=user_id, repository_id=repository_id)
+                    logger.info(f"Created RAGService for user_id={user_id}, repository_id={repository_id}")
+                except Exception as e:
+                    logger.exception(f"Failed to initialize RAGService for user {user_id}: {e}", exc_info=True)
+                    raise RuntimeError(f"Failed to initialize RAG service: {str(e)}") from e
     
     return _rag_services[service_key]
 
@@ -121,19 +140,22 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
         import re
         repository_id = re.sub(r'[^a-zA-Z0-9_-]', '_', repo_path)[:100]
     
-    # Reset cancellation flag for this user
-    _cancellation_requests[user_id] = False
+    # Reset cancellation flag for this user (thread-safe)
+    with _services_lock:
+        _cancellation_requests[user_id] = False
     
     try:
         ingestion_service = get_ingestion_service(user_id, repository_id)
-        # Sync status immediately after initialization
-        _ingestion_statuses[user_id] = ingestion_service.get_current_status()
+        # Sync status immediately after initialization (thread-safe)
+        with _services_lock:
+            _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         
         logger.info(f"🚀 Starting background ingestion for user_id={user_id}, repository_id={repository_id}, repo_path={repo_path}")
         result = ingestion_service.process_repository(repo_path, user_id=user_id, repository_id=repository_id)
         
-        # Sync status after processing
-        _ingestion_statuses[user_id] = ingestion_service.get_current_status()
+        # Sync status after processing (thread-safe)
+        with _services_lock:
+            _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         
         if result.get("status") == "success":
             logger.info("💾 Ingestion processing done. Triggering RAG memory refresh...")
@@ -149,10 +171,12 @@ def run_ingestion_sequence(repo_path: str, user_id: str, repository_id: str = No
         try:
             ingestion_service = get_ingestion_service(user_id, repository_id)
             ingestion_service._update_status("error", 0, f"System Error: {str(e)}")
-            _ingestion_statuses[user_id] = ingestion_service.get_current_status()
+            with _services_lock:
+                _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         except:
-            # If service initialization fails, update lightweight status
-            _ingestion_statuses[user_id] = {"state": "error", "progress": 0, "step": f"System Error: {str(e)}"}
+            # If service initialization fails, update lightweight status (thread-safe)
+            with _services_lock:
+                _ingestion_statuses[user_id] = {"state": "error", "progress": 0, "step": f"System Error: {str(e)}"}
 
 # --- Endpoints ---
 
@@ -230,24 +254,31 @@ def expand_graph_node(
         return {"nodes": [], "links": []}
 
 @api_router.get("/git/history")
-def get_git_history():
+def get_git_history(
+    repository_id: str = Query(None, description="Repository ID to get history for"),
+    current_user: User = Depends(get_current_user)
+):
     """
     TIME TRAVEL: Returns the commit timeline for the slider.
-    NOTE: History is still kept local (JSON) because it's sequential and small.
+    Now supports multi-tenant isolation - returns history for user's repository.
+    NOTE: History is kept in user-specific directories.
     """
-    # Reuse consistent path logic
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-    history_path = os.path.join(backend_root, "data", "repo_history.json")
-
-    if not os.path.exists(history_path):
-        return []
-
     try:
-        with open(history_path, 'r') as f:
-            return json.load(f)
+        # Get user-specific history path
+        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        history_path = ingestion_service.history_path
+
+        if not os.path.exists(history_path):
+            return []
+
+        try:
+            with open(history_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"History read error for user {current_user.id}: {e}")
+            return []
     except Exception as e:
-        logger.error(f"History read error: {e}")
+        logger.error(f"Failed to get git history for user {current_user.id}: {e}")
         return []
 
 # ==========================================
@@ -255,114 +286,145 @@ def get_git_history():
 # ==========================================
 
 @api_router.get("/onboarding/team-topology")
-async def get_team_topology():
+async def get_team_topology(
+    repository_id: str = Query(None, description="Repository ID to get topology for"),
+    current_user: User = Depends(get_current_user)
+):
     """
     Returns a social graph of the team.
     Nodes = Developers. Edges = Collaboration strength (co-edited files).
-    Uses the Neo4j driver from the existing GraphEngine.
+    Now filters by user_id and repository_id for multi-tenant isolation.
     """
-    ingestion_service = get_ingestion_service()
-    engine = ingestion_service.graph_engine
-    
-    if not engine or not engine.driver:
-        # Fallback if graph isn't ready
-        logger.warning("Graph Engine not ready for topology query.")
-        return {"nodes": [], "links": []}
-
-    # Cypher: Find pairs of authors who edited the same files
-    # We look for nodes where 'collaborators' list has >1 person
-    query = """
-    MATCH (n:CodeNode)
-    WHERE size(n.collaborators) > 1
-    UNWIND n.collaborators as author1
-    UNWIND n.collaborators as author2
-    WITH author1, author2, count(n) as weight
-    WHERE author1 < author2  // distinct pairs only to avoid A-A or A-B + B-A
-    RETURN author1, author2, weight
-    ORDER BY weight DESC
-    LIMIT 100
-    """
-    
-    nodes = set()
-    links = []
-    
     try:
-        with engine.driver.session() as session:
-            result = session.run(query)
-            for record in result:
-                a1 = record["author1"]
-                a2 = record["author2"]
-                w = record["weight"]
-                
-                nodes.add(a1)
-                nodes.add(a2)
-                links.append({"source": a1, "target": a2, "value": w})
+        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        engine = ingestion_service.graph_engine
         
-        # Format for D3.js (People Nodes)
-        node_list = [{"id": name, "group": "person", "radius": 20} for name in nodes]
-        return {"nodes": node_list, "links": links}
+        if not engine or not engine.driver:
+            logger.warning(f"Graph Engine not ready for topology query for user {current_user.id}.")
+            return {"nodes": [], "links": []}
+
+        # Cypher: Find pairs of authors who edited the same files
+        # Filter by user_id and repository_id for multi-tenant isolation
+        if current_user.id and repository_id:
+            query = """
+            MATCH (n:CodeNode)
+            WHERE n.user_id = $user_id AND n.repository_id = $repository_id
+              AND size(n.collaborators) > 1
+            UNWIND n.collaborators as author1
+            UNWIND n.collaborators as author2
+            WITH author1, author2, count(n) as weight
+            WHERE author1 < author2
+            RETURN author1, author2, weight
+            ORDER BY weight DESC
+            LIMIT 100
+            """
+            params = {"user_id": current_user.id, "repository_id": repository_id}
+        else:
+            # Fallback for backward compatibility (shouldn't happen with auth)
+            query = """
+            MATCH (n:CodeNode)
+            WHERE size(n.collaborators) > 1
+            UNWIND n.collaborators as author1
+            UNWIND n.collaborators as author2
+            WITH author1, author2, count(n) as weight
+            WHERE author1 < author2
+            RETURN author1, author2, weight
+            ORDER BY weight DESC
+            LIMIT 100
+            """
+            params = {}
         
+        nodes = set()
+        links = []
+        
+        try:
+            with engine.driver.session(database=engine.database) as session:
+                result = session.run(query, **params)
+                for record in result:
+                    a1 = record["author1"]
+                    a2 = record["author2"]
+                    w = record["weight"]
+                    
+                    nodes.add(a1)
+                    nodes.add(a2)
+                    links.append({"source": a1, "target": a2, "value": w})
+            
+            # Format for D3.js (People Nodes)
+            node_list = [{"id": name, "group": "person", "radius": 20} for name in nodes]
+            return {"nodes": node_list, "links": links}
+            
+        except Exception as e:
+            logger.error(f"Team Topology Query Error for user {current_user.id}: {e}")
+            return {"nodes": [], "links": []}
     except Exception as e:
-        logger.error(f"Team Topology Query Error: {e}")
+        logger.error(f"Failed to get team topology for user {current_user.id}: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/onboarding/active-zones")
-async def get_active_zones(days: int = 30):
+async def get_active_zones(
+    days: int = Query(30, description="Number of days to look back"),
+    repository_id: str = Query(None, description="Repository ID to get zones for"),
+    current_user: User = Depends(get_current_user)
+):
     """
     Returns a Heatmap of the repo.
     Hot Zones = Folders with high commit activity in the last X days.
+    Now supports multi-tenant isolation - returns zones for user's repository.
     """
-    # 1. Resolve Path (Same logic as get_git_history)
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-    history_path = os.path.join(backend_root, "data", "repo_history.json")
-    
-    if not os.path.exists(history_path):
-        return {"zones": [], "msg": "No history found. Run ingestion first."}
-        
     try:
-        with open(history_path, 'r') as f:
-            timeline = json.load(f)
+        # Get user-specific history path
+        ingestion_service = get_ingestion_service(current_user.id, repository_id)
+        history_path = ingestion_service.history_path
+        
+        if not os.path.exists(history_path):
+            return {"zones": [], "msg": "No history found. Run ingestion first."}
             
-        # 2. Filter by Date
-        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
-        
-        # 3. Aggregate: Folder -> Commit Count
-        zone_heat = Counter()
-        
-        for commit in timeline:
-            if commit["date"] < cutoff_date:
-                continue
+        try:
+            with open(history_path, 'r') as f:
+                timeline = json.load(f)
                 
-            for file_path in commit["files"]:
-                # Logic: Get top-level folder (or 'root' if file is at base)
-                # Example: "backend/app/main.py" -> "backend/app"
-                parts = file_path.split('/')
-                if len(parts) > 1:
-                    # Use first 2 levels for better grouping in large repos
-                    # e.g., "backend/services" vs "frontend/components"
-                    zone = parts[0] + "/" + parts[1] if len(parts) > 2 else parts[0]
-                else:
-                    zone = "root"
-                
-                zone_heat[zone] += 1
-        
-        # 4. Format for Frontend
-        # Returns top 15 hottest zones
-        results = [
-            {
-                "name": zone, 
-                "value": count, 
-                "intensity": "High" if count > 10 else "Low"
-            }
-            for zone, count in zone_heat.most_common(15)
-        ]
-        
-        return {"zones": results}
-        
+            # 2. Filter by Date
+            cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+            
+            # 3. Aggregate: Folder -> Commit Count
+            zone_heat = Counter()
+            
+            for commit in timeline:
+                if commit["date"] < cutoff_date:
+                    continue
+                    
+                for file_path in commit.get("files", []):
+                    # Logic: Get top-level folder (or 'root' if file is at base)
+                    # Example: "backend/app/main.py" -> "backend/app"
+                    parts = file_path.split('/')
+                    if len(parts) > 1:
+                        # Use first 2 levels for better grouping in large repos
+                        # e.g., "backend/services" vs "frontend/components"
+                        zone = parts[0] + "/" + parts[1] if len(parts) > 2 else parts[0]
+                    else:
+                        zone = "root"
+                    
+                    zone_heat[zone] += 1
+            
+            # 4. Format for Frontend
+            # Returns top 15 hottest zones
+            results = [
+                {
+                    "name": zone, 
+                    "value": count, 
+                    "intensity": "High" if count > 10 else "Low"
+                }
+                for zone, count in zone_heat.most_common(15)
+            ]
+            
+            return {"zones": results}
+            
+        except Exception as e:
+            logger.error(f"Heatmap generation failed for user {current_user.id}: {e}")
+            # Return empty list rather than 500 to keep UI stable
+            return {"zones": []}
     except Exception as e:
-        logger.error(f"Heatmap generation failed: {e}")
-        # Return empty list rather than 500 to keep UI stable
+        logger.error(f"Failed to get active zones for user {current_user.id}: {e}")
         return {"zones": []}
 
 # ==========================================
@@ -451,18 +513,24 @@ def cancel_ingestion(
 ):
     """
     Cancel the currently running ingestion process for the current user.
+    Thread-safe implementation.
     """
-    _cancellation_requests[current_user.id] = True
+    # Set cancellation flag (thread-safe)
+    with _services_lock:
+        _cancellation_requests[current_user.id] = True
+    
     try:
         ingestion_service = get_ingestion_service(current_user.id, repository_id)
         ingestion_service.cancel()
-        _ingestion_statuses[current_user.id] = ingestion_service.get_current_status()
+        with _services_lock:
+            _ingestion_statuses[current_user.id] = ingestion_service.get_current_status()
         logger.info(f"🛑 Ingestion cancellation requested via API for user_id={current_user.id}")
         return {"status": "cancelled", "message": "Ingestion cancellation requested"}
     except Exception as e:
         logger.error(f"Failed to cancel ingestion for user {current_user.id}: {e}")
-        # Try to update status anyway
-        _ingestion_statuses[current_user.id] = {"state": "cancelled", "progress": 0, "step": "Cancellation attempted"}
+        # Try to update status anyway (thread-safe)
+        with _services_lock:
+            _ingestion_statuses[current_user.id] = {"state": "cancelled", "progress": 0, "step": "Cancellation attempted"}
         return {"status": "cancelled", "message": f"Cancellation requested (service may not be initialized): {str(e)}"}
 
 @api_router.post("/ingest/reset")
@@ -473,16 +541,22 @@ def reset_ingestion_status(
     """
     Reset ingestion status if it gets stuck.
     This allows starting a new ingestion after a failed/stuck one.
+    Thread-safe implementation.
     """
     try:
-        # Reset lightweight status immediately
-        _ingestion_statuses[current_user.id] = {"state": "idle", "progress": 0, "step": "Ready"}
+        # Normalize repository_id
+        normalized_repo_id = repository_id or 'default'
+        service_key = f"{current_user.id}:{normalized_repo_id}"
         
-        # If service is initialized, also reset it
-        service_key = f"{current_user.id}:{repository_id or 'default'}"
-        if service_key in _ingestion_services:
-            _ingestion_services[service_key]._update_status("idle", 0, "Ready")
-            _ingestion_statuses[current_user.id] = _ingestion_services[service_key].get_current_status()
+        # Reset lightweight status immediately (thread-safe)
+        with _services_lock:
+            _ingestion_statuses[current_user.id] = {"state": "idle", "progress": 0, "step": "Ready"}
+            _cancellation_requests[current_user.id] = False
+            
+            # If service is initialized, also reset it
+            if service_key in _ingestion_services:
+                _ingestion_services[service_key]._update_status("idle", 0, "Ready")
+                _ingestion_statuses[current_user.id] = _ingestion_services[service_key].get_current_status()
         
         logger.info(f"Ingestion status reset to idle for user_id={current_user.id}")
         return {"status": "reset", "message": "Ingestion status has been reset"}
@@ -508,15 +582,4 @@ def execute_hybrid_query(
         logger.error(f"Query failed for user {current_user.id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.get("/graph/expand")
-def expand_graph_node(node_id: str = Query(..., description="The ID of the node to expand")):
-    """
-    LAZY LOADING: Fetches children of the specific node.
-    Used for progressive rendering of large graphs.
-    """
-    try:
-        ingestion_service = get_ingestion_service()
-        return ingestion_service.graph_engine.get_neighbors(node_id)
-    except Exception as e:
-        logger.error(f"Graph Expansion Error: {e}")
-        return {"nodes": [], "links": []}
+# Removed duplicate /graph/expand endpoint - using the one at line 210 with proper auth

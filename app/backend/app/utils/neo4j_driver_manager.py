@@ -19,10 +19,20 @@ class Neo4jDriverManager:
     _instance = None
     _driver = None
     _database = "neo4j"
+    _class_lock = None  # Class-level lock for singleton initialization
     
     def __new__(cls):
+        import threading
+        # Initialize class lock on first access
+        if cls._class_lock is None:
+            cls._class_lock = threading.Lock()
+        
         if cls._instance is None:
-            cls._instance = super(Neo4jDriverManager, cls).__new__(cls)
+            with cls._class_lock:
+                # Double-check locking pattern
+                if cls._instance is None:
+                    cls._instance = super(Neo4jDriverManager, cls).__new__(cls)
+                    cls._instance._lock = threading.Lock()  # Instance-level lock
         return cls._instance
     
     def get_driver(self):
@@ -31,37 +41,40 @@ class Neo4jDriverManager:
         Thread-safe and optimized for connection pooling.
         """
         if self._driver is None:
-            uri = os.getenv("NEO4J_URI")
-            user = os.getenv("NEO4J_USERNAME")
-            password = os.getenv("NEO4J_PASSWORD")
-            self._database = os.getenv("NEO4J_DATABASE", "neo4j")
-            
-            if not uri or not user or not password:
-                logger.error("❌ Neo4j credentials missing. Cannot create driver.")
-                return None
-            
-            # Create driver with optimized connection pool settings
-            # For single Neo4j instance, we want a reasonable pool size
-            # 50 connections shared across all users is optimal
-            self._driver = create_neo4j_driver(
-                uri, 
-                user, 
-                password, 
-                database=self._database,
-                max_connection_pool_size=50,  # Shared pool for all users
-                connection_timeout=30,
-                connection_acquisition_timeout=60
-            )
-            
-            if self._driver:
-                # Verify connection
-                if verify_neo4j_connection(self._driver, database=self._database):
-                    logger.info("✅ Shared Neo4j driver created and verified")
-                else:
-                    logger.error("❌ Neo4j driver created but connection verification failed")
-                    self._driver = None
-            else:
-                logger.error("❌ Failed to create shared Neo4j driver")
+            with self._lock:
+                # Double-check locking pattern
+                if self._driver is None:
+                    uri = os.getenv("NEO4J_URI")
+                    user = os.getenv("NEO4J_USERNAME")
+                    password = os.getenv("NEO4J_PASSWORD")
+                    self._database = os.getenv("NEO4J_DATABASE", "neo4j")
+                    
+                    if not uri or not user or not password:
+                        logger.error("❌ Neo4j credentials missing. Cannot create driver.")
+                        return None
+                    
+                    # Create driver with optimized connection pool settings
+                    # For single Neo4j instance, we want a reasonable pool size
+                    # 50 connections shared across all users is optimal
+                    self._driver = create_neo4j_driver(
+                        uri, 
+                        user, 
+                        password, 
+                        database=self._database,
+                        max_connection_pool_size=50,  # Shared pool for all users
+                        connection_timeout=30,
+                        connection_acquisition_timeout=60
+                    )
+                    
+                    if self._driver:
+                        # Verify connection
+                        if verify_neo4j_connection(self._driver, database=self._database):
+                            logger.info("✅ Shared Neo4j driver created and verified")
+                        else:
+                            logger.error("❌ Neo4j driver created but connection verification failed")
+                            self._driver = None
+                    else:
+                        logger.error("❌ Failed to create shared Neo4j driver")
         
         return self._driver
     

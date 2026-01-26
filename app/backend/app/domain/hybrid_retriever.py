@@ -183,12 +183,15 @@ Person name:"""
         # Filter by user_id and repository_id if provided
         if user_id and repository_id:
             query = """
-            MATCH (n:CodeNode {user_id: $user_id, repository_id: $repository_id})
-            WHERE 
+            MATCH (n:CodeNode)
+            WHERE n.user_id = $user_id AND n.repository_id = $repository_id
+              AND (
                 toLower(n.last_author) CONTAINS $person_name OR
                 toLower(n.top_owner) CONTAINS $person_name OR
                 ANY(collab IN n.collaborators WHERE toLower(collab) CONTAINS $person_name)
-            OPTIONAL MATCH (n)-[r]-(m:CodeNode {user_id: $user_id, repository_id: $repository_id})
+              )
+            OPTIONAL MATCH (n)-[r]-(m:CodeNode)
+            WHERE m.user_id = $user_id AND m.repository_id = $repository_id
             RETURN n, r, m
             ORDER BY n.commit_count DESC
             LIMIT 50
@@ -331,9 +334,11 @@ Person name:"""
         if user_id and repository_id:
             query = """
             UNWIND $anchors AS filename
-            MATCH (n:CodeNode {user_id: $user_id, repository_id: $repository_id}) 
-            WHERE n.id STARTS WITH filename
-            OPTIONAL MATCH (n)-[r]-(m:CodeNode {user_id: $user_id, repository_id: $repository_id})
+            MATCH (n:CodeNode)
+            WHERE n.user_id = $user_id AND n.repository_id = $repository_id
+              AND n.id STARTS WITH filename
+            OPTIONAL MATCH (n)-[r]-(m:CodeNode)
+            WHERE m.user_id = $user_id AND m.repository_id = $repository_id
             RETURN n, r, m
             LIMIT 20
             """
