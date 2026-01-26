@@ -84,6 +84,7 @@ def get_user_from_header(
     if cache_key in _user_cache:
         cached_user, cache_time = _user_cache[cache_key]
         if current_time - cache_time < _cache_ttl:
+            # Cached user is already expunged, safe to return
             return cached_user
         else:
             # Cache expired, remove it
@@ -103,6 +104,13 @@ def get_user_from_header(
         
         # Cache the user if found
         if user:
+            # Access attributes while session is active to prevent DetachedInstanceError
+            # This ensures attributes are loaded into memory before session closes
+            _ = user.id
+            _ = user.email
+            _ = user.is_active
+            # Expunge the user from the session so it can be used after session closes
+            db.expunge(user)
             _user_cache[cache_key] = (user, current_time)
             # Limit cache size to prevent memory issues
             if len(_user_cache) > 1000:
@@ -117,7 +125,9 @@ def get_user_from_header(
         # Try to return cached user if available (stale but better than error)
         if cache_key in _user_cache:
             logger.warning(f"Using cached user due to database error: {e}")
-            return _user_cache[cache_key][0]
+            cached_user = _user_cache[cache_key][0]
+            # Cached user is already expunged, safe to return
+            return cached_user
         raise HTTPException(
             status_code=503,
             detail="Database connection error. Please try again."
