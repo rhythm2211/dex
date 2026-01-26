@@ -73,10 +73,20 @@ class HybridRetriever:
                                 'path to', 'selected node']
         is_architecture_query = any(keyword in query_lower for keyword in architecture_keywords)
         
+        # Step 0.6: Detect General/Repository-level queries
+        general_keywords = ['what is', 'what does', 'about this', 'repo about', 'repository about', 
+                           'what is this', 'explain this', 'describe this', 'overview']
+        is_general_query = any(keyword in query_lower for keyword in general_keywords)
+        
         # Increase k for architecture queries to get more comprehensive context
         if is_architecture_query:
             k_vectors = max(k_vectors, 30)  # Get more context for architecture questions
             logger.info(f"Architecture query detected, increasing k to {k_vectors}")
+        
+        # Increase k for general queries to find README, docs, etc.
+        if is_general_query:
+            k_vectors = max(k_vectors, 40)  # Get even more context for general questions
+            logger.info(f"General/repository query detected, increasing k to {k_vectors}")
         
         # Step 0.75: If we found specific node names, search Neo4j directly first
         node_context = ""
@@ -250,19 +260,16 @@ class HybridRetriever:
         # Build Cypher query to find nodes by name (exact or partial match)
         # Search in both 'name' and 'id' fields, handling various formats
         # Node IDs can be: "file.py", "file.py::ClassName", "file.py::ClassName::methodName"
+        # Note: Neo4j Cypher doesn't support // comments, so we use /* */ style
         query = """
         UNWIND $node_names AS search_name
         MATCH (n:CodeNode)
         WHERE 
-            // Exact matches (highest priority)
             toLower(n.name) = toLower(search_name) OR
             toLower(n.id) = toLower(search_name) OR
-            // Ends with pattern (for "file.py::ClassName::methodName" format)
             toLower(n.id) ENDS WITH ('::' + toLower(search_name)) OR
-            // Contains pattern (for partial matches)
             toLower(n.name) CONTAINS toLower(search_name) OR
             toLower(n.id) CONTAINS toLower(search_name) OR
-            // Handle case where search_name might be just the function/class name
             toLower(n.id) CONTAINS ('::' + toLower(search_name) + '::') OR
             toLower(n.id) ENDS WITH ('::' + toLower(search_name))
         OPTIONAL MATCH (n)-[r]-(m:CodeNode)
@@ -363,8 +370,10 @@ class HybridRetriever:
                 return f"No nodes found matching: {', '.join(node_names)}", file_paths
                 
         except Exception as e:
-            logger.error(f"Node name query failed: {e}")
-            return f"Error querying nodes by name: {e}", file_paths
+            logger.error(f"Node name query failed: {e}", exc_info=True)
+            # Don't return error message as context - just return empty and log
+            # This allows the system to fall back to regular vector search
+            return "", file_paths
     
     def _extract_person_name(self, query: str) -> str:
         """

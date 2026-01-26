@@ -90,10 +90,14 @@ class RAGService:
         
         # Check if we have meaningful context (either code or graph)
         has_code_context = code_context and "No relevant code" not in code_context and "⚠️ ERROR" not in code_context
-        has_graph_context = graph_context and "No graph context" not in graph_context and "Graph query failed" not in graph_context
+        has_graph_context = graph_context and "No graph context" not in graph_context and "Graph query failed" not in graph_context and "Error querying" not in graph_context
+        
+        # Log what we found for debugging
+        logger.info(f"Query: '{query_text[:100]}...' | Code context: {bool(has_code_context)} | Graph context: {bool(has_graph_context)}")
         
         # Only fail if we have neither code nor graph context
         if not has_code_context and not has_graph_context:
+            logger.warning(f"No context found for query: {query_text[:100]}")
             return {
                 "answer": "I couldn't find enough context in the codebase to answer that. Please ensure the repository is ingested and your query is specific.",
                 "context_used": ""
