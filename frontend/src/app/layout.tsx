@@ -16,6 +16,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DEX",
   description: "Map-first code intelligence: understand any repository at a glance.",
+  icons: {
+    icon: "/dex-logo.png",
+    shortcut: "/dex-logo.png",
+    apple: "/dex-logo.png",
+  },
 };
 
 export default function RootLayout({

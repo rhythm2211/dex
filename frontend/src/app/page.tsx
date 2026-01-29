@@ -438,7 +438,7 @@ const CommandPaletteSimulation = () => {
 
   return (
     <div className="absolute top-[-60px] md:top-[-80px] left-1/2 -translate-x-1/2 w-[95%] max-w-xl z-20 pointer-events-none hidden md:block animate-float">
-      <div className="relative rounded-xl bg-[#0F0F10] border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.9)] overflow-hidden backdrop-blur-sm ring-1 ring-white/5" style={{ willChange: 'transform', transform: 'translate3d(0, 0, 0)' }}>
+      <div className="relative rounded-xl bg-[#0F0F10] border-dashed border-indigo-500/40 shadow-[0_20px_60px_rgba(0,0,0,0.9)] overflow-hidden backdrop-blur-sm ring-1 ring-white/5" style={{ willChange: 'transform', transform: 'translate3d(0, 0, 0)' }}>
         <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-white/[0.02]">
           <Search size={16} className="text-indigo-400" />
           <div className="h-5 flex items-center overflow-hidden w-full">
@@ -448,8 +448,8 @@ const CommandPaletteSimulation = () => {
             <span className="w-1.5 h-4 bg-indigo-500 ml-1 animate-[blink_1s_infinite]"></span>
           </div>
           <div className="ml-auto flex gap-1.5 opacity-50">
-             <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-slate-400 border border-white/5">⌘</span>
-             <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-slate-400 border border-white/5">K</span>
+             <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-slate-400 border-dashed border-slate-500/30">⌘</span>
+             <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-slate-400 border-dashed border-slate-500/30">K</span>
           </div>
         </div>
         {/* Results Simulation */}
@@ -480,7 +480,7 @@ const CommandPaletteSimulation = () => {
 // -----------------------------------------------------------------------------
 const ChatDemo = () => {
     return (
-        <div className="w-full h-full rounded-xl border border-white/10 bg-[#080808] flex flex-col relative overflow-hidden shadow-2xl">
+        <div className="w-full h-full rounded-xl border-dashed border-indigo-500/40 bg-[#080808] flex flex-col relative overflow-hidden shadow-2xl">
             {/* Header */}
             <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
                 <div className="flex items-center gap-2">
@@ -505,7 +505,7 @@ const ChatDemo = () => {
                     <div className="pl-3 text-slate-300 max-w-[90%] space-y-2">
                         <p>Based on <span className="text-emerald-400 underline decoration-dotted underline-offset-2">src/utils/api.ts</span> lines 45-62:</p>
                         <p>The <span className="text-slate-100">fetchWithRetry</span> function uses exponential backoff.</p>
-                        <div className="bg-[#020202] border border-white/10 p-2 rounded text-slate-400 overflow-x-hidden">
+                        <div className="bg-[#020202] border-dashed border-indigo-500/40 p-2 rounded text-slate-400 overflow-x-hidden">
                             <span className="text-purple-400">if</span> (status === 429) {'{'}<br/>
                             &nbsp;&nbsp;<span className="text-blue-400">const</span> delay = base * Math.pow(2, attempt);<br/>
                             &nbsp;&nbsp;<span className="text-yellow-400">await</span> wait(delay);<br/>
@@ -573,7 +573,7 @@ const GitHubActivityGrid = () => {
   if (!mounted) return null;
 
   return (
-    <div className="w-full rounded-xl border border-white/10 bg-[#0A0A0A] p-6 h-full flex flex-col">
+    <div className="w-full rounded-xl border-dashed border-indigo-500/40 bg-[#0A0A0A] p-6 h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <Github size={18} className="text-slate-400" />
@@ -627,7 +627,7 @@ const GitHubActivityGrid = () => {
 // -----------------------------------------------------------------------------
 const DependencyTreeVisual = () => {
   return (
-    <div className="relative w-full h-full rounded-xl border border-white/10 bg-[#0A0A0A] p-6 overflow-hidden">
+    <div className="relative w-full h-full rounded-xl border-dashed border-indigo-500/40 bg-[#0A0A0A] p-6 overflow-hidden">
       <div className="flex items-center gap-2 mb-4">
         <TreePine size={18} className="text-emerald-400" />
         <h3 className="text-sm font-semibold text-white">Dependency Tree</h3>
@@ -717,7 +717,7 @@ const CodeInsightsStats = () => {
   }, []);
 
   return (
-    <div className="w-full rounded-xl border border-white/10 bg-[#0A0A0A] p-6 h-full flex flex-col">
+    <div className="w-full rounded-xl border-dashed border-indigo-500/40 bg-[#0A0A0A] p-6 h-full flex flex-col">
       <div className="flex items-center gap-2 mb-6">
         <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
           <Activity size={16} />
@@ -733,7 +733,7 @@ const CodeInsightsStats = () => {
         {stats.map((stat, idx) => {
           const Icon = stat.icon;
           return (
-            <div key={idx} className="p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-all group">
+            <div key={idx} className="p-4 rounded-lg border-dashed border-slate-500/30 bg-white/[0.02] hover:bg-white/[0.05] transition-all group">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Icon size={14} className={`${stat.color} group-hover:scale-110 transition-transform`} />
@@ -779,7 +779,7 @@ const ChatbotFeature = () => {
   ]);
 
   return (
-    <div className="w-full rounded-xl border border-white/10 bg-[#0A0A0A] p-6 h-full flex flex-col">
+    <div className="w-full rounded-xl border-dashed border-indigo-500/40 bg-[#0A0A0A] p-6 h-full flex flex-col">
       <div className="flex items-center gap-2 mb-4">
         <MessageSquare size={18} className="text-indigo-400" />
         <h3 className="text-sm font-semibold text-white">AI Code Assistant</h3>
@@ -794,7 +794,7 @@ const ChatbotFeature = () => {
             <div className={`max-w-[85%] px-3 py-2 rounded-lg ${
               msg.role === 'user' 
                 ? 'bg-indigo-600/20 border border-indigo-500/30 text-indigo-100' 
-                : 'bg-white/5 border border-white/10 text-slate-300'
+                : 'bg-white/5 border-dashed border-indigo-500/40 text-slate-300'
             }`}>
               {msg.role === 'ai' && (
                 <div className="flex items-center gap-2 mb-1">
@@ -902,7 +902,7 @@ const ActivityInsightsPreview = () => {
   return (
     <div className="h-full">
       <Link href="/insights/activity" className="group block h-full">
-        <div className="relative rounded-2xl border border-white/10 bg-[#0A0A0A] overflow-hidden hover:border-indigo-500/30 transition-all duration-300 hover-lift h-full flex flex-col">
+        <div className="relative rounded-2xl border-dashed border-indigo-500/40 bg-[#0A0A0A] overflow-hidden hover:border-indigo-500/30 transition-all duration-300 hover-lift h-full flex flex-col">
           <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 to-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="p-6 relative z-10 flex-grow flex flex-col">
             <div className="flex items-center justify-between mb-4">
@@ -930,7 +930,7 @@ const ActivityInsightsPreview = () => {
                   {zones.map((zone, idx) => (
                     <div
                       key={idx}
-                      className="relative h-16 rounded-lg border border-white/5 overflow-hidden group/item"
+                      className="relative h-16 rounded-lg border-dashed border-slate-500/30 overflow-hidden group/item"
                       style={{ backgroundColor: getZoneColor(zone.intensity, zone.value) + '20' }}
                     >
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
@@ -979,7 +979,7 @@ const TeamInsightsPreview = () => {
   return (
     <div className="h-full">
       <Link href="/insights/team" className="group block h-full">
-        <div className="relative rounded-2xl border border-white/10 bg-[#0A0A0A] overflow-hidden hover:border-indigo-500/30 transition-all duration-300 hover-lift h-full flex flex-col">
+        <div className="relative rounded-2xl border-dashed border-indigo-500/40 bg-[#0A0A0A] overflow-hidden hover:border-indigo-500/30 transition-all duration-300 hover-lift h-full flex flex-col">
           <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
           <div className="p-6 relative z-10 flex-grow flex flex-col">
             <div className="flex items-center justify-between mb-4">
@@ -1001,7 +1001,7 @@ const TeamInsightsPreview = () => {
                   <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               ) : (
-                <div className="relative w-full h-48 rounded-lg bg-gradient-to-br from-indigo-900/20 to-purple-900/20 border border-white/5 overflow-hidden">
+                <div className="relative w-full h-48 rounded-lg bg-gradient-to-br from-indigo-900/20 to-purple-900/20 border-dashed border-slate-500/30 overflow-hidden">
                 {/* Simplified network visualization */}
                 <svg className="w-full h-full" viewBox="0 0 400 200">
                   {/* Links */}
@@ -1175,7 +1175,7 @@ export default function HomePage() {
       <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#050505]/80 backdrop-blur-sm" style={{ willChange: 'auto', transform: 'translate3d(0, 0, 0)' }}>
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 h-16">
           <Link href="/" className="group inline-flex items-center gap-3">
-            <span className="relative flex items-center justify-center h-8 w-8 rounded bg-[#0A0A0A] border border-white/10 group-hover:border-indigo-500/50 transition-colors shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+            <span className="relative flex items-center justify-center h-8 w-8 rounded bg-[#0A0A0A] border-dashed border-indigo-500/40 group-hover:border-indigo-500/50 transition-colors shadow-[0_0_15px_rgba(0,0,0,0.5)]">
                <Terminal className="text-white relative z-10 group-hover:text-indigo-400 transition-colors" size={16} />
             </span>
             <span className="text-sm font-bold tracking-[0.2em] text-white">DEX</span>
@@ -1193,13 +1193,13 @@ export default function HomePage() {
               <div className="flex items-center gap-3">
                  <Link 
                    href="/profile" 
-                   className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all"
+                   className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border-dashed border-indigo-500/30 hover:bg-indigo-500/20 transition-all"
                    title="View Profile"
                  >
                    <User size={14} className="text-indigo-400" />
                    <span className="text-xs text-indigo-300 font-medium">Profile</span>
                  </Link>
-                 <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
+                 <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border-dashed border-slate-500/30">
                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                    <span className="text-xs text-slate-300 max-w-[100px] truncate">{session.user.email}</span>
                    <button onClick={() => signOut()} className="text-slate-500 hover:text-white ml-1"><LogOut size={12} /></button>
@@ -1230,7 +1230,7 @@ export default function HomePage() {
 
           {/* Launch Badge */}
           <ScrollAnimated animation="fade-in-scale" delay={100}>
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/5 px-3 py-1 mb-8 backdrop-blur-sm">
+            <div className="inline-flex items-center gap-2 rounded-full border-dashed border-indigo-500/30 bg-emerald-500/5 px-3 py-1 mb-8 backdrop-blur-sm">
                <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -1290,7 +1290,7 @@ export default function HomePage() {
                     </span>
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                   </Link>
-                  <Link href="#demo" className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-8 py-3.5 text-xs font-bold uppercase tracking-widest text-slate-300 hover:bg-white/10 hover:text-white hover:border-indigo-500/30 transition-all backdrop-blur-sm hover:scale-105">
+                  <Link href="#demo" className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border-dashed border-indigo-500/40 bg-white/5 px-8 py-3.5 text-xs font-bold uppercase tracking-widest text-slate-300 hover:bg-white/10 hover:text-white hover:border-indigo-500/50 transition-all backdrop-blur-sm hover:scale-105">
                     <Github size={14} className="group-hover:rotate-12 transition-transform" /> Connect GitHub
                   </Link>
                 </div>
@@ -1321,7 +1321,7 @@ export default function HomePage() {
         <section className="mx-auto max-w-6xl px-6 py-20 relative">
           <ScrollAnimated animation="fade-in" delay={0}>
             <div className="text-center mb-12">
-              <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/20 bg-indigo-500/5 px-3 py-1 mb-6 backdrop-blur-sm">
+              <div className="inline-flex items-center gap-2 rounded-full border-dashed border-purple-500/30 bg-indigo-500/5 px-3 py-1 mb-6 backdrop-blur-sm">
                 <Github size={14} className="text-indigo-400" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">
                   Live Integration
@@ -1369,7 +1369,7 @@ export default function HomePage() {
           {/* Feature Highlights */}
           <div className="grid md:grid-cols-3 gap-6 mt-8">
             <ScrollAnimated animation="fade-in-scale" delay={100}>
-              <div className="p-6 rounded-xl border border-white/10 bg-[#0A0A0A] hover:border-indigo-500/30 transition-all hover-lift h-full flex flex-col">
+              <div className="p-6 rounded-xl border-dashed border-purple-500/40 bg-[#0A0A0A] hover:border-purple-500/60 transition-all hover-lift h-full flex flex-col">
                 <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4">
                   <Github size={20} />
                 </div>
@@ -1381,7 +1381,7 @@ export default function HomePage() {
             </ScrollAnimated>
 
             <ScrollAnimated animation="fade-in-scale" delay={200}>
-              <div className="p-6 rounded-xl border border-white/10 bg-[#0A0A0A] hover:border-emerald-500/30 transition-all hover-lift h-full flex flex-col">
+              <div className="p-6 rounded-xl border-dashed border-purple-500/40 bg-[#0A0A0A] hover:border-purple-500/60 transition-all hover-lift h-full flex flex-col">
                 <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4">
                   <TreePine size={20} />
                 </div>
@@ -1393,7 +1393,7 @@ export default function HomePage() {
             </ScrollAnimated>
 
             <ScrollAnimated animation="fade-in-scale" delay={300}>
-              <div className="p-6 rounded-xl border border-white/10 bg-[#0A0A0A] hover:border-purple-500/30 transition-all hover-lift h-full flex flex-col">
+              <div className="p-6 rounded-xl border-dashed border-purple-500/40 bg-[#0A0A0A] hover:border-purple-500/60 transition-all hover-lift h-full flex flex-col">
                 <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 mb-4">
                   <MessageSquare size={20} />
                 </div>
@@ -1404,6 +1404,40 @@ export default function HomePage() {
               </div>
             </ScrollAnimated>
           </div>
+        </section>
+
+        {/* ===========================================================================
+            VIDEO AESTHETIC COMPONENT
+        ============================================================================ */}
+        <section className="relative mx-auto max-w-6xl px-6 py-20 z-10">
+          <ScrollAnimated animation="fade-in" delay={0}>
+            <div className="grid md:grid-cols-2 gap-8 items-center">
+              {/* Text Content */}
+              <div className="space-y-6">
+                <h2 className="text-3xl sm:text-5xl font-bold text-white">
+                  Experience the <span className="gradient-text">Power</span> of DEX
+                </h2>
+                <p className="text-lg sm:text-xl text-slate-300 leading-relaxed">
+                  See how DEX transforms complex codebases into intuitive, navigable knowledge graphs
+                  that accelerate your development workflow.
+                </p>
+              </div>
+              
+              {/* Video */}
+              <div className="relative w-full aspect-video overflow-hidden">
+                <video
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                >
+                  <source src="/Screen Recording 2026-01-29 220635.mp4" type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            </div>
+          </ScrollAnimated>
         </section>
 
         {/* ===========================================================================
@@ -1440,7 +1474,7 @@ export default function HomePage() {
                                   const Icon = item.icon;
                                   return (
                                    <ScrollAnimated key={i} animation="fade-in" delay={item.delay}>
-                                     <div className={`flex gap-4 p-4 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] ${item.borderClass} transition-all duration-300 hover-lift`}>
+                                     <div className={`flex gap-4 p-4 rounded-xl border-dashed border-emerald-500/40 bg-white/[0.02] hover:bg-white/[0.05] ${item.borderClass} transition-all duration-300 hover-lift`}>
                                          <div className="mt-1">
                                              <Icon size={18} className={`${item.colorClass} group-hover:scale-110 transition-transform`} />
                                          </div>
@@ -1508,7 +1542,7 @@ export default function HomePage() {
                 
                 {/* Item 1: Visual Dependency Mapping */}
                 <ScrollAnimated animation="fade-in-scale" delay={100}>
-                  <div className="rounded-2xl border border-white/10 bg-[#0A0A0A] overflow-hidden relative group hover-lift h-full" style={{ willChange: 'transform' }}>
+                  <div className="rounded-2xl border-dashed border-indigo-500/40 bg-[#0A0A0A] overflow-hidden relative group hover-lift h-full" style={{ willChange: 'transform' }}>
                     <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                     <div className="p-8 relative z-10 h-full flex flex-col">
                          <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 group-hover:scale-110 transition-transform duration-200">
@@ -1522,7 +1556,7 @@ export default function HomePage() {
 
                 {/* Item 2: SOC2 Compliant */}
                 <ScrollAnimated animation="fade-in-scale" delay={200}>
-                  <div className="rounded-2xl border border-white/10 bg-[#0A0A0A] overflow-hidden relative group hover-lift h-full" style={{ willChange: 'transform' }}>
+                  <div className="rounded-2xl border-dashed border-emerald-500/40 bg-[#0A0A0A] overflow-hidden relative group hover-lift h-full" style={{ willChange: 'transform' }}>
                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-transparent"></div>
                      <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                      <div className="p-8 h-full flex flex-col relative z-10">
@@ -1533,13 +1567,13 @@ export default function HomePage() {
                         <p className="text-slate-400 text-sm mb-6 flex-grow">We take code security seriously. Your intellectual property never leaves the encrypted enclave.</p>
                         
                         <div className="space-y-2 mt-auto">
-                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-white/5 border border-white/5 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/30 transition-all">
+                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-white/5 border-dashed border-emerald-500/30 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/50 transition-all">
                                 <ShieldCheck size={12} className="text-emerald-500" /> End-to-End Encryption
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-white/5 border border-white/5 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/30 transition-all">
+                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-white/5 border-dashed border-emerald-500/30 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/50 transition-all">
                                 <Database size={12} className="text-emerald-500" /> No Data Retention
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-white/5 border border-white/5 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/30 transition-all">
+                            <div className="flex items-center gap-3 text-xs text-slate-300 p-2.5 rounded bg-white/5 border-dashed border-emerald-500/30 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/50 transition-all">
                                 <Layers size={12} className="text-emerald-500" /> VPC Peering Available
                             </div>
                         </div>
@@ -1549,7 +1583,7 @@ export default function HomePage() {
 
                 {/* Item 3: One-Click Sync */}
                 <ScrollAnimated animation="fade-in-scale" delay={300}>
-                  <div className="rounded-2xl border border-white/10 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full" style={{ willChange: 'transform' }}>
+                  <div className="rounded-2xl border-dashed border-slate-500/40 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full" style={{ willChange: 'transform' }}>
                      <div className="absolute inset-0 bg-gradient-to-br from-slate-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                      <div className="relative z-10 h-full flex flex-col">
                        <Github className="text-slate-200 mb-4 group-hover:text-white group-hover:scale-110 transition-all duration-300" size={32} />
@@ -1561,7 +1595,7 @@ export default function HomePage() {
 
                 {/* Item 4: Real-time Indexing */}
                 <ScrollAnimated animation="fade-in-scale" delay={400}>
-                  <div className="rounded-2xl border border-white/10 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full" style={{ willChange: 'transform' }}>
+                  <div className="rounded-2xl border-dashed border-yellow-500/40 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full" style={{ willChange: 'transform' }}>
                      <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                      <div className="relative z-10 h-full flex flex-col">
                        <Zap className="text-yellow-400 mb-4 group-hover:text-yellow-300 group-hover:scale-110 transition-all duration-200" size={32} />
@@ -1573,7 +1607,7 @@ export default function HomePage() {
                 
                 {/* Item 5: Built for Teams */}
                 <ScrollAnimated animation="fade-in-scale" delay={500}>
-                  <div className="rounded-2xl border border-white/10 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full" style={{ willChange: 'transform' }}>
+                  <div className="rounded-2xl border-dashed border-indigo-500/40 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full" style={{ willChange: 'transform' }}>
                     <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                     <div className="relative z-10 h-full flex flex-col">
                       <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 group-hover:scale-110 transition-transform">
@@ -1587,7 +1621,7 @@ export default function HomePage() {
 
                 {/* Item 6: AI Chatbot */}
                 <ScrollAnimated animation="fade-in-scale" delay={600}>
-                  <div className="rounded-2xl border border-white/10 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full" style={{ willChange: 'transform' }}>
+                  <div className="rounded-2xl border-dashed border-purple-500/40 bg-[#0A0A0A] overflow-hidden relative group p-8 hover-lift h-full" style={{ willChange: 'transform' }}>
                     <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                     <div className="relative z-10 h-full flex flex-col">
                       <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 mb-4 group-hover:scale-110 transition-transform">
@@ -1616,7 +1650,7 @@ export default function HomePage() {
             {/* Header Section */}
             <ScrollAnimated animation="fade-in" delay={0}>
               <div className="text-center mb-16">
-                <div className="inline-flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 mb-6 backdrop-blur-sm animate-pulse-glow">
+                <div className="inline-flex items-center gap-2 rounded-full border-dashed border-red-500/40 bg-red-500/10 px-4 py-2 mb-6 backdrop-blur-sm animate-pulse-glow">
                   <Radio size={16} className="text-red-400 animate-pulse" />
                   <span className="text-[11px] font-bold uppercase tracking-widest text-red-300">
                     New Feature
@@ -1642,14 +1676,14 @@ export default function HomePage() {
               <ScrollAnimated animation="slide-right" delay={100}>
                 <div className="relative group">
                   {/* Glass Panel Container */}
-                  <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-8 shadow-2xl hover:border-red-500/30 transition-all duration-500 hover-lift relative overflow-hidden">
+                  <div className="rounded-2xl border-dashed border-indigo-500/40 bg-[#0A0A0A]/90 backdrop-blur-xl p-8 shadow-2xl hover:border-red-500/30 transition-all duration-500 hover-lift relative overflow-hidden">
                     {/* Animated Background Gradient */}
                     <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 via-orange-500/5 to-yellow-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                     
                     {/* Header */}
                     <div className="relative z-10 mb-6">
                       <div className="flex items-center gap-3 mb-4">
-                        <div className="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center border border-red-500/30 group-hover:scale-110 transition-transform">
+                        <div className="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center border-dashed border-red-500/40 group-hover:scale-110 transition-transform">
                           <Target size={24} className="text-red-400" />
                         </div>
                         <div>
@@ -1660,12 +1694,12 @@ export default function HomePage() {
                     </div>
 
                     {/* Graph Visualization Mockup */}
-                    <div className="relative z-10 space-y-4">
+                    <div className="relative z-10 space-y-6">
                       {/* Central Node (Source) */}
-                      <div className="flex justify-center">
+                      <div className="flex justify-center mb-6">
                         <div className="relative">
-                          <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-red-600 to-red-800 border-2 border-red-400 flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.5)] animate-pulse-glow">
-                            <Code size={32} className="text-white" />
+                          <div className="w-24 h-24 rounded-xl bg-gradient-to-br from-red-600 to-red-800 border-2 border-red-400 flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.5)] animate-pulse-glow">
+                            <Code size={36} className="text-white" />
                           </div>
                           {/* Pulse rings */}
                           <div className="absolute inset-0 rounded-xl border-2 border-red-400/50 animate-ping"></div>
@@ -1674,37 +1708,84 @@ export default function HomePage() {
                       </div>
 
                       {/* Connected Nodes */}
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-3 gap-6 mb-6">
                         {[
-                          { bgColor: 'bg-red-500/20', borderColor: 'border-red-500/40', textColor: 'text-red-400', textColorLight: 'text-red-300', gradientColor: 'from-red-500/50', risk: 85, label: 'Direct' },
-                          { bgColor: 'bg-orange-500/20', borderColor: 'border-orange-500/40', textColor: 'text-orange-400', textColorLight: 'text-orange-300', gradientColor: 'from-orange-500/50', risk: 45, label: 'Indirect' },
-                          { bgColor: 'bg-yellow-500/20', borderColor: 'border-yellow-500/40', textColor: 'text-yellow-400', textColorLight: 'text-yellow-300', gradientColor: 'from-yellow-500/50', risk: 25, label: 'Dependency' }
-                        ].map((node, idx) => (
-                          <div key={idx} className="relative">
-                            {/* Connection Line */}
-                            <div className={`absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r ${node.gradientColor} to-transparent`}></div>
-                            {/* Node */}
-                            <div className={`relative ml-auto w-16 h-16 rounded-lg ${node.bgColor} border ${node.borderColor} flex flex-col items-center justify-center group-hover:scale-110 transition-transform`}>
-                              <FileText size={20} className={node.textColor + " mb-1"} />
-                              <span className={`text-[10px] font-bold ${node.textColorLight}`}>{node.risk}</span>
+                          { bgColor: 'bg-red-500/20', borderColor: 'border-red-500/40', textColor: 'text-red-400', textColorLight: 'text-red-300', gradientColor: 'from-red-500/50', risk: 85, label: 'Direct', icon: FileText },
+                          { bgColor: 'bg-orange-500/20', borderColor: 'border-orange-500/40', textColor: 'text-orange-400', textColorLight: 'text-orange-300', gradientColor: 'from-orange-500/50', risk: 45, label: 'Indirect', icon: Network },
+                          { bgColor: 'bg-yellow-500/20', borderColor: 'border-yellow-500/40', textColor: 'text-yellow-400', textColorLight: 'text-yellow-300', gradientColor: 'from-yellow-500/50', risk: 25, label: 'Dependency', icon: Layers }
+                        ].map((node, idx) => {
+                          const IconComponent = node.icon;
+                          return (
+                            <div key={idx} className="relative">
+                              {/* Connection Line */}
+                              <div className={`absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r ${node.gradientColor} to-transparent`}></div>
+                              {/* Node */}
+                              <div className={`relative ml-auto w-20 h-20 rounded-lg ${node.bgColor} border-dashed ${node.borderColor} flex flex-col items-center justify-center group-hover:scale-110 transition-transform`}>
+                                <IconComponent size={24} className={node.textColor + " mb-1"} />
+                                <span className={`text-sm font-bold ${node.textColorLight}`}>{node.risk}</span>
+                              </div>
+                              <div className="text-center mt-3">
+                                <span className="text-xs font-semibold text-slate-400">{node.label}</span>
+                              </div>
                             </div>
-                            <div className="text-center mt-2">
-                              <span className="text-[10px] text-slate-500">{node.label}</span>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
-                      {/* Risk Score Badge */}
-                      <div className="mt-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 backdrop-blur-sm">
-                        <div className="flex items-center justify-between">
+                      {/* Detailed Stats Grid */}
+                      <div className="grid grid-cols-3 gap-3 mb-6">
+                        <div className="p-3 rounded-lg bg-red-500/5 border-dashed border-red-500/30 text-center">
+                          <div className="text-lg font-bold text-red-400 mb-1">85</div>
+                          <div className="text-[10px] text-slate-500 uppercase tracking-wider">Direct</div>
+                        </div>
+                        <div className="p-3 rounded-lg bg-orange-500/5 border-dashed border-orange-500/30 text-center">
+                          <div className="text-lg font-bold text-orange-400 mb-1">45</div>
+                          <div className="text-[10px] text-slate-500 uppercase tracking-wider">Indirect</div>
+                        </div>
+                        <div className="p-3 rounded-lg bg-yellow-500/5 border-dashed border-yellow-500/30 text-center">
+                          <div className="text-lg font-bold text-yellow-400 mb-1">25</div>
+                          <div className="text-[10px] text-slate-500 uppercase tracking-wider">Dependency</div>
+                        </div>
+                      </div>
+
+                      {/* Risk Score Badge - Enhanced */}
+                      <div className="p-5 rounded-xl bg-red-500/10 border border-red-500/30 backdrop-blur-sm">
+                        <div className="flex items-center justify-between mb-3">
                           <div>
-                            <div className="text-xs text-slate-500 mb-1">Total Risk Score</div>
-                            <div className="text-2xl font-bold text-red-400">156</div>
+                            <div className="text-xs text-slate-500 mb-1 uppercase tracking-wider">Total Risk Score</div>
+                            <div className="text-3xl font-bold text-red-400">156</div>
                           </div>
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/20 border border-orange-500/40">
-                            <AlertTriangle size={16} className="text-orange-400" />
+                          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500/20 border-dashed border-orange-500/50">
+                            <AlertTriangle size={18} className="text-orange-400" />
                             <span className="text-xs font-bold text-orange-300">High Risk Detected</span>
+                          </div>
+                        </div>
+                        {/* Additional Risk Breakdown */}
+                        <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-red-500/20">
+                          <div className="text-center">
+                            <div className="text-xs text-slate-500 mb-1">Files Affected</div>
+                            <div className="text-sm font-bold text-white">12</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-xs text-slate-500 mb-1">Tests Required</div>
+                            <div className="text-sm font-bold text-white">8</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-xs text-slate-500 mb-1">Impact Level</div>
+                            <div className="text-sm font-bold text-red-400">Critical</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Safety Recommendations Preview */}
+                      <div className="mt-4 p-4 rounded-lg bg-slate-500/5 border-dashed border-orange-500/30">
+                        <div className="flex items-start gap-3">
+                          <ShieldCheck size={16} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <div className="text-xs font-semibold text-white mb-1">Safety Recommendation</div>
+                            <div className="text-xs text-slate-400 leading-relaxed">
+                              Review test coverage before deployment. 3 files have low test coverage and may require additional testing.
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1717,9 +1798,9 @@ export default function HomePage() {
               <ScrollAnimated animation="slide-left" delay={200}>
                 <div className="space-y-6">
                   {/* Risk Scoring Card */}
-                  <div className="rounded-xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-orange-500/30 transition-all hover-lift group">
+                  <div className="rounded-xl border-dashed border-indigo-500/40 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-orange-500/30 transition-all hover-lift group">
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-lg bg-orange-500/20 flex items-center justify-center border border-orange-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
+                      <div className="w-12 h-12 rounded-lg bg-orange-500/20 flex items-center justify-center border-dashed border-orange-500/40 group-hover:scale-110 transition-transform flex-shrink-0">
                         <BarChart3 size={24} className="text-orange-400" />
                       </div>
                       <div className="flex-1">
@@ -1760,7 +1841,7 @@ export default function HomePage() {
                         <p className="text-sm text-slate-300 leading-relaxed mb-3">
                           Visualize the entire dependency graph with interactive nodes showing direct dependencies, indirect impacts, and reverse dependencies in real-time.
                         </p>
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/40">
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/20 border-dashed border-purple-500/50">
                           <Target size={14} className="text-purple-400" />
                           <span className="text-xs font-semibold text-purple-300">Full Context View</span>
                         </div>
@@ -1769,9 +1850,9 @@ export default function HomePage() {
                   </div>
 
                   {/* Test Recommendations Card */}
-                  <div className="rounded-xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-emerald-500/30 transition-all hover-lift group">
+                  <div className="rounded-xl border-dashed border-orange-500/40 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-orange-500/60 transition-all hover-lift group">
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-lg bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
+                      <div className="w-12 h-12 rounded-lg bg-emerald-500/20 flex items-center justify-center border-dashed border-emerald-500/40 group-hover:scale-110 transition-transform flex-shrink-0">
                         <TestTube size={24} className="text-emerald-400" />
                       </div>
                       <div className="flex-1">
@@ -1786,7 +1867,7 @@ export default function HomePage() {
                   </div>
 
                   {/* Expert Routing Card */}
-                  <div className="rounded-xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-indigo-500/30 transition-all hover-lift group">
+                  <div className="rounded-xl border-dashed border-indigo-500/40 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-indigo-500/30 transition-all hover-lift group">
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
                         <UserCheck size={24} className="text-indigo-400" />
@@ -1808,9 +1889,9 @@ export default function HomePage() {
             {/* Bottom CTA Section */}
             <ScrollAnimated animation="fade-in" delay={300}>
               <div className="text-center">
-                <div className="inline-block rounded-2xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-8 max-w-2xl mx-auto hover:border-indigo-500/30 transition-all hover-lift">
+                <div className="inline-block rounded-2xl border-dashed border-indigo-500/40 bg-[#0A0A0A]/90 backdrop-blur-xl p-8 max-w-2xl mx-auto hover:border-indigo-500/30 transition-all hover-lift">
                   <div className="flex items-center justify-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+                    <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center border-dashed border-indigo-500/40">
                       <Network size={20} className="text-indigo-400" />
                     </div>
                     <h3 className="text-xl font-bold text-white">Ready to See Your Impact?</h3>
@@ -1832,7 +1913,7 @@ export default function HomePage() {
                     </Link>
                     <Link 
                       href="/blast-radius" 
-                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-6 py-3.5 text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white hover:border-indigo-500/30 transition-all backdrop-blur-sm"
+                      className="inline-flex items-center gap-2 rounded-xl border-dashed border-indigo-500/40 bg-white/5 px-6 py-3.5 text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white hover:border-indigo-500/30 transition-all backdrop-blur-sm"
                     >
                       <Radio size={16} />
                       View Demo
@@ -1934,7 +2015,7 @@ export default function HomePage() {
 
               {/* Content Area */}
               <div className="flex-1 relative z-10">
-                <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/80 backdrop-blur-sm p-8 md:p-10">
+                <div className="rounded-2xl border-dashed border-indigo-500/40 bg-[#0A0A0A]/80 backdrop-blur-sm p-8 md:p-10">
                   {/* Header */}
                   <div className="flex items-center gap-3 mb-6">
                     <Github size={20} className="text-indigo-400" />
@@ -1945,7 +2026,7 @@ export default function HomePage() {
                   <div className="grid md:grid-cols-2 gap-6">
                     {/* Left Column */}
                     <div className="space-y-4">
-                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                      <div className="flex items-start gap-3 p-4 rounded-lg border-dashed border-slate-500/30 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
                         <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
                           <GitBranch size={16} className="text-indigo-400" />
                         </div>
@@ -1955,7 +2036,7 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                      <div className="flex items-start gap-3 p-4 rounded-lg border-dashed border-slate-500/30 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
                         <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
                           <GitCommit size={16} className="text-emerald-400" />
                         </div>
@@ -1968,7 +2049,7 @@ export default function HomePage() {
 
                     {/* Right Column */}
                     <div className="space-y-4">
-                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                      <div className="flex items-start gap-3 p-4 rounded-lg border-dashed border-slate-500/30 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
                         <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
                           <GitMerge size={16} className="text-purple-400" />
                         </div>
@@ -1978,7 +2059,7 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      <div className="flex items-start gap-3 p-4 rounded-lg border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
+                      <div className="flex items-start gap-3 p-4 rounded-lg border-dashed border-slate-500/30 bg-white/[0.02] hover:bg-white/[0.05] transition-colors">
                         <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
                           <Code size={16} className="text-yellow-400" />
                         </div>
@@ -2076,7 +2157,7 @@ export default function HomePage() {
 
           {/* Main CTA Container - Hovering Above */}
           <ScrollAnimated animation="blur-in" delay={0}>
-            <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#0F0F10] p-12 text-center group hover-lift" style={{ zIndex: 10, transform: 'translate3d(0, 0, 0)' }}>
+            <div className="relative rounded-3xl overflow-hidden border-dashed border-indigo-500/40 bg-[#0F0F10] p-12 text-center group hover-lift" style={{ zIndex: 10, transform: 'translate3d(0, 0, 0)' }}>
             
             {/* Hover Glow */}
             <div className="absolute inset-0 bg-gradient-to-b from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
@@ -2102,7 +2183,7 @@ export default function HomePage() {
                        <Link href="/signup" className="group/btn inline-flex items-center justify-center gap-2 rounded-xl bg-white text-black px-8 py-4 text-xs font-bold uppercase tracking-widest hover:bg-slate-200 transition-all shadow-[0_0_30px_rgba(255,255,255,0.15)] hover:shadow-[0_0_40px_rgba(255,255,255,0.25)] hover:scale-105 w-full sm:w-auto">
                          Get Started <ArrowRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
                        </Link>
-                       <Link href="mailto:sales@dex.ai" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-8 py-4 text-xs font-bold uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:border-indigo-500/30 transition-all hover:scale-105 w-full sm:w-auto">
+                       <Link href="mailto:sales@dex.ai" className="inline-flex items-center justify-center gap-2 rounded-xl border-dashed border-indigo-500/40 px-8 py-4 text-xs font-bold uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:border-indigo-500/30 transition-all hover:scale-105 w-full sm:w-auto">
                          Contact Sales
                        </Link>
                      </>
