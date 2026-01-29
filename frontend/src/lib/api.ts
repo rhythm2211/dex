@@ -264,16 +264,45 @@ class DexClient {
   // 6. Get Knowledge Graph Data
   public async getGraphData(): Promise<GraphData> {
     try {
+      // Log the base URL being used for debugging
+      console.log(`[Graph] Using API URL: ${this.baseURL}`);
+      console.log(`[Graph] Full endpoint: ${this.baseURL}/api/v1/graph/structure`);
+      
       // Graph queries can take longer, especially for large codebases
       const res: AxiosResponse<GraphData> = await this.client.get('/graph/structure', {
         timeout: 120000, // 2 minutes for large graphs
       });
       if (!res.data || !Array.isArray(res.data.nodes)) {
+        console.warn("[Graph] Invalid response format - missing nodes array");
         return { nodes: [], links: [] };
       }
       return res.data;
     } catch (error: any) {
+      // Enhanced error logging for better diagnostics
       console.error("Graph Load Failure:", error?.message);
+      console.error("Full error details:", {
+        message: error?.message,
+        code: error?.code,
+        response: error?.response?.data,
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        baseURL: this.baseURL,
+        endpoint: `${this.baseURL}/api/v1/graph/structure`,
+        isNetworkError: error?.code === 'ERR_NETWORK' || error?.code === 'ECONNREFUSED',
+        isTimeout: error?.code === 'ECONNABORTED' || error?.message?.includes('timeout'),
+      });
+      
+      // Provide user-friendly error message based on error type
+      if (error?.code === 'ECONNREFUSED' || error?.code === 'ERR_NETWORK' || error?.message?.includes('Network Error')) {
+        console.error(`[Graph] Cannot connect to backend at ${this.baseURL}. Please check if the backend is running and accessible.`);
+      } else if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
+        console.error(`[Graph] Request timed out after 120 seconds. The graph may be too large or the backend is slow.`);
+      } else if (error?.response?.status === 500) {
+        console.error(`[Graph] Backend server error. Check backend logs for details.`);
+      } else if (error?.response?.status === 404) {
+        console.error(`[Graph] Endpoint not found. Check if backend API routes are configured correctly.`);
+      }
+      
       // Return empty graph instead of throwing to prevent UI crashes
       return { nodes: [], links: [] };
     }
@@ -403,6 +432,80 @@ class DexClient {
     } catch (error: any) {
       console.error("Orphan Nodes Failure:", error?.message);
       return [];
+    }
+  }
+
+  // [NEW] 12. Get Blast Radius (Dependency Visualization with Risk Scoring)
+  public async getBlastRadius(nodeId: string): Promise<{ 
+    nodes: any[]; 
+    edges: any[]; 
+    total_risk_score?: number;
+    kill_switch?: boolean;
+    test_files?: Array<{id: string; name: string}>;
+    warnings?: string[];
+    expert_recommendations?: Array<{name: string; files: string[]; confidence: number}>;
+    impact_categories?: {
+      breaking_api_changes: Array<{id: string; name: string; risk_score: number; is_source?: boolean}>;
+      data_compliance_risk: Array<{id: string; name: string; sensitivity: string[]; risk_score: number; is_source?: boolean}>;
+      infrastructure_reset: Array<{id: string; name: string; risk_score: number; is_source?: boolean}>;
+      logic_breakage: Array<{id: string; name: string; risk_score: number}>;
+    };
+  }> {
+    try {
+      const res: AxiosResponse<{ 
+        nodes: any[]; 
+        edges: any[]; 
+        total_risk_score?: number;
+        kill_switch?: boolean;
+        test_files?: Array<{id: string; name: string}>;
+        warnings?: string[];
+        expert_recommendations?: Array<{name: string; files: string[]; confidence: number}>;
+        impact_categories?: {
+          breaking_api_changes: Array<{id: string; name: string; risk_score: number; is_source?: boolean}>;
+          data_compliance_risk: Array<{id: string; name: string; sensitivity: string[]; risk_score: number; is_source?: boolean}>;
+          infrastructure_reset: Array<{id: string; name: string; risk_score: number; is_source?: boolean}>;
+          logic_breakage: Array<{id: string; name: string; risk_score: number}>;
+        };
+      }> = await this.client.get(`/blast-radius/${encodeURIComponent(nodeId)}`, {
+        timeout: 60000, // 60 seconds for blast radius analysis
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("Blast Radius Failure:", error?.message);
+      return { 
+        nodes: [], 
+        edges: [],
+        total_risk_score: 0,
+        kill_switch: false,
+        test_files: [],
+        warnings: [],
+        expert_recommendations: [],
+        impact_categories: {
+          breaking_api_changes: [],
+          data_compliance_risk: [],
+          infrastructure_reset: [],
+          logic_breakage: []
+        }
+      };
+    }
+  }
+
+  // [NEW] 13. RAG-powered Impact Analysis
+  public async analyzeImpact(query: string, nodeId?: string): Promise<{
+    answer: string;
+    context_used?: string;
+  }> {
+    try {
+      const res = await this.client.post('/blast-radius/analyze-impact', {
+        query,
+        node_id: nodeId,
+      }, {
+        timeout: 60000,
+      });
+      return res.data;
+    } catch (error: any) {
+      console.error("Impact Analysis Failure:", error?.message);
+      throw new Error(error.response?.data?.detail || "Impact analysis failed");
     }
   }
 }

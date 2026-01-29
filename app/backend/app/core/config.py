@@ -186,9 +186,18 @@ class Settings(BaseSettings):
                 # Pooled connection - only add SSL mode, endpoint comes from SNI
                 connection_string += "?sslmode=require"
         else:
-            # For other databases, add SSL if not specified
-            if "sslmode" not in connection_string:
-                connection_string += "?sslmode=require"
+            # For local databases (localhost), disable SSL
+            # For remote databases in production, require SSL; in development, prefer SSL
+            if resolved_host in ["localhost", "127.0.0.1", "::1"]:
+                if "sslmode" not in connection_string:
+                    connection_string += "?sslmode=disable"
+            else:
+                # For remote databases, require SSL in production, prefer in development
+                if "sslmode" not in connection_string:
+                    if self.ENVIRONMENT == "production":
+                        connection_string += "?sslmode=require"
+                    else:
+                        connection_string += "?sslmode=prefer"
         
         logger.debug(f"PostgreSQL connection string generated for pgvector (host: {resolved_host}, port: {self.POSTGRES_PORT})")
         return connection_string 
@@ -232,9 +241,18 @@ class Settings(BaseSettings):
                 # Pooled connection - only add SSL mode, endpoint comes from SNI
                 connection_string += "?sslmode=require"
         else:
-            # For other databases, add SSL if not specified
-            if "sslmode" not in connection_string:
-                connection_string += "?sslmode=require"
+            # For local databases (localhost), disable SSL
+            # For remote databases in production, require SSL; in development, prefer SSL
+            if resolved_host in ["localhost", "127.0.0.1", "::1"]:
+                if "sslmode" not in connection_string:
+                    connection_string += "?sslmode=disable"
+            else:
+                # For remote databases, require SSL in production, prefer in development
+                if "sslmode" not in connection_string:
+                    if self.ENVIRONMENT == "production":
+                        connection_string += "?sslmode=require"
+                    else:
+                        connection_string += "?sslmode=prefer"
         
         # Log connection details (without password) for debugging
         logger.info(f"Database connection: {self.POSTGRES_USER}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}")

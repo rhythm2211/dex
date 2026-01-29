@@ -2,10 +2,14 @@
 Embedding utility to initialize different embedding providers.
 Supports: local (HuggingFace), Voyage AI, Cohere, OpenAI, and HuggingFace Inference API.
 """
+import os
 import logging
 from typing import Union
 from langchain_core.embeddings import Embeddings
 from backend.app.core.config import settings
+
+# Ensure multiprocessing is disabled for embeddings (Windows compatibility)
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logger = logging.getLogger("dex-core")
 
@@ -162,6 +166,10 @@ def _get_local_embeddings() -> Embeddings:
     
     return HuggingFaceEmbeddings(
         model_name=model_name,
-        model_kwargs={'device': 'cpu'},  # Use CPU for local models
-        encode_kwargs={'normalize_embeddings': True}  # Normalize for better cosine similarity
+        model_kwargs={
+            'device': 'cpu'  # Use CPU for local models
+        },
+        encode_kwargs={
+            'normalize_embeddings': True  # Normalize for better cosine similarity
+        }
     )

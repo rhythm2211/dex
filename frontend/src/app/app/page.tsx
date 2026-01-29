@@ -1541,6 +1541,18 @@ export default function Dashboard() {
                                     Clear
                                 </button>
                             </div>
+                            <button
+                              onClick={() => {
+                                const nodeId = selectedNode.id || selectedNode.name || selectedNode.path;
+                                if (nodeId) {
+                                  router.push(`/blast-radius?node=${encodeURIComponent(nodeId)}`);
+                                }
+                              }}
+                              disabled={!selectedNode.id && !selectedNode.name && !selectedNode.path}
+                              className="w-full py-3 bg-indigo-600/20 hover:bg-indigo-600/30 disabled:opacity-50 disabled:cursor-not-allowed border border-indigo-500/50 text-indigo-300 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-indigo-500/30 hover:border-indigo-400/70"
+                            >
+                                <Network size={12} className="text-indigo-400"/> View Blast Radius
+                            </button>
                         </div>
                     ) : (
                         <div className="py-10 flex flex-col items-center justify-center text-slate-700 gap-3 opacity-60">

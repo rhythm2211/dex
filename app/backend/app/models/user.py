@@ -83,17 +83,43 @@ def init_db():
     from sqlalchemy import text
     import logging
     import time
+    import json
     logger = logging.getLogger("dex-core")
+    
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "init_db function entry", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
     
     # Retry logic for database connection (handles network issues)
     max_retries = 3
     retry_delay = 2  # seconds
     
     for attempt in range(max_retries):
+        # #region agent log
+        try:
+            with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "Database connection attempt", "data": {"attempt": attempt + 1, "maxRetries": max_retries}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except: pass
+        # #endregion
         try:
             # Test connection first
+            # #region agent log
+            try:
+                with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "About to test database connection", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             with engine.connect() as test_conn:
                 test_conn.execute(text("SELECT 1"))
+            # #region agent log
+            try:
+                with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "Database connection test successful", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             
             # Connection successful, proceed with initialization
             Base.metadata.create_all(bind=engine)
@@ -224,10 +250,22 @@ def init_db():
                     # pgvector setup is optional - log warning but don't fail
                     logger.warning(f"⚠️ pgvector setup skipped (optional): {e}")
             
+            # #region agent log
+            try:
+                with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "init_db completed successfully", "data": {"attempt": attempt + 1}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             logger.info("✅ Database initialized successfully")
             return
             
         except Exception as e:
+            # #region agent log
+            try:
+                with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "Database connection attempt failed", "data": {"attempt": attempt + 1, "error": str(e), "errorType": type(e).__name__, "maxRetries": max_retries}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except: pass
+            # #endregion
             if attempt < max_retries - 1:
                 logger.warning(f"⚠️ Database connection attempt {attempt + 1} failed: {e}. Retrying in {retry_delay}s...")
                 time.sleep(retry_delay)
@@ -235,6 +273,12 @@ def init_db():
                 # Final attempt failed - log error but don't crash the app
                 logger.error(f"❌ Database initialization failed after {max_retries} attempts: {e}")
                 logger.warning("⚠️ App will start but database features may not work until connection is restored")
+                # #region agent log
+                try:
+                    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+                        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "init_db failed after all retries", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
+                except: pass
+                # #endregion
                 # Don't raise - allow app to start without database
                 return
 

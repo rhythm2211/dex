@@ -8,7 +8,8 @@ import {
   Quote, Network, Play, LogOut, Code, FileText, 
   Cpu, Search, CheckCircle, Command, Lock, Layers, 
   ChevronRight, Database, Github, Activity, Users, TrendingUp, Flame,
-  GitCommit, MessageSquare, TreePine, GitMerge, Rocket, User
+  GitCommit, MessageSquare, TreePine, GitMerge, Rocket, User,
+  AlertTriangle, Target, BarChart3, TestTube, UserCheck, Radio
 } from "lucide-react";
 import { dexApi, ActiveZonesResponse, TeamTopologyResponse, ZoneData } from "@/lib/api";
 
@@ -1598,6 +1599,249 @@ export default function HomePage() {
                   </div>
                 </ScrollAnimated>
             </div>
+        </section>
+
+        {/* ===========================================================================
+            ZONE 3.4: IMPACT BLAST FEATURE - NEW!
+        ============================================================================ */}
+        <section id="impact-blast" className="mx-auto max-w-7xl px-6 py-24 relative overflow-hidden">
+          {/* Animated Background Effects */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-red-500/10 rounded-full blur-3xl animate-pulse-glow"></div>
+            <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-orange-500/10 rounded-full blur-3xl animate-pulse-glow" style={{ animationDelay: '1s' }}></div>
+            <div className="absolute top-1/2 left-1/2 w-72 h-72 bg-yellow-500/5 rounded-full blur-3xl animate-pulse-glow" style={{ animationDelay: '2s' }}></div>
+          </div>
+
+          <div className="relative z-10">
+            {/* Header Section */}
+            <ScrollAnimated animation="fade-in" delay={0}>
+              <div className="text-center mb-16">
+                <div className="inline-flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 mb-6 backdrop-blur-sm animate-pulse-glow">
+                  <Radio size={16} className="text-red-400 animate-pulse" />
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-red-300">
+                    New Feature
+                  </span>
+                </div>
+                <h2 className="text-4xl md:text-6xl font-semibold text-white mb-6 leading-tight">
+                  <span className="gradient-text">Impact Blast</span>
+                  <br />
+                  <span className="text-3xl md:text-4xl text-slate-300">Know the Ripple Effect Before You Code</span>
+                </h2>
+                <p className="text-slate-400 max-w-3xl mx-auto text-lg mb-4">
+                  Visualize the complete impact of your code changes with intelligent risk scoring, dependency mapping, and automated safety checks.
+                </p>
+                <p className="text-slate-500 text-sm max-w-2xl mx-auto">
+                  Stop breaking production. See exactly which files, functions, and tests will be affected before you commit.
+                </p>
+              </div>
+            </ScrollAnimated>
+
+            {/* Main Feature Showcase */}
+            <div className="grid lg:grid-cols-2 gap-8 mb-12">
+              {/* Left: Visual Impact Graph Preview */}
+              <ScrollAnimated animation="slide-right" delay={100}>
+                <div className="relative group">
+                  {/* Glass Panel Container */}
+                  <div className="rounded-2xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-8 shadow-2xl hover:border-red-500/30 transition-all duration-500 hover-lift relative overflow-hidden">
+                    {/* Animated Background Gradient */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-red-500/5 via-orange-500/5 to-yellow-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                    
+                    {/* Header */}
+                    <div className="relative z-10 mb-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center border border-red-500/30 group-hover:scale-110 transition-transform">
+                          <Target size={24} className="text-red-400" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-white">Interactive Impact Graph</h3>
+                          <p className="text-xs text-slate-500">Real-time dependency visualization</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Graph Visualization Mockup */}
+                    <div className="relative z-10 space-y-4">
+                      {/* Central Node (Source) */}
+                      <div className="flex justify-center">
+                        <div className="relative">
+                          <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-red-600 to-red-800 border-2 border-red-400 flex items-center justify-center shadow-[0_0_30px_rgba(239,68,68,0.5)] animate-pulse-glow">
+                            <Code size={32} className="text-white" />
+                          </div>
+                          {/* Pulse rings */}
+                          <div className="absolute inset-0 rounded-xl border-2 border-red-400/50 animate-ping"></div>
+                          <div className="absolute inset-0 rounded-xl border-2 border-red-400/30 animate-ping" style={{ animationDelay: '0.5s' }}></div>
+                        </div>
+                      </div>
+
+                      {/* Connected Nodes */}
+                      <div className="grid grid-cols-3 gap-4">
+                        {[
+                          { bgColor: 'bg-red-500/20', borderColor: 'border-red-500/40', textColor: 'text-red-400', textColorLight: 'text-red-300', gradientColor: 'from-red-500/50', risk: 85, label: 'Direct' },
+                          { bgColor: 'bg-orange-500/20', borderColor: 'border-orange-500/40', textColor: 'text-orange-400', textColorLight: 'text-orange-300', gradientColor: 'from-orange-500/50', risk: 45, label: 'Indirect' },
+                          { bgColor: 'bg-yellow-500/20', borderColor: 'border-yellow-500/40', textColor: 'text-yellow-400', textColorLight: 'text-yellow-300', gradientColor: 'from-yellow-500/50', risk: 25, label: 'Dependency' }
+                        ].map((node, idx) => (
+                          <div key={idx} className="relative">
+                            {/* Connection Line */}
+                            <div className={`absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r ${node.gradientColor} to-transparent`}></div>
+                            {/* Node */}
+                            <div className={`relative ml-auto w-16 h-16 rounded-lg ${node.bgColor} border ${node.borderColor} flex flex-col items-center justify-center group-hover:scale-110 transition-transform`}>
+                              <FileText size={20} className={node.textColor + " mb-1"} />
+                              <span className={`text-[10px] font-bold ${node.textColorLight}`}>{node.risk}</span>
+                            </div>
+                            <div className="text-center mt-2">
+                              <span className="text-[10px] text-slate-500">{node.label}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Risk Score Badge */}
+                      <div className="mt-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 backdrop-blur-sm">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs text-slate-500 mb-1">Total Risk Score</div>
+                            <div className="text-2xl font-bold text-red-400">156</div>
+                          </div>
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/20 border border-orange-500/40">
+                            <AlertTriangle size={16} className="text-orange-400" />
+                            <span className="text-xs font-bold text-orange-300">High Risk Detected</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </ScrollAnimated>
+
+              {/* Right: Feature Cards */}
+              <ScrollAnimated animation="slide-left" delay={200}>
+                <div className="space-y-6">
+                  {/* Risk Scoring Card */}
+                  <div className="rounded-xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-orange-500/30 transition-all hover-lift group">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-orange-500/20 flex items-center justify-center border border-orange-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
+                        <BarChart3 size={24} className="text-orange-400" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-white mb-2 group-hover:text-orange-300 transition-colors">
+                          Intelligent Risk Scoring
+                        </h3>
+                        <p className="text-sm text-slate-400 leading-relaxed mb-3">
+                          Proprietary algorithm calculates risk scores (0-100) for each affected file based on churn, test coverage, and dependency depth.
+                        </p>
+                        <div className="flex items-center gap-4 text-xs">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-slate-500">Low: 0-39</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                            <span className="text-slate-500">Medium: 40-74</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                            <span className="text-slate-500">High: 75+</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dependency Visualization Card */}
+                  <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 backdrop-blur-xl p-6 hover:border-purple-500/50 transition-all hover-lift group">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-purple-500/30 flex items-center justify-center border border-purple-500/50 group-hover:scale-110 transition-transform flex-shrink-0">
+                        <Network size={24} className="text-purple-400" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-white mb-2 group-hover:text-purple-300 transition-colors">
+                          Complete Dependency Mapping
+                        </h3>
+                        <p className="text-sm text-slate-300 leading-relaxed mb-3">
+                          Visualize the entire dependency graph with interactive nodes showing direct dependencies, indirect impacts, and reverse dependencies in real-time.
+                        </p>
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/40">
+                          <Target size={14} className="text-purple-400" />
+                          <span className="text-xs font-semibold text-purple-300">Full Context View</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Test Recommendations Card */}
+                  <div className="rounded-xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-emerald-500/30 transition-all hover-lift group">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
+                        <TestTube size={24} className="text-emerald-400" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-white mb-2 group-hover:text-emerald-300 transition-colors">
+                          Smart CI Checklist
+                        </h3>
+                        <p className="text-sm text-slate-400 leading-relaxed">
+                          Automatically suggests which test files to run based on dependency relationships and code coverage data.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Expert Routing Card */}
+                  <div className="rounded-xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-6 hover:border-indigo-500/30 transition-all hover-lift group">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
+                        <UserCheck size={24} className="text-indigo-400" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-white mb-2 group-hover:text-indigo-300 transition-colors">
+                          Human Routing
+                        </h3>
+                        <p className="text-sm text-slate-400 leading-relaxed">
+                          Recommends team experts who should review your changes based on commit history and file ownership.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </ScrollAnimated>
+            </div>
+
+            {/* Bottom CTA Section */}
+            <ScrollAnimated animation="fade-in" delay={300}>
+              <div className="text-center">
+                <div className="inline-block rounded-2xl border border-white/10 bg-[#0A0A0A]/90 backdrop-blur-xl p-8 max-w-2xl mx-auto hover:border-indigo-500/30 transition-all hover-lift">
+                  <div className="flex items-center justify-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
+                      <Network size={20} className="text-indigo-400" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white">Ready to See Your Impact?</h3>
+                  </div>
+                  <p className="text-slate-400 text-sm mb-6 max-w-lg mx-auto">
+                    Select any file in your codebase and instantly visualize its complete dependency graph with risk scores and safety recommendations.
+                  </p>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    <Link 
+                      href="/app" 
+                      className="group relative overflow-hidden rounded-xl bg-indigo-600 text-white px-8 py-3.5 transition-all hover:bg-indigo-500 hover:shadow-[0_0_40px_rgba(99,102,241,0.4)] hover:scale-105"
+                    >
+                      <span className="relative z-10 flex items-center justify-center gap-2 text-sm font-bold uppercase tracking-wider">
+                        <Target size={16} className="group-hover:scale-110 transition-transform" />
+                        Try Impact Blast
+                        <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                      </span>
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                    </Link>
+                    <Link 
+                      href="/blast-radius" 
+                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-6 py-3.5 text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white hover:border-indigo-500/30 transition-all backdrop-blur-sm"
+                    >
+                      <Radio size={16} />
+                      View Demo
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </ScrollAnimated>
+          </div>
         </section>
 
         {/* ===========================================================================

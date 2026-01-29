@@ -204,14 +204,55 @@ class RAGService:
         )
         
         # 5. Execution
-        chain = prompt | self.llm
-        response = chain.invoke({
-            "code_context": code_context, 
-            "graph_context": graph_context, 
-            "question": query_text
-        })
-        
-        return {
-            "answer": response.content,
-            "context_used": f"**Code Sources:**\n{code_context[:500]}...\n\n**Graph Connections:**\n{graph_context[:500]}..."
-        }
+        try:
+            chain = prompt | self.llm
+            response = chain.invoke({
+                "code_context": code_context, 
+                "graph_context": graph_context, 
+                "question": query_text
+            })
+            
+            return {
+                "answer": response.content,
+                "context_used": f"**Code Sources:**\n{code_context[:500]}...\n\n**Graph Connections:**\n{graph_context[:500]}..."
+            }
+        except Exception as e:
+            error_str = str(e)
+            logger.error(f"LLM generation failed: {e}", exc_info=True)
+            
+            # Check for specific API errors
+            if "401" in error_str or "Invalid API Key" in error_str or "invalid_api_key" in error_str:
+                error_message = (
+                    "⚠️ **API Key Error**\n\n"
+                    "The Groq API key is invalid or expired. Please:\n\n"
+                    "1. Check your `.env` file in the `app/` directory\n"
+                    "2. Verify the `GROQ_API_KEY` value is correct\n"
+                    "3. Get a new API key from: https://console.groq.com/keys\n"
+                    "4. Restart the backend server after updating the key\n\n"
+                    "**Note:** The API key should start with `gsk_`"
+                )
+            elif "429" in error_str or "rate limit" in error_str.lower():
+                error_message = (
+                    "⚠️ **Rate Limit Exceeded**\n\n"
+                    "You've exceeded the Groq API rate limit. Please wait a moment and try again.\n\n"
+                    "If this persists, consider:\n"
+                    "- Upgrading your Groq plan\n"
+                    "- Using a different LLM provider\n"
+                )
+            elif "500" in error_str or "503" in error_str:
+                error_message = (
+                    "⚠️ **Service Unavailable**\n\n"
+                    "The Groq API service is temporarily unavailable. Please try again in a few moments."
+                )
+            else:
+                error_message = (
+                    f"⚠️ **AI Generation Error**\n\n"
+                    f"An error occurred while generating the response:\n\n"
+                    f"```\n{error_str[:500]}\n```\n\n"
+                    f"Please check the backend logs for more details."
+                )
+            
+            return {
+                "answer": error_message,
+                "context_used": ""
+            }

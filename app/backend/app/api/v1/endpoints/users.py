@@ -2,6 +2,8 @@
 User profile API endpoints
 """
 import logging
+import json
+import time
 import bcrypt
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, EmailStr
@@ -10,19 +12,44 @@ from sqlalchemy import func
 from typing import Optional, List
 from datetime import datetime, timedelta
 
-from backend.app.models.user import User, UserCredentials, get_db, init_db
-from backend.app.services.email_service import email_service
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "users.py:13", "message": "users.py started importing", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
+
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "users.py:14", "message": "About to import user models", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
+try:
+    from backend.app.models.user import User, UserCredentials, get_db
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "users.py:15", "message": "user models imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+except Exception as e:
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "users.py:15", "message": "user models import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+    raise
+
+# Email service will be imported lazily when needed to avoid blocking startup
 
 logger = logging.getLogger("dex-core")
 
 router = APIRouter()
 
-# Initialize database lazily (non-blocking)
-# This allows the app to start even if database is temporarily unreachable
-try:
-    init_db()
-except Exception as e:
-    logger.warning(f"Database initialization deferred: {e}. Will retry on first use.")
+# Database initialization is handled in main.py startup event
+# No need to initialize here at module import time
 
 # Request/Response Models
 class UserProfileCreate(BaseModel):
@@ -151,6 +178,7 @@ def upsert_user_profile(profile: UserProfileCreate, db: Session = Depends(get_db
     import threading
     def send_email_async():
         try:
+            from backend.app.services.email_service import email_service
             email_service.send_welcome_email(profile.email, profile.name)
         except Exception as e:
             logger.error(f"Failed to send welcome email to {profile.email}: {str(e)}")
@@ -209,6 +237,7 @@ def create_user_profile(profile: UserProfileCreate, db: Session = Depends(get_db
     import threading
     def send_email_async():
         try:
+            from backend.app.services.email_service import email_service
             email_service.send_welcome_email(profile.email, profile.name)
         except Exception as e:
             logger.error(f"Failed to send welcome email to {profile.email}: {str(e)}")

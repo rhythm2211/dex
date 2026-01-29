@@ -1,26 +1,133 @@
 import os
 import json
 import logging
+import time
+import asyncio
 from datetime import datetime, timedelta
 from collections import Counter
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel, field_validator
 
-# --- Service Imports ---
-from backend.app.services.ingestion_service import IngestionService
-from backend.app.services.rag_service import RAGService
-from backend.app.api.v1.endpoints.users import router as users_router
-from backend.app.api.v1.endpoints.health import router as health_router
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:9", "message": "router.py module started importing", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
+
+# --- Service Imports (LAZY) ---
+# Import services lazily to avoid blocking startup with heavy dependencies like langchain
+# Services will be imported only when get_ingestion_service() or get_rag_service() are first called
+
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:16", "message": "About to import users_router", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
+try:
+    from backend.app.api.v1.endpoints.users import router as users_router
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:17", "message": "users_router imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+except Exception as e:
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:17", "message": "users_router import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+    raise
+
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:18", "message": "About to import health_router", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
+try:
+    from backend.app.api.v1.endpoints.health import router as health_router
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:19", "message": "health_router imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+except Exception as e:
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:19", "message": "health_router import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+    raise
 
 logger = logging.getLogger("dex-core")
 
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:20", "message": "About to create api_router", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
 api_router = APIRouter()
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:21", "message": "api_router created successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
 
 # Include user routes
-api_router.include_router(users_router, tags=["users"])
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:24", "message": "About to include users_router", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
+try:
+    api_router.include_router(users_router, tags=["users"])
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:25", "message": "users_router included successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+except Exception as e:
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:25", "message": "users_router include failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+    raise
 
 # Include health routes
-api_router.include_router(health_router, prefix="/health", tags=["health"])
+# #region agent log
+try:
+    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:28", "message": "About to include health_router", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+except: pass
+# #endregion
+try:
+    api_router.include_router(health_router, prefix="/health", tags=["health"])
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:29", "message": "health_router included successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+except Exception as e:
+    # #region agent log
+    try:
+        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:29", "message": "health_router include failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
+    except: pass
+    # #endregion
+    raise
 
 # --- Singleton Services (Lazy Initialization) ---
 # Initialize services lazily to avoid blocking on startup
@@ -35,6 +142,8 @@ def get_ingestion_service():
     global _ingestion_service
     if _ingestion_service is None:
         try:
+            # Lazy import to avoid blocking startup
+            from backend.app.services.ingestion_service import IngestionService
             _ingestion_service = IngestionService()
             # Sync status after initialization
             global _ingestion_status
@@ -58,6 +167,8 @@ def get_rag_service():
     global _rag_service
     if _rag_service is None:
         try:
+            # Lazy import to avoid blocking startup
+            from backend.app.services.rag_service import RAGService
             _rag_service = RAGService()
         except Exception as e:
             logger.exception(f"Failed to initialize RAGService: {e}", exc_info=True)
@@ -65,8 +176,6 @@ def get_rag_service():
     return _rag_service
 
 # --- Data Models ---
-from pydantic import field_validator
-
 class IngestRequest(BaseModel):
     repo_path: str
     
@@ -141,9 +250,30 @@ async def get_knowledge_graph():
     Made async to prevent blocking and allow timeout handling.
     """
     try:
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        
         # Default limit 2500 to prevent browser crash on initial load
         ingestion_service = get_ingestion_service()
-        graph_data = ingestion_service.graph_engine.get_full_graph(limit=2500)
+        
+        # Run the synchronous Neo4j query in a thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            graph_data = await loop.run_in_executor(
+                executor,
+                lambda: ingestion_service.graph_engine.get_full_graph(limit=2500)
+            )
+        
+        # Validate response structure
+        if not isinstance(graph_data, dict):
+            logger.warning("Graph data is not a dictionary, returning empty graph")
+            return {"nodes": [], "links": []}
+        
+        if "nodes" not in graph_data or "links" not in graph_data:
+            logger.warning("Graph data missing 'nodes' or 'links' keys, returning empty graph")
+            return {"nodes": [], "links": []}
+        
+        logger.info(f"Graph loaded successfully: {len(graph_data.get('nodes', []))} nodes, {len(graph_data.get('links', []))} links")
         return graph_data
     except Exception as e:
         logger.error(f"Neo4j Read Error: {e}")
@@ -176,6 +306,127 @@ def expand_graph_node(node_id: str = Query(..., description="The node ID to expa
     except Exception as e:
         logger.error(f"Neo4j Expand Query Error: {e}")
         return {"nodes": [], "links": []}
+
+@api_router.get("/blast-radius/{node_id}")
+def get_blast_radius(node_id: str):
+    """
+    [LAYER 2 & 3] IMPROVED RISK SCORING: Dynamic Risk Propagation with Relationship Traversal
+    
+    Returns React Flow compatible format with:
+    - Risk-scored nodes with dynamic coloring based on risk scores
+    - Smart CI Checklist (test files to run)
+    - Human Routing (expert recommendations)
+    
+    Args:
+        node_id: The source node ID (file path or function identifier)
+        
+    Returns:
+        Dict with 'nodes', 'edges', 'total_risk_score', 'test_files', 'warnings', 'expert_recommendations'
+    """
+    try:
+        ingestion_service = get_ingestion_service()
+        blast_radius_data = ingestion_service.graph_engine.get_blast_radius(node_id)
+        
+        # Ensure React Flow compatibility - nodes need 'id' and edges need 'id', 'source', 'target'
+        nodes = []
+        for node in blast_radius_data.get("nodes", []):
+            # Ensure node has required React Flow properties
+            react_flow_node = {
+                "id": node.get("id", ""),
+                "data": {
+                    "label": node.get("name", node.get("id", "")),
+                    "type": node.get("type", "file"),
+                    "impactType": node.get("impactType", "source"),
+                    **{k: v for k, v in node.items() if k not in ["id", "name", "type", "impactType", "color"]}
+                },
+                "type": "default",  # React Flow node type
+                "style": {
+                    "background": node.get("color", "#6b7280"),  # Use dynamic color from backend
+                    "color": "#fff" if node.get("color") == "#000000" or node.get("color") == "black" else "#000",
+                    "border": f"2px solid {node.get('color', '#6b7280')}",
+                    "borderRadius": "8px",
+                    "padding": "10px",
+                    "fontSize": "12px"
+                }
+            }
+            nodes.append(react_flow_node)
+        
+        edges = blast_radius_data.get("edges", [])
+        # Ensure edges have required React Flow properties
+        react_flow_edges = []
+        for edge in edges:
+            react_flow_edge = {
+                "id": edge.get("id", f"{edge.get('source')}-{edge.get('target')}"),
+                "source": edge.get("source", ""),
+                "target": edge.get("target", ""),
+                "type": edge.get("type", "smoothstep"),
+                "style": edge.get("style", {"stroke": "#999", "strokeWidth": 2}),
+                "label": edge.get("label"),  # For dynamic import warnings
+                "animated": edge.get("animated", False)  # Use animated from backend
+            }
+            react_flow_edges.append(react_flow_edge)
+        
+        # [LAYER 3] Get expert recommendations for human routing
+        expert_recommendations = []
+        try:
+            graph_engine = ingestion_service.graph_engine
+            if graph_engine.driver:
+                with graph_engine.driver.session(database=graph_engine.database) as session:
+                    # Find experts (Person nodes) who are experts on affected files
+                    node_ids = [node.get("id") for node in blast_radius_data.get("nodes", [])]
+                    if node_ids:
+                        expert_query = """
+                        MATCH (p:Person)-[r:EXPERT_ON]->(f:CodeNode)
+                        WHERE f.id IN $node_ids
+                        WITH p, f, r.weight as expertise_weight
+                        ORDER BY expertise_weight DESC
+                        RETURN DISTINCT p.name as expert_name, 
+                               collect(f.id)[0..3] as expert_files,
+                               max(expertise_weight) as max_weight
+                        LIMIT 5
+                        """
+                        expert_result = session.run(expert_query, node_ids=node_ids)
+                        for rec in expert_result:
+                            expert_recommendations.append({
+                                "name": rec["expert_name"],
+                                "files": rec["expert_files"],
+                                "confidence": rec["max_weight"]
+                            })
+        except Exception as e:
+            logger.warning(f"Failed to get expert recommendations: {e}")
+        
+        return {
+            "nodes": nodes,
+            "edges": react_flow_edges,
+            "total_risk_score": blast_radius_data.get("total_risk_score", 0),
+            "test_files": blast_radius_data.get("test_files", []),
+            "warnings": blast_radius_data.get("warnings", []),
+            "expert_recommendations": expert_recommendations,
+            "impact_categories": blast_radius_data.get("impact_categories", {
+                "breaking_api_changes": [],
+                "data_compliance_risk": [],
+                "infrastructure_reset": [],
+                "logic_breakage": []
+            })
+        }
+    except Exception as e:
+        logger.error(f"Blast radius query error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "nodes": [],
+            "edges": [],
+            "total_risk_score": 0,
+            "test_files": [],
+            "warnings": [],
+            "expert_recommendations": [],
+            "impact_categories": {
+                "breaking_api_changes": [],
+                "data_compliance_risk": [],
+                "infrastructure_reset": [],
+                "logic_breakage": []
+            }
+        }
 
 @api_router.get("/git/history")
 def get_git_history():
@@ -266,50 +517,57 @@ async def get_active_zones(days: int = 30):
     history_path = os.path.join(backend_root, "data", "repo_history.json")
     
     if not os.path.exists(history_path):
+        logger.warning(f"Active zones: History file not found at {history_path}")
         return {"zones": [], "msg": "No history found. Run ingestion first."}
-        
+    
     try:
-        with open(history_path, 'r') as f:
-            timeline = json.load(f)
+        # Run file I/O in thread pool to avoid blocking the event loop
+        def load_and_process():
+            with open(history_path, 'r', encoding='utf-8') as f:
+                timeline = json.load(f)
             
-        # 2. Filter by Date
-        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+            # 2. Filter by Date
+            cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+            
+            # 3. Aggregate: Folder -> Commit Count
+            zone_heat = Counter()
+            
+            for commit in timeline:
+                if commit.get("date", "") < cutoff_date:
+                    continue
+                    
+                for file_path in commit.get("files", []):
+                    # Logic: Get top-level folder (or 'root' if file is at base)
+                    # Example: "backend/app/main.py" -> "backend/app"
+                    parts = file_path.split('/')
+                    if len(parts) > 1:
+                        # Use first 2 levels for better grouping in large repos
+                        # e.g., "backend/services" vs "frontend/components"
+                        zone = parts[0] + "/" + parts[1] if len(parts) > 2 else parts[0]
+                    else:
+                        zone = "root"
+                    
+                    zone_heat[zone] += 1
+            
+            # 4. Format for Frontend
+            # Returns top 15 hottest zones
+            results = [
+                {
+                    "name": zone, 
+                    "value": count, 
+                    "intensity": "High" if count > 10 else "Low"
+                }
+                for zone, count in zone_heat.most_common(15)
+            ]
+            
+            return results
         
-        # 3. Aggregate: Folder -> Commit Count
-        zone_heat = Counter()
-        
-        for commit in timeline:
-            if commit["date"] < cutoff_date:
-                continue
-                
-            for file_path in commit["files"]:
-                # Logic: Get top-level folder (or 'root' if file is at base)
-                # Example: "backend/app/main.py" -> "backend/app"
-                parts = file_path.split('/')
-                if len(parts) > 1:
-                    # Use first 2 levels for better grouping in large repos
-                    # e.g., "backend/services" vs "frontend/components"
-                    zone = parts[0] + "/" + parts[1] if len(parts) > 2 else parts[0]
-                else:
-                    zone = "root"
-                
-                zone_heat[zone] += 1
-        
-        # 4. Format for Frontend
-        # Returns top 15 hottest zones
-        results = [
-            {
-                "name": zone, 
-                "value": count, 
-                "intensity": "High" if count > 10 else "Low"
-            }
-            for zone, count in zone_heat.most_common(15)
-        ]
-        
+        # Run blocking I/O in thread pool
+        results = await asyncio.to_thread(load_and_process)
         return {"zones": results}
         
     except Exception as e:
-        logger.error(f"Heatmap generation failed: {e}")
+        logger.error(f"Heatmap generation failed: {e}", exc_info=True)
         # Return empty list rather than 500 to keep UI stable
         return {"zones": []}
 
@@ -424,15 +682,56 @@ def execute_hybrid_query(request: HybridRAGRequest):
         logger.error(f"Query failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.get("/graph/expand")
-def expand_graph_node(node_id: str = Query(..., description="The ID of the node to expand")):
+@api_router.post("/blast-radius/analyze-impact")
+def analyze_impact_with_rag(request: dict):
     """
-    LAZY LOADING: Fetches children of the specific node.
-    Used for progressive rendering of large graphs.
+    [NEW] RAG-powered Impact Analysis: Answer questions about code changes and their impact.
+    
+    Example queries:
+    - "If I change lines 10-20 in backend/app/main.py, how would other files get impacted?"
+    - "What would break if I modify the PaymentService class?"
+    - "Which test files should I run if I change the authentication logic?"
+    
+    Args:
+        request: Dict with 'query' (string) and optionally 'node_id' (string) for context
+        
+    Returns:
+        Dict with 'answer' (string) and 'context_used' (string)
     """
     try:
-        ingestion_service = get_ingestion_service()
-        return ingestion_service.graph_engine.get_neighbors(node_id)
+        query_text = request.get("query", "")
+        node_id = request.get("node_id", "")
+        
+        if not query_text:
+            raise HTTPException(status_code=400, detail="Query is required")
+        
+        # Enhance query with blast radius context if node_id provided
+        enhanced_query = query_text
+        if node_id:
+            try:
+                ingestion_service = get_ingestion_service()
+                blast_data = ingestion_service.graph_engine.get_blast_radius(node_id)
+                
+                # Add context about affected files
+                affected_files = [n.get("name", n.get("id", "")) for n in blast_data.get("nodes", [])[:10]]
+                if affected_files:
+                    enhanced_query = f"""
+Context: Analyzing impact for {node_id}
+Affected files: {', '.join(affected_files[:10])}
+Risk Score: {blast_data.get('total_risk_score', 0)}/100
+
+User Question: {query_text}
+"""
+            except Exception as e:
+                logger.warning(f"Failed to get blast radius context: {e}")
+        
+        # Use RAG service to answer the question
+        rag_service = get_rag_service()
+        response = rag_service.answer_query(enhanced_query)
+        
+        return response
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Graph Expansion Error: {e}")
-        return {"nodes": [], "links": []}
+        logger.error(f"Impact analysis query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
