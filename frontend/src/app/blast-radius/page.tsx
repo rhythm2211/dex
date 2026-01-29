@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import BlastRadiusGraph from '@/components/BlastRadiusGraph';
 import { X, Search, ArrowRight, Code2, GitCommit, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export default function BlastRadiusPage() {
+function BlastRadiusContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [nodeId, setNodeId] = useState<string>('');
@@ -190,5 +190,22 @@ export default function BlastRadiusPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function BlastRadiusPage() {
+  return (
+    <Suspense fallback={
+      <div className="w-full h-screen bg-[#050505] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center border border-white/5 shadow-inner shadow-indigo-500/10 mb-4 mx-auto animate-pulse">
+            <Zap className="w-8 h-8 text-indigo-400" />
+          </div>
+          <p className="text-gray-400 text-sm">Loading Blast Radius...</p>
+        </div>
+      </div>
+    }>
+      <BlastRadiusContent />
+    </Suspense>
   );
 }
