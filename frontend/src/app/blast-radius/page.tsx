@@ -43,7 +43,7 @@ function BlastRadiusContent() {
   ];
 
   return (
-    <div className="w-full h-screen bg-[#050505] relative overflow-hidden text-gray-200 selection:bg-indigo-500/30 selection:text-indigo-200 font-sans">
+    <div className="w-full h-screen bg-[#050505] relative overflow-hidden text-gray-200 selection:bg-indigo-500/30 selection:text-indigo-200 font-sans" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
       
       {/* Background Ambient Glows */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-900/20 blur-[120px] rounded-full pointer-events-none" />
@@ -168,11 +168,12 @@ function BlastRadiusContent() {
             className="w-full h-full relative"
           >
              {/* Floating Header Overlay */}
-             <div className="absolute top-0 left-0 w-full h-20 z-50 flex items-center justify-between px-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none">
+             <div className="absolute top-0 left-0 w-full h-20 z-50 flex items-center justify-between px-6 bg-gradient-to-b from-black/95 via-black/60 to-transparent pointer-events-none">
                 <div className="pointer-events-auto flex items-center gap-4 mt-4">
                   <button 
                     onClick={handleClose}
-                    className="p-2 rounded-full bg-black/50 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-colors backdrop-blur-md group"
+                    className="p-2 rounded-full bg-black/60 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-all backdrop-blur-md group hover:border-white/20"
+                    aria-label="Close blast radius view"
                   >
                     <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-200" />
                   </button>
@@ -180,7 +181,7 @@ function BlastRadiusContent() {
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 tracking-wider">ANALYZING IMPACT</span>
                     </div>
-                    <h2 className="text-white font-mono text-sm font-medium opacity-90">{nodeId}</h2>
+                    <h2 className="text-white font-mono text-sm font-medium opacity-90 truncate max-w-md">{nodeId}</h2>
                   </div>
                 </div>
              </div>

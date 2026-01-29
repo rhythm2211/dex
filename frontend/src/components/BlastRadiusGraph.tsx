@@ -24,7 +24,7 @@ import remarkGfm from 'remark-gfm';
 import { 
   Info, X, Loader2, File, Code, Box, Database, AlertTriangle, CheckCircle2, 
   User, MessageSquare, AlertCircle, Bot, Send, Filter, ZoomIn, Search,
-  ChevronDown, ChevronUp, Shield, Server, Package, Lock, AlertOctagon
+  ChevronDown, ChevronUp, Shield, Server, Package, Lock, AlertOctagon, Sparkles, Camera, Download
 } from 'lucide-react';
 
 // Define nodeTypes and edgeTypes outside component to avoid React Flow warning
@@ -108,7 +108,10 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
   // Filter State
   const [riskFilter, setRiskFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [highlightedPath, setHighlightedPath] = useState<string[]>([]);
+  const [legendOpen, setLegendOpen] = useState(true);
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
   const reactFlowInstance = useRef<any>(null);
+  const graphContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch blast radius data
   useEffect(() => {
@@ -594,6 +597,51 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  // Prevent body scroll when chat is open and restore when closed
+  useEffect(() => {
+    if (chatOpen) {
+      // Save current scroll position
+      const scrollY = window.scrollY;
+      const body = document.body;
+      const html = document.documentElement;
+      
+      // Prevent scroll
+      body.style.position = 'fixed';
+      body.style.top = `-${scrollY}px`;
+      body.style.width = '100%';
+      body.style.overflow = 'hidden';
+      
+      // Store scroll position for restoration
+      (body as any).__scrollY = scrollY;
+    } else {
+      // Restore scroll position
+      const body = document.body;
+      const scrollY = (body as any).__scrollY || 0;
+      
+      body.style.position = '';
+      body.style.top = '';
+      body.style.width = '';
+      body.style.overflow = '';
+      
+      // Restore scroll position
+      window.scrollTo(0, scrollY);
+      delete (body as any).__scrollY;
+    }
+    
+    return () => {
+      // Cleanup on unmount
+      const body = document.body;
+      body.style.position = '';
+      body.style.top = '';
+      body.style.width = '';
+      body.style.overflow = '';
+      if ((body as any).__scrollY !== undefined) {
+        window.scrollTo(0, (body as any).__scrollY);
+        delete (body as any).__scrollY;
+      }
+    };
+  }, [chatOpen]);
+
   // Debug: Log current state (must be before any conditional returns)
   useEffect(() => {
     console.log('Current graph state:', {
@@ -648,9 +696,106 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
     );
   }
 
+  // Calculate dynamic margin for chat button based on Impact Categories panel visibility
+  const hasImpactCategories = impactCategories.breaking_api_changes.length > 0 || 
+    impactCategories.data_compliance_risk.length > 0 || 
+    impactCategories.infrastructure_reset.length > 0 || 
+    impactCategories.logic_breakage.length > 0;
+  
+  const chatButtonMarginTop = hasImpactCategories ? '480px' : '90px';
+
+  // Screenshot functionality
+  const handleScreenshot = async (format: 'png' | 'jpeg' = 'png') => {
+    if (!graphContainerRef.current) return;
+    
+    setScreenshotLoading(true);
+    try {
+      // Dynamically import html2canvas
+      const html2canvas = (await import('html2canvas')).default;
+      
+      // Hide UI elements that shouldn't be in screenshot
+      const chatPanel = document.querySelector('[data-chat-panel]') as HTMLElement;
+      const chatButton = document.querySelector('[data-chat-button]') as HTMLElement;
+      const originalChatDisplay = chatPanel?.style.display;
+      const originalButtonDisplay = chatButton?.style.display;
+      const originalChatVisibility = chatPanel?.style.visibility;
+      const originalButtonVisibility = chatButton?.style.visibility;
+      
+      // Temporarily hide chat UI
+      if (chatPanel) {
+        chatPanel.style.display = 'none';
+        chatPanel.style.visibility = 'hidden';
+      }
+      if (chatButton) {
+        chatButton.style.display = 'none';
+        chatButton.style.visibility = 'hidden';
+      }
+      
+      // Small delay to ensure UI is hidden
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Capture the graph container
+      const canvas = await html2canvas(graphContainerRef.current, {
+        backgroundColor: '#0a0a0a',
+        scale: 2,
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: true,
+        windowWidth: graphContainerRef.current.scrollWidth,
+        windowHeight: graphContainerRef.current.scrollHeight,
+      });
+      
+      // Restore UI elements
+      if (chatPanel) {
+        chatPanel.style.display = originalChatDisplay || '';
+        chatPanel.style.visibility = originalChatVisibility || '';
+      }
+      if (chatButton) {
+        chatButton.style.display = originalButtonDisplay || '';
+        chatButton.style.visibility = originalButtonVisibility || '';
+      }
+      
+      // Convert to blob and download
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          console.error('Failed to create blob');
+          setScreenshotLoading(false);
+          return;
+        }
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const sanitizedNodeId = nodeId.replace(/[^a-z0-9]/gi, '-').toLowerCase().substring(0, 50);
+        link.download = `blast-radius-${sanitizedNodeId}-${Date.now()}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setScreenshotLoading(false);
+      }, `image/${format}`, format === 'jpeg' ? 0.92 : 1.0);
+    } catch (error) {
+      console.error('Screenshot error:', error);
+      setScreenshotLoading(false);
+      
+      // Restore UI elements in case of error
+      const chatPanel = document.querySelector('[data-chat-panel]') as HTMLElement;
+      const chatButton = document.querySelector('[data-chat-button]') as HTMLElement;
+      if (chatPanel) {
+        chatPanel.style.display = '';
+        chatPanel.style.visibility = '';
+      }
+      if (chatButton) {
+        chatButton.style.display = '';
+        chatButton.style.visibility = '';
+      }
+    }
+  };
+
   return (
     <ReactFlowProvider>
-      <div className="w-full h-full relative bg-[#0a0a0a]" style={{ minHeight: '600px', width: '100%', height: '100%' }}>
+      <div ref={graphContainerRef} className="w-full h-full relative bg-[#0a0a0a]" style={{ minHeight: '600px', width: '100%', height: '100%' }}>
         {filteredNodes.length === 0 && !loading && !error && nodes.length > 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0a]/80 z-10">
             <div className="text-center p-6 bg-[#1a1a1a] border border-white/10 rounded-lg">
@@ -726,50 +871,76 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
           maskColor="rgba(0, 0, 0, 0.6)"
         />
         
-        {/* Legend Panel */}
-        <Panel position="top-left" className="bg-[#1a1a1a]/90 backdrop-blur-sm border border-white/10 rounded-lg p-4 max-w-xs">
-          <div className="flex flex-col gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-white mb-2">Impact Types</h3>
-              {legendItems.map((item) => (
-                <div key={item.color} className="flex items-center gap-2 mb-1">
-                  <div className={`w-4 h-4 ${item.bg} rounded border border-white/20`} />
-                  <span className="text-xs text-gray-300">{item.label}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="pt-2 border-t border-white/10">
-              <h3 className="text-sm font-semibold text-white mb-2">Risk Score</h3>
-              <div className="space-y-1">
-                {riskLegend.map((item) => (
-                  <div
-                    key={item.label}
-                    className={`px-2 py-1 rounded-full text-[10px] font-medium border ${item.bg} inline-block`}
+        {/* Legend Panel - Collapsible */}
+        <Panel position="top-left" className="pointer-events-none" style={{ marginTop: '90px' }}>
+          <div className="pointer-events-auto">
+            {legendOpen ? (
+              <div className="bg-[#1a1a1a]/90 backdrop-blur-sm border border-white/10 rounded-lg p-4 max-w-xs shadow-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-white">Legend</h3>
+                  <button
+                    onClick={() => setLegendOpen(false)}
+                    className="text-gray-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded"
+                    aria-label="Collapse legend"
                   >
-                    {item.label}
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-400 mb-2">Impact Types</h4>
+                    {legendItems.map((item) => (
+                      <div key={item.color} className="flex items-center gap-2 mb-1">
+                        <div className={`w-4 h-4 ${item.bg} rounded border border-white/20`} />
+                        <span className="text-xs text-gray-300">{item.label}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+
+                  <div className="pt-2 border-t border-white/10">
+                    <h4 className="text-xs font-medium text-gray-400 mb-2">Risk Score</h4>
+                    <div className="space-y-1">
+                      {riskLegend.map((item) => (
+                        <div
+                          key={item.label}
+                          className={`px-2 py-1 rounded-full text-[10px] font-medium border ${item.bg} inline-block`}
+                        >
+                          {item.label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Risk Filter */}
+                  <div className="pt-2 border-t border-white/10">
+                    <h4 className="text-xs font-medium text-gray-400 mb-2 flex items-center gap-2">
+                      <Filter className="w-3 h-3" />
+                      Filter by Risk
+                    </h4>
+                    <select
+                      value={riskFilter}
+                      onChange={(e) => setRiskFilter(e.target.value as any)}
+                      className="w-full bg-[#0a0a0a] border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    >
+                      <option value="all">All Nodes</option>
+                      <option value="high">High Risk (75+)</option>
+                      <option value="medium">Medium Risk (40-74)</option>
+                      <option value="low">Low Risk (0-39)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-            </div>
-            
-            {/* Risk Filter */}
-            <div className="pt-2 border-t border-white/10">
-              <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
-                <Filter className="w-3 h-3" />
-                Filter by Risk
-              </h3>
-              <select
-                value={riskFilter}
-                onChange={(e) => setRiskFilter(e.target.value as any)}
-                className="w-full bg-[#0a0a0a] border border-white/10 rounded px-2 py-1 text-xs text-white"
+            ) : (
+              <button
+                onClick={() => setLegendOpen(true)}
+                className="bg-[#1a1a1a]/90 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2 text-xs text-white hover:bg-[#1a1a1a] transition-colors flex items-center gap-2 shadow-lg"
+                aria-label="Expand legend"
               >
-                <option value="all">All Nodes</option>
-                <option value="high">High Risk (75+)</option>
-                <option value="medium">Medium Risk (40-74)</option>
-                <option value="low">Low Risk (0-39)</option>
-              </select>
-            </div>
+                <Info className="w-4 h-4" />
+                <span>Show Legend</span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </Panel>
 
@@ -967,15 +1138,62 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
           </Panel>
         )}
 
-        {/* RAG Chat Toggle Button */}
-        <Panel position="top-right" className="pointer-events-none">
-          <button
-            onClick={() => setChatOpen(!chatOpen)}
-            className="pointer-events-auto bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition-all font-medium flex items-center gap-2 shadow-lg"
-          >
-            <Bot className="w-4 h-4" />
-            {chatOpen ? 'Hide' : 'Ask AI'} Impact Analysis
-          </button>
+        {/* Screenshot and Chat Buttons */}
+        <Panel position="top-right" className="pointer-events-none" style={{ marginTop: chatButtonMarginTop }}>
+          <div className="pointer-events-auto flex items-center gap-2">
+            {/* Screenshot Button with Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => handleScreenshot('png')}
+                disabled={screenshotLoading}
+                className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg transition-all font-medium flex items-center gap-2 shadow-lg hover:shadow-gray-500/50 disabled:opacity-50 disabled:cursor-not-allowed group"
+                title="Take screenshot"
+              >
+                {screenshotLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Camera className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Screenshot</span>
+                <ChevronDown className="w-3 h-3 opacity-70" />
+              </button>
+              {/* Dropdown menu for format selection */}
+              <div className="absolute top-full right-0 mt-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                <div className="bg-[#1a1a1a] border border-white/10 rounded-lg shadow-xl p-1 min-w-[140px]">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleScreenshot('png');
+                    }}
+                    disabled={screenshotLoading}
+                    className="w-full text-left px-3 py-2 text-sm text-white hover:bg-white/10 rounded flex items-center gap-2 disabled:opacity-50 transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    Save as PNG
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleScreenshot('jpeg');
+                    }}
+                    disabled={screenshotLoading}
+                    className="w-full text-left px-3 py-2 text-sm text-white hover:bg-white/10 rounded flex items-center gap-2 disabled:opacity-50 transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    Save as JPEG
+                  </button>
+                </div>
+              </div>
+            </div>
+            <button
+              data-chat-button
+              onClick={() => setChatOpen(!chatOpen)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition-all font-medium flex items-center gap-2 shadow-lg hover:shadow-indigo-500/50"
+            >
+              <Sparkles className="w-4 h-4" />
+              {chatOpen ? 'Hide' : 'Ask AI'} Impact Analysis
+            </button>
+          </div>
         </Panel>
 
         {/* Node Details Side Panel */}
@@ -1120,31 +1338,43 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
 
       {/* RAG Chat Panel */}
       {chatOpen && (
-        <div className="absolute bottom-4 right-4 w-96 h-[500px] bg-[#1a1a1a]/95 backdrop-blur-sm border border-white/10 rounded-lg shadow-2xl flex flex-col z-50">
-          <div className="flex items-center justify-between p-4 border-b border-white/10">
+        <div data-chat-panel className="absolute bottom-4 right-4 w-96 h-[500px] bg-[#1a1a1a]/98 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl flex flex-col z-50 overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-white/10 bg-gradient-to-r from-indigo-500/10 to-purple-500/10">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Bot className="w-4 h-4" />
+              <Sparkles className="w-4 h-4 text-indigo-400" />
               AI Impact Analysis
             </h3>
             <button
               onClick={() => setChatOpen(false)}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="text-gray-400 hover:text-white transition-colors p-1.5 hover:bg-white/10 rounded-lg"
+              aria-label="Close chat"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
             {chatMessages.length === 0 && (
               <div className="text-center text-gray-400 text-sm py-8">
-                <Bot className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p>Ask me about code changes and their impact!</p>
-                <div className="mt-4 space-y-2 text-xs text-left">
-                  <p className="text-gray-500">Try asking:</p>
-                  <ul className="list-disc list-inside space-y-1 text-gray-400">
-                    <li>"If I change lines 10-20, how would other files get impacted?"</li>
-                    <li>"What would break if I modify this file?"</li>
-                    <li>"Which test files should I run?"</li>
+                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-indigo-500/10 flex items-center justify-center">
+                  <Sparkles className="w-6 h-6 text-indigo-400 opacity-70" />
+                </div>
+                <p className="text-white mb-1">Ask me about code changes and their impact!</p>
+                <div className="mt-4 space-y-2 text-xs text-left bg-[#0a0a0a]/50 rounded-lg p-3 border border-white/5">
+                  <p className="text-gray-400 font-medium mb-2">Try asking:</p>
+                  <ul className="space-y-1.5 text-gray-500">
+                    <li className="flex items-start gap-2">
+                      <span className="text-indigo-400 mt-0.5">•</span>
+                      <span>"If I change lines 10-20, how would other files get impacted?"</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-indigo-400 mt-0.5">•</span>
+                      <span>"What would break if I modify this file?"</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-indigo-400 mt-0.5">•</span>
+                      <span>"Which test files should I run?"</span>
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1156,9 +1386,9 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-lg p-3 ${
+                  className={`max-w-[85%] rounded-lg p-3 ${
                     msg.role === 'user'
-                      ? 'bg-indigo-600 text-white'
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
                       : 'bg-[#0a0a0a] border border-white/10 text-gray-300'
                   }`}
                 >
@@ -1177,8 +1407,9 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
             
             {chatLoading && (
               <div className="flex justify-start">
-                <div className="bg-[#0a0a0a] border border-white/10 rounded-lg p-3">
-                  <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                <div className="bg-[#0a0a0a] border border-white/10 rounded-lg p-3 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
+                  <span className="text-xs text-gray-400">Analyzing impact...</span>
                 </div>
               </div>
             )}
@@ -1186,20 +1417,20 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
             <div ref={chatEndRef} />
           </div>
           
-          <form onSubmit={handleChatSubmit} className="p-4 border-t border-white/10">
+          <form onSubmit={handleChatSubmit} className="p-4 border-t border-white/10 bg-[#0a0a0a]/50">
             <div className="flex gap-2">
               <input
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder="Ask about code changes and impact..."
-                className="flex-1 bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                className="flex-1 bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
                 disabled={chatLoading}
               />
               <button
                 type="submit"
                 disabled={!chatInput.trim() || chatLoading}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
               >
                 <Send className="w-4 h-4" />
               </button>
@@ -1208,17 +1439,6 @@ export default function BlastRadiusGraph({ nodeId, onClose }: BlastRadiusGraphPr
         </div>
       )}
 
-        {/* Close button */}
-        {onClose && (
-          <div className="absolute top-4 right-4 z-10">
-            <button
-              onClick={onClose}
-              className="p-2 bg-[#1a1a1a]/90 hover:bg-[#2a2a2a] border border-white/10 rounded-lg text-white transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        )}
       </div>
     </ReactFlowProvider>
   );

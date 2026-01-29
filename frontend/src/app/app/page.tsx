@@ -194,6 +194,7 @@ export default function Dashboard() {
   const [loadedChildren, setLoadedChildren] = useState<Map<string, GraphData>>(new Map());
   const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
   const [nodeChildCounts, setNodeChildCounts] = useState<Map<string, number>>(new Map());
+  const [hasAutoExpanded, setHasAutoExpanded] = useState(false);
   
   // Refs for synchronous checks in event handlers
   const loadedChildrenRef = useRef<Map<string, GraphData>>(new Map());
@@ -264,7 +265,8 @@ export default function Dashboard() {
       }
       
       // Mark as collapsed if not expanded (but has children)
-      if (!expandedNodes.has(nodeId) && node.children && node.children.length > 0) {
+      // Special case: root node is always expanded
+      if (nodeId !== 'root' && !expandedNodes.has(nodeId) && node.children && node.children.length > 0) {
         node._children = node.children;
         node.children = null;
       }
@@ -342,10 +344,84 @@ export default function Dashboard() {
     }
   }, []); // No dependencies needed - using functional updates
 
+  // Auto-expand root node and first 3-5 children on initial load
+  useEffect(() => {
+    if (!hierarchyData || hasAutoExpanded || graphData.nodes.length === 0) return; // Only run once when hierarchy is first built
+    
+    // Get the root node - it could be in different structures
+    const rootNode = hierarchyData;
+    if (!rootNode) {
+      setHasAutoExpanded(true);
+      return;
+    }
+    
+    // Expand root node first (always)
+    const nodesToExpand = new Set<string>(['root']);
+    
+    // Get children - check both children and _children (collapsed)
+    // The hierarchy might have children in _children if they were collapsed
+    const rootChildren = (rootNode.children || rootNode._children || []);
+    
+    if (rootChildren.length === 0) {
+      setHasAutoExpanded(true);
+      setExpandedNodes(nodesToExpand);
+      return;
+    }
+    
+    // Expand first 3-5 children of root (folders)
+    const numToExpand = Math.min(5, Math.max(3, rootChildren.length));
+    const childrenToExpand = rootChildren.slice(0, numToExpand);
+    
+    childrenToExpand.forEach((child: any) => {
+      // Try multiple ways to get the node ID
+      const childId = child.attributes?.id || 
+                     child.data?.attributes?.id || 
+                     child.data?.id ||
+                     (child.data && typeof child.data === 'object' && 'id' in child.data ? child.data.id : null);
+      
+      if (childId) {
+        nodesToExpand.add(String(childId));
+        console.log('[Auto-expand] Adding node to expand:', childId, 'name:', child.name || child.data?.name);
+      } else {
+        console.warn('[Auto-expand] Could not find ID for child:', child);
+      }
+    });
+    
+    console.log('[Auto-expand] Expanding nodes:', Array.from(nodesToExpand), 'from', rootChildren.length, 'total children');
+    setExpandedNodes(nodesToExpand);
+    setHasAutoExpanded(true);
+    
+    // Load children for expanded nodes if they have lazy-loaded children
+    // Note: loadNodeChildren is stable (useCallback with no deps), so it's safe to call
+    childrenToExpand.forEach((child: any) => {
+      const childId = child.attributes?.id || 
+                     child.data?.attributes?.id || 
+                     child.data?.id ||
+                     (child.data && typeof child.data === 'object' && 'id' in child.data ? child.data.id : null);
+      
+      if (childId) {
+        const childCount = child.data?._childCount || child._childCount || (child.children?.length) || (child._children?.length) || 0;
+        if (childCount > 0) {
+          console.log('[Auto-expand] Loading children for:', childId, 'count:', childCount);
+          loadNodeChildren(String(childId));
+        }
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hierarchyData, hasAutoExpanded, graphData.nodes.length]); // loadNodeChildren is stable, no need in deps
+
   // ---------------------------------------------------------------------------
   // API
   // ---------------------------------------------------------------------------
-  const loadGraph = useCallback(async () => { const data = await dexApi.getGraphData(); if(data?.nodes?.length) setGraphData(data); }, []);
+  const loadGraph = useCallback(async () => { 
+    const data = await dexApi.getGraphData(); 
+    if(data?.nodes?.length) {
+      setGraphData(data);
+      // Reset auto-expand flag when new graph data loads
+      setHasAutoExpanded(false);
+      setExpandedNodes(new Set()); // Clear previous expansions
+    }
+  }, []);
 
   const pollIngestion = useCallback(() => {
     const i = setInterval(async () => {
