@@ -1,7 +1,7 @@
 # Root Dockerfile for Railway deployment
 # Build context: repository root
 # Multi-stage build to reduce final image size
-FROM python:3.11-slim as builder
+FROM python:3.14-slim as builder
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir --user --extra-index-url https://download.pytorch
 RUN pip install --no-cache-dir --user -r /app/requirements.txt
 
 # Production stage
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
