@@ -161,11 +161,17 @@ class DexClient {
             const session = await getSession();
             
             if (session?.user) {
-              // Use user.id if available (from NextAuth), otherwise fall back to email
+              // Priority: user.id (from database) > user.email (from OAuth)
+              // This ensures we always have a valid identifier
               const userId = (session.user as any).id || session.user.email;
               if (userId) {
-                config.headers['X-User-ID'] = userId;
+                config.headers['X-User-ID'] = userId as string;
+                console.debug(`[API] Sending X-User-ID: ${userId}`);
+              } else {
+                console.warn('[API] No user ID or email found in session');
               }
+            } else {
+              console.debug('[API] No session found, request will fail authentication');
             }
           } catch (error) {
             // Silently fail if session can't be retrieved (e.g., not authenticated)

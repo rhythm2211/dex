@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { 
@@ -297,7 +297,7 @@ export default function HealthDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchHealthData = async () => {
+  const fetchHealthData = useCallback(async () => {
     try {
       setRefreshing(true);
       const [summaryData, cyclesData, godObjectsData, orphansData] = await Promise.all([
@@ -316,11 +316,11 @@ export default function HealthDashboardPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchHealthData();
-  }, []);
+  }, [fetchHealthData]);
 
   // Prepare treemap data
   const treemapData = godObjects.slice(0, 20).map((obj) => ({

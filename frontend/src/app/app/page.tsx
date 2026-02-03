@@ -367,6 +367,12 @@ export default function Dashboard() {
     }
   }, []); // No dependencies needed - using functional updates
 
+  // Store loadNodeChildren in ref to avoid dependency issues
+  const loadNodeChildrenRef = useRef(loadNodeChildren);
+  useEffect(() => {
+    loadNodeChildrenRef.current = loadNodeChildren;
+  }, [loadNodeChildren]);
+
   // Auto-expand root node and first 3-5 children on initial load
   useEffect(() => {
     if (!hierarchyData || hasAutoExpanded || graphData.nodes.length === 0) return; // Only run once when hierarchy is first built
@@ -415,7 +421,7 @@ export default function Dashboard() {
     setHasAutoExpanded(true);
     
     // Load children for expanded nodes if they have lazy-loaded children
-    // Note: loadNodeChildren is stable (useCallback with no deps), so it's safe to call
+    // Use ref to avoid dependency issues
     childrenToExpand.forEach((child: any) => {
       const childId = child.attributes?.id || 
                      child.data?.attributes?.id || 
@@ -426,12 +432,11 @@ export default function Dashboard() {
         const childCount = child.data?._childCount || child._childCount || (child.children?.length) || (child._children?.length) || 0;
         if (childCount > 0) {
           console.log('[Auto-expand] Loading children for:', childId, 'count:', childCount);
-          loadNodeChildren(String(childId));
+          loadNodeChildrenRef.current(String(childId));
         }
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hierarchyData, hasAutoExpanded, graphData.nodes.length]); // loadNodeChildren is stable, no need in deps
+  }, [hierarchyData, hasAutoExpanded, graphData.nodes.length, loadNodeChildren]);
 
   // ---------------------------------------------------------------------------
   // API
@@ -1056,7 +1061,7 @@ export default function Dashboard() {
                 
                 // Lazy load children if not already loaded
                 if (nodeId) {
-                    loadNodeChildren(nodeId);
+                    loadNodeChildrenRef.current(nodeId);
                 }
             }
             update(d);
@@ -1332,7 +1337,7 @@ export default function Dashboard() {
         window.removeEventListener('keydown', handleKeyDown);
         window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeClick, centerTree, loadNodeChildren, loadingNodes]);
+  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeClick, centerTree, loadingNodes]);
 
 
   if (!mounted) return null;

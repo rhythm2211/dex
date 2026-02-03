@@ -56,7 +56,7 @@ export default function EvolutionPage() {
 
   // --- 2. Playback Logic ---
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: NodeJS.Timeout | undefined;
     if (isPlaying) {
       interval = setInterval(() => {
         setCurrentCommitIdx(prev => {
@@ -68,8 +68,12 @@ export default function EvolutionPage() {
         });
       }, 150); // Speed of playback
     }
-    return () => clearInterval(interval);
-  }, [isPlaying, history]);
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isPlaying, history.length]);
 
   // --- 3. Compute Visuals ---
   const currentCommit = history[currentCommitIdx];
