@@ -1280,17 +1280,16 @@ class GraphEngine:
                 # Actually, let's use a simpler query pattern for the graph lib
                 pass 
 
-            # Simpler Graph Query (Path Expansion)
-            # We use a union to get immediate edges for visualization
+            # Simpler Graph Query (Path Expansion) - scoped by user_id for multi-tenant
             simple_query = """
-            MATCH (t:CodeNode {id: $id})<-[r:DEPENDS_ON]-(s:CodeNode)
+            MATCH (t:CodeNode {user_id: $user_id, id: $id})<-[r:DEPENDS_ON]-(s:CodeNode {user_id: $user_id})
             RETURN s, r, t
             UNION
-            MATCH (t:CodeNode {id: $id})<-[:DEPENDS_ON]-(inter)<-[r:DEPENDS_ON]-(s:CodeNode)
+            MATCH (t:CodeNode {user_id: $user_id, id: $id})<-[:DEPENDS_ON]-(inter:CodeNode {user_id: $user_id})<-[r:DEPENDS_ON]-(s:CodeNode {user_id: $user_id})
             RETURN s, r, inter as t
             """
             
-            result = session.run(simple_query, id=target_id)
+            result = session.run(simple_query, user_id=self.user_id, id=target_id)
             for record in result:
                 s = dict(record["s"])
                 t = dict(record["t"])
@@ -1403,10 +1402,10 @@ class GraphEngine:
                 
                 logger.info(f"Searching for node: {node_id} (normalized: {normalized_node_id}, alt: {alt_node_id})")
                 
-                # First, fetch the source node - try multiple formats and flexible matching
+                # First, fetch the source node - try multiple formats and flexible matching (scoped by user_id)
                 source_result = session.run(
                     """
-                    MATCH (n:CodeNode)
+                    MATCH (n:CodeNode {user_id: $user_id})
                     WHERE n.id = $node_id 
                        OR n.id = $normalized_id
                        OR n.id = $alt_id
@@ -1424,6 +1423,7 @@ class GraphEngine:
                       END
                     LIMIT 1
                     """,
+                    user_id=self.user_id,
                     node_id=node_id,
                     normalized_id=normalized_node_id,
                     alt_id=alt_node_id,
@@ -1450,15 +1450,15 @@ class GraphEngine:
                 if node_role == "DEPENDENCY_MANIFEST":
                     # DEPENDENCY_MANIFEST changes affect the entire repository
                     warnings.append("CRITICAL: This is a dependency manifest file. Changes affect the ENTIRE repository!")
-                    # Query to get ALL files in the repository
+                    # Query to get ALL files in the repository (scoped by user_id)
                     all_files_query = """
-                    MATCH (n:CodeNode)
+                    MATCH (n:CodeNode {user_id: $user_id})
                     WHERE n.type = 'file'
                       AND n.id <> $node_id
                     RETURN n
                     LIMIT 10000
                     """
-                    all_files_result = session.run(all_files_query, node_id=node_id)
+                    all_files_result = session.run(all_files_query, user_id=self.user_id, node_id=node_id)
                     for record in all_files_result:
                         file_node = dict(record["n"])
                         file_id = file_node.get("id")
@@ -1488,38 +1488,38 @@ class GraphEngine:
                 # This finds relationships using STARTS WITH and flexible path matching
                 
                 # Query 1: Find files that depend on source (files that import/include source)
-                # Use flexible matching like the hybrid retriever does
+                # Use flexible matching like the hybrid retriever does (scoped by user_id)
                 query_dependents_bfs = """
-                MATCH (source:CodeNode)
+                MATCH (source:CodeNode {user_id: $user_id})
                 WHERE source.id = $node_id OR source.id STARTS WITH $node_id
                 WITH source
                 
                 // Direct relationships - files that directly depend on source
-                OPTIONAL MATCH (dependent:CodeNode)-[r1]->(source)
+                OPTIONAL MATCH (dependent:CodeNode {user_id: $user_id})-[r1]->(source)
                 WHERE dependent <> source 
                   AND NOT dependent.id CONTAINS '::'
                   AND type(r1) IN ['DEPENDS_ON', 'IMPORTS', 'CALLS', 'MAYBE_CALLS', 'MAYBE_DEPENDS']
                 
                 // Reverse - files that source depends on (these would be affected if source changes)
-                OPTIONAL MATCH (source)-[r2]->(dependent2:CodeNode)
+                OPTIONAL MATCH (source)-[r2]->(dependent2:CodeNode {user_id: $user_id})
                 WHERE dependent2 <> source 
                   AND NOT dependent2.id CONTAINS '::'
                   AND type(r2) IN ['DEPENDS_ON', 'IMPORTS', 'CALLS']
                 
                 // Through CONTAINS - files -> functions -> source
-                OPTIONAL MATCH (dependent3:CodeNode)-[:CONTAINS]->(func:CodeNode)-[r3]->(source)
+                OPTIONAL MATCH (dependent3:CodeNode {user_id: $user_id})-[:CONTAINS]->(func:CodeNode {user_id: $user_id})-[r3]->(source)
                 WHERE dependent3 <> source 
                   AND NOT dependent3.id CONTAINS '::'
                   AND type(r3) IN ['DEPENDS_ON', 'IMPORTS', 'CALLS']
                 
                 // Through CONTAINS reverse - source -> functions -> other files
-                OPTIONAL MATCH (source)-[:CONTAINS]->(func2:CodeNode)-[r4]->(dependent4:CodeNode)
+                OPTIONAL MATCH (source)-[:CONTAINS]->(func2:CodeNode {user_id: $user_id})-[r4]->(dependent4:CodeNode {user_id: $user_id})
                 WHERE dependent4 <> source 
                   AND NOT dependent4.id CONTAINS '::'
                   AND type(r4) IN ['DEPENDS_ON', 'IMPORTS', 'CALLS']
                 
                 // Files in same directory (sibling files - likely related)
-                OPTIONAL MATCH (sibling:CodeNode)
+                OPTIONAL MATCH (sibling:CodeNode {user_id: $user_id})
                 WHERE sibling <> source 
                   AND NOT sibling.id CONTAINS '::'
                   AND sibling.id STARTS WITH $dir_prefix
@@ -1550,26 +1550,26 @@ class GraphEngine:
                 LIMIT 300
                 """
                 
-                # Query 2: Find what source depends on (files that source imports/includes)
+                # Query 2: Find what source depends on (files that source imports/includes) (scoped by user_id)
                 query_dependencies_bfs = """
-                MATCH (source:CodeNode)
+                MATCH (source:CodeNode {user_id: $user_id})
                 WHERE source.id = $node_id OR source.id STARTS WITH $node_id
                 WITH source
                 
                 // Direct dependencies - source imports/depends on
-                OPTIONAL MATCH (source)-[r1]->(dependency:CodeNode)
+                OPTIONAL MATCH (source)-[r1]->(dependency:CodeNode {user_id: $user_id})
                 WHERE dependency <> source 
                   AND NOT dependency.id CONTAINS '::'
                   AND type(r1) IN ['DEPENDS_ON', 'IMPORTS', 'CALLS', 'MAYBE_CALLS', 'MAYBE_DEPENDS']
                 
                 // Through CONTAINS - source -> functions -> other files
-                OPTIONAL MATCH (source)-[:CONTAINS]->(func:CodeNode)-[r2]->(dependency2:CodeNode)
+                OPTIONAL MATCH (source)-[:CONTAINS]->(func:CodeNode {user_id: $user_id})-[r2]->(dependency2:CodeNode {user_id: $user_id})
                 WHERE dependency2 <> source 
                   AND NOT dependency2.id CONTAINS '::'
                   AND type(r2) IN ['DEPENDS_ON', 'IMPORTS', 'CALLS']
                 
                 // Files that depend on source (reverse - these would be affected)
-                OPTIONAL MATCH (dependency3:CodeNode)-[r3]->(source)
+                OPTIONAL MATCH (dependency3:CodeNode {user_id: $user_id})-[r3]->(source)
                 WHERE dependency3 <> source 
                   AND NOT dependency3.id CONTAINS '::'
                   AND type(r3) IN ['DEPENDS_ON', 'IMPORTS', 'CALLS']
@@ -1598,7 +1598,7 @@ class GraphEngine:
                     dir_prefix = node_id.split("\\")[0] + "\\" if "\\" in node_id else node_id.split("/")[0] + "/"
                 
                 # Process dependents (files that would be affected by changes to source)
-                result_dependents = session.run(query_dependents_bfs, node_id=node_id, dir_prefix=dir_prefix)
+                result_dependents = session.run(query_dependents_bfs, user_id=self.user_id, node_id=node_id, dir_prefix=dir_prefix)
                 for record in result_dependents:
                     node_obj = record.get("node")
                     if not node_obj:
@@ -1722,7 +1722,7 @@ class GraphEngine:
                             })
                 
                 # Process dependencies (files that source depends on)
-                result_dependencies = session.run(query_dependencies_bfs, node_id=node_id)
+                result_dependencies = session.run(query_dependencies_bfs, user_id=self.user_id, node_id=node_id)
                 for record in result_dependencies:
                     node_obj = record.get("node")
                     if not node_obj:
@@ -1772,16 +1772,15 @@ class GraphEngine:
                 if len(nodes_map) <= 1:
                     logger.info("No relationships found with main queries, trying fallback flexible matching...")
                     
-                    # Fallback 1: Use the same approach as hybrid retriever - find any relationships
-                    # Use actual_node_id (the one we found) for better matching
+                    # Fallback 1: Use the same approach as hybrid retriever - find any relationships (scoped by user_id)
                     fallback_query = """
-                    MATCH (source:CodeNode)
+                    MATCH (source:CodeNode {user_id: $user_id})
                     WHERE source.id = $actual_node_id 
                        OR source.id STARTS WITH $actual_node_id
                        OR $actual_node_id STARTS WITH source.id
                        OR source.id CONTAINS $filename
                     WITH source
-                    OPTIONAL MATCH (source)-[r]-(related:CodeNode)
+                    OPTIONAL MATCH (source)-[r]-(related:CodeNode {user_id: $user_id})
                     WHERE related <> source
                       AND NOT related.id CONTAINS '::'
                     WITH source, related, r
@@ -1792,24 +1791,24 @@ class GraphEngine:
                     """
                     
                     filename = actual_node_id.split("\\")[-1].split("/")[-1]
-                    fallback_result = session.run(fallback_query, actual_node_id=actual_node_id, filename=filename)
+                    fallback_result = session.run(fallback_query, user_id=self.user_id, actual_node_id=actual_node_id, filename=filename)
                     
                     # Fallback 2: Find relationships through function-level nodes
                     if len(nodes_map) <= 1:
                         logger.info("Trying function-level relationship traversal...")
                         function_fallback_query = """
-                        MATCH (source:CodeNode)
+                        MATCH (source:CodeNode {user_id: $user_id})
                         WHERE source.id = $actual_node_id 
                            OR source.id STARTS WITH $actual_node_id
                         WITH source
-                        OPTIONAL MATCH (source)-[:CONTAINS]->(func:CodeNode)-[r]-(otherFunc:CodeNode)<-[:CONTAINS]-(otherFile:CodeNode)
+                        OPTIONAL MATCH (source)-[:CONTAINS]->(func:CodeNode {user_id: $user_id})-[r]-(otherFunc:CodeNode {user_id: $user_id})<-[:CONTAINS]-(otherFile:CodeNode {user_id: $user_id})
                         WHERE otherFile <> source
                           AND NOT otherFile.id CONTAINS '::'
                         WITH DISTINCT otherFile, r
                         LIMIT 100
                         RETURN otherFile as related, 2 as hop_distance, 'indirect' as impact_type
                         """
-                        function_fallback_result = session.run(function_fallback_query, actual_node_id=actual_node_id)
+                        function_fallback_result = session.run(function_fallback_query, user_id=self.user_id, actual_node_id=actual_node_id)
                         
                         # Combine results
                         all_fallback_results = []
@@ -1880,12 +1879,12 @@ class GraphEngine:
                 node_ids = list(nodes_map.keys())
                 if node_ids:
                     test_query = """
-                    MATCH (test:CodeNode)-[:COVERS]->(source:CodeNode)
+                    MATCH (test:CodeNode {user_id: $user_id})-[:COVERS]->(source:CodeNode {user_id: $user_id})
                     WHERE source.id IN $node_ids
                     AND (test.is_test_file = true OR test.id CONTAINS 'test' OR test.id CONTAINS 'spec')
                     RETURN DISTINCT test.id as test_id, test.name as test_name
                     """
-                    test_result = session.run(test_query, node_ids=node_ids)
+                    test_result = session.run(test_query, user_id=self.user_id, node_ids=node_ids)
                     for rec in test_result:
                         test_files.append({
                             "id": rec["test_id"],
@@ -1898,10 +1897,10 @@ class GraphEngine:
                     # Use the same flexible approach as hybrid retriever - match ANY relationship
                     edges_query = """
                     UNWIND $node_ids as node_id
-                    MATCH (a:CodeNode)
+                    MATCH (a:CodeNode {user_id: $user_id})
                     WHERE a.id = node_id OR a.id STARTS WITH node_id OR node_id STARTS WITH a.id
                     WITH a
-                    OPTIONAL MATCH (a)-[r]-(b:CodeNode)
+                    OPTIONAL MATCH (a)-[r]-(b:CodeNode {user_id: $user_id})
                     WHERE (b.id IN $node_ids OR ANY(id IN $node_ids WHERE b.id = id OR b.id STARTS WITH id OR id STARTS WITH b.id))
                       AND a <> b
                       AND NOT a.id CONTAINS '::'
@@ -1912,7 +1911,7 @@ class GraphEngine:
                     LIMIT 1000
                     """
                     
-                    edges_result = session.run(edges_query, node_ids=node_ids)
+                    edges_result = session.run(edges_query, user_id=self.user_id, node_ids=node_ids)
                     edge_count = 0
                     
                     for edge_rec in edges_result:

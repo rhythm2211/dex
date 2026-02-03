@@ -132,11 +132,14 @@ class HybridRetriever:
             # Log the query and parameters for debugging
             logger.debug(f"Starting vector search with k={k_vectors}, query='{query[:100]}'")
             
+            # Filter by user_id for multi-tenant isolation (vectors are stored with metadata user_id)
+            search_filter = {"user_id": self.user_id}
+
             # If we have specific file paths, try to search within those files first
             if node_file_paths:
                 # Search with higher k to get more context from the specific files
                 logger.debug(f"Node file paths found, searching with k={k_vectors * 2}")
-                docs = self.vector_store.similarity_search(query, k=k_vectors * 2)
+                docs = self.vector_store.similarity_search(query, k=k_vectors * 2, filter=search_filter)
                 # Prioritize docs from the files we found
                 prioritized_docs = []
                 other_docs = []
@@ -153,7 +156,7 @@ class HybridRetriever:
                 docs = prioritized_docs + other_docs[:k_vectors]
             else:
                 logger.debug(f"No node file paths, using standard search with k={k_vectors}")
-                docs = self.vector_store.similarity_search(query, k=k_vectors)
+                docs = self.vector_store.similarity_search(query, k=k_vectors, filter=search_filter)
                 for doc in docs:
                     filename = doc.metadata.get('file_name')
                     if filename:
@@ -288,7 +291,11 @@ class HybridRetriever:
             else:
                 graph_context = self._expand_anchors_neo4j(list(anchors))
         else:
-            graph_context = "No graph context available."
+            # No anchors (e.g. empty vector DB): for general/architecture queries, get project overview from graph
+            if (is_general_query or is_architecture_query) and self.driver:
+                graph_context = self._get_project_overview_neo4j()
+            else:
+                graph_context = "No graph context available."
 
         # Step 3: Fuse Contexts
         # Format code context - if empty, return a message that won't trigger false negatives
@@ -492,6 +499,51 @@ class HybridRetriever:
             # Don't return error message as context - just return empty and log
             # This allows the system to fall back to regular vector search
             return "", file_paths
+
+    def _get_project_overview_neo4j(self) -> str:
+        """
+        When vector DB has no results (e.g. before ingestion or for new user), get high-level
+        project structure from Neo4j so general/architecture questions can still be answered.
+        Returns file-level nodes and key relationships for this user's graph.
+        """
+        if not self.driver:
+            return "No graph context available (Neo4j disconnected)."
+        query = """
+        MATCH (n:CodeNode {user_id: $user_id})
+        WHERE n.type = 'file' OR NOT n.id CONTAINS '::'
+        WITH n
+        ORDER BY n.id
+        LIMIT 80
+        OPTIONAL MATCH (n)-[r]-(m:CodeNode {user_id: $user_id})
+        WHERE m.type = 'file' OR NOT m.id CONTAINS '::'
+        WITH n, collect(DISTINCT {type: type(r), other: m.id})[..5] as rels
+        RETURN n.id as id, n.name as name, n.type as type, rels
+        """
+        try:
+            @retry_on_connection_error(max_retries=3, delay=1.0)
+            def _execute():
+                with self.driver.session(database=self.database) as session:
+                    result = session.run(query, user_id=self.user_id)
+                    return list(result)
+            records = _execute()
+            if not records:
+                return "No structural relationships found in graph (repository may not be ingested yet)."
+            parts = ["=== PROJECT STRUCTURE (from knowledge graph) ==="]
+            for rec in records:
+                nid = rec.get("id", "")
+                name = rec.get("name", nid)
+                ntype = rec.get("type", "file")
+                rels = rec.get("rels") or []
+                line = f"\n--- {name} ({ntype}) ---\n  ID: {nid}"
+                if rels:
+                    rstr = ", ".join(f"[{r.get('type', '?')}]-> {r.get('other', '?')}" for r in rels if r.get("other"))
+                    if rstr:
+                        line += f"\n  Relationships: {rstr}"
+                parts.append(line)
+            return "\n".join(parts)
+        except Exception as e:
+            logger.warning(f"Project overview query failed: {e}")
+            return "No graph context available."
     
     def _extract_person_name(self, query: str) -> str:
         """
