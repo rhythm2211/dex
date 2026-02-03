@@ -190,6 +190,8 @@ export default function Dashboard() {
   const [progress, setProgress] = useState(0);
   const [step, setStep] = useState('');
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'assistant' | 'details'>('assistant');
@@ -455,17 +457,20 @@ export default function Dashboard() {
                 clearInterval(i); 
                 setIngesting(false); 
                 setPollInterval(null);
+                pollIntervalRef.current = null;
                 loadGraph(); 
             }
             if (s.state === 'cancelled') { 
                 clearInterval(i); 
                 setIngesting(false); 
                 setPollInterval(null);
+                pollIntervalRef.current = null;
             }
             if (s.state === 'error') { 
                 clearInterval(i); 
                 setIngesting(false); 
                 setPollInterval(null);
+                pollIntervalRef.current = null;
             }
         } catch(e) {}
     }, 1000);
@@ -473,11 +478,16 @@ export default function Dashboard() {
   }, [loadGraph]);
 
   useEffect(() => {
+    let mounted = true;
+    
     dexApi.getIngestStatus().then(s => {
+        if (!mounted) return;
+        
         if(s.state === 'running') {
             setIngesting(true); 
             const interval = pollIngestion();
             setPollInterval(interval);
+            pollIntervalRef.current = interval;
         } else if(s.state === 'completed') {
             // Load graph data if ingestion is already completed
             loadGraph();
@@ -488,8 +498,10 @@ export default function Dashboard() {
     
     // Cleanup interval on unmount
     return () => {
-        if (pollInterval) {
-            clearInterval(pollInterval);
+        mounted = false;
+        if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
         }
     };
   }, [pollIngestion, loadGraph]);
@@ -500,6 +512,7 @@ export default function Dashboard() {
           await dexApi.triggerIngestion(repoUrl); 
           const interval = pollIngestion();
           setPollInterval(interval);
+          pollIntervalRef.current = interval;
       } catch (err: any) { 
           console.error("Ingestion error:", err);
           // If error is 409 (already running), try to reset and retry
@@ -512,6 +525,7 @@ export default function Dashboard() {
                   await dexApi.triggerIngestion(repoUrl);
                   const interval = pollIngestion();
                   setPollInterval(interval);
+                  pollIntervalRef.current = interval;
               } catch (retryErr: any) {
                   console.error("Retry failed:", retryErr);
                   setIngesting(false);
@@ -527,10 +541,14 @@ export default function Dashboard() {
   const handleCancel = async () => {
       try {
           await dexApi.cancelIngestion();
+          if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+          }
           if (pollInterval) {
               clearInterval(pollInterval);
-              setPollInterval(null);
           }
+          setPollInterval(null);
           setIngesting(false);
           setStep("Cancelled");
       } catch (err: any) {
