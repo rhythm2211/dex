@@ -29,7 +29,7 @@ import {
   Github, Edit2, Save, X, User, Mail, Building2, Briefcase,
   Calendar, FileText, GitBranch, GitCommit, Code, TreePine,
   Activity, TrendingUp, Sparkles, Star, GitMerge, Clock,
-  CheckCircle, AlertCircle, ArrowLeft, Settings
+  CheckCircle, AlertCircle, ArrowLeft, Settings as SettingsIcon
 } from "lucide-react";
 
 interface UserProfile {
@@ -435,6 +435,13 @@ export default function ProfilePage() {
                 <span className="text-xs text-emerald-400">Profile saved!</span>
               </div>
             )}
+            <Link
+              href="/settings"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-semibold transition-all"
+            >
+              <SettingsIcon size={14} />
+              Settings
+            </Link>
             {!isEditing ? (
               <button
                 onClick={() => setIsEditing(true)}

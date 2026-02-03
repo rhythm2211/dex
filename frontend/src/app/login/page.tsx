@@ -314,11 +314,17 @@ function LoginContent() {
                 )}
             </div>
             
-            <div className="p-5 bg-white/[0.02] border-t border-white/5 text-center">
-                <p className="text-xs text-slate-500">
+            <div className="p-5 bg-white/[0.02] border-t border-white/5 space-y-2">
+                <p className="text-xs text-slate-500 text-center">
                     Don't have an account?{" "}
                     <Link href="/signup" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
                         Sign up
+                    </Link>
+                </p>
+                <p className="text-xs text-slate-500 text-center">
+                    Need help?{" "}
+                    <Link href="/help" className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">
+                        Visit Help Center
                     </Link>
                 </p>
             </div>

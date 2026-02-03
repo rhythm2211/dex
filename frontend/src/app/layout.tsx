@@ -17,7 +17,10 @@ export const metadata: Metadata = {
   title: "DEX",
   description: "Map-first code intelligence: understand any repository at a glance.",
   icons: {
-    icon: "/dex-logo.png",
+    icon: [
+      { url: "/dex-logo.png", sizes: "any" },
+      { url: "/dex-logo.png", type: "image/png" },
+    ],
     shortcut: "/dex-logo.png",
     apple: "/dex-logo.png",
   },

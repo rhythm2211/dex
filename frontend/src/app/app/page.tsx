@@ -8,13 +8,14 @@ import {
   RefreshCw, Zap, Search, Terminal, MessageSquare,
   Info, Folder, File, Box, Code, Database, FileCode,
   ChevronRight, ChevronDown, Move, LayoutTemplate,
-  Play, LogOut, User, X, HelpCircle, MousePointerClick, Network, Download
+  Play, LogOut, User, X, HelpCircle, MousePointerClick, Network, Download, Settings
 } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as d3 from 'd3';
 import { jsPDF } from 'jspdf';
+import MobileWarning from '@/components/MobileWarning';
 
 // -----------------------------------------------------------------------------
 // Visual Config & Color Palette
@@ -1344,6 +1345,9 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans overflow-hidden relative">
+      {/* Mobile Warning */}
+      <MobileWarning />
+      
       {/* Dynamic Background Effects */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-900/10 blur-[150px] rounded-full mix-blend-screen opacity-50"></div>
@@ -1443,16 +1447,25 @@ export default function Dashboard() {
             </Link>
             <div className="flex items-center gap-2">
                 {session?.user && (
-                    <Link
-                        href="/profile"
-                        className="flex items-center gap-2 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all cursor-pointer"
-                        title="View Profile"
-                    >
-                        <User size={12} className="text-indigo-400" />
-                        <span className="text-[10px] text-indigo-300 font-medium max-w-[100px] truncate">
-                            {session.user.name || session.user.email}
-                        </span>
-                    </Link>
+                    <>
+                        <Link
+                            href="/profile"
+                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all cursor-pointer"
+                            title="View Profile"
+                        >
+                            <User size={12} className="text-indigo-400" />
+                            <span className="text-[10px] text-indigo-300 font-medium max-w-[100px] truncate">
+                                {session.user.name || session.user.email}
+                            </span>
+                        </Link>
+                        <Link
+                            href="/settings"
+                            className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 hover:text-indigo-400 transition-all"
+                            title="Settings"
+                        >
+                            <Settings size={12} />
+                        </Link>
+                    </>
                 )}
                 <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-emerald-500/5 border border-emerald-500/10">
                     <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />

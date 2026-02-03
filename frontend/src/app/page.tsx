@@ -12,6 +12,7 @@ import {
   AlertTriangle, Target, BarChart3, TestTube, UserCheck, Radio
 } from "lucide-react";
 import { dexApi, ActiveZonesResponse, TeamTopologyResponse, ZoneData } from "@/lib/api";
+import MobileWarning from "@/components/MobileWarning";
 
 // -----------------------------------------------------------------------------
 // CUSTOM HOOK: SCROLL-BASED ANIMATIONS
@@ -1165,6 +1166,9 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-[#050505] text-slate-200 overflow-x-hidden relative selection:bg-indigo-500/30 selection:text-white font-sans">
       <GlobalStyles />
+      
+      {/* Mobile Warning */}
+      <MobileWarning />
       
       {/* Dynamic Background - Cyberpunk Grid */}
       <div className="fixed inset-0 z-0 pointer-events-none" style={{ contain: 'layout style paint', willChange: 'auto' }}>
