@@ -196,13 +196,14 @@ class HybridRetriever:
                     from backend.app.models.user import engine
                     from sqlalchemy import text
                     with engine.connect() as conn:
-                        # Use cosine distance for similarity search - filtered by user_id
+                        # Use cosine distance for similarity search - filtered by user_id.
+                        # Use CAST(... AS vector) so SQLAlchemy only sees :embedding (not :embedding::vector which parses as two params).
                         sql_query = text(f"""
                             SELECT content, metadata, file_name, source,
-                                   1 - (embedding <=> :embedding::vector) as similarity
+                                   1 - (embedding <=> CAST(:embedding AS vector)) as similarity
                             FROM {settings.POSTGRES_VECTOR_TABLE}
                             WHERE metadata->>'user_id' = :user_id
-                            ORDER BY embedding <=> :embedding::vector
+                            ORDER BY embedding <=> CAST(:embedding AS vector)
                             LIMIT :limit
                         """)
                         result = conn.execute(

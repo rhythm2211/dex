@@ -2012,3 +2012,53 @@
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "Database connection test successful", "data": {}, "timestamp": 1770141818769}
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "init_db completed successfully", "data": {"attempt": 1}, "timestamp": 1770141837000}
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "main.py:init_db_wrapper", "message": "init_db completed successfully", "data": {}, "timestamp": 1770141837001}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770142405423}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770142406002}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config settings imported successfully", "data": {"env": "development"}, "timestamp": 1770142406069}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "main.py:35", "message": "About to import api_router", "data": {}, "timestamp": 1770142406070}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:9", "message": "router.py module started importing", "data": {}, "timestamp": 1770142406634}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:16", "message": "About to import users_router", "data": {}, "timestamp": 1770142406635}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "users.py:13", "message": "users.py started importing", "data": {}, "timestamp": 1770142406642}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "users.py:14", "message": "About to import user models", "data": {}, "timestamp": 1770142406644}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "users.py:15", "message": "user models imported successfully", "data": {}, "timestamp": 1770142406644}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:17", "message": "users_router imported successfully", "data": {}, "timestamp": 1770142406707}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:18", "message": "About to import health_router", "data": {}, "timestamp": 1770142406708}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:11", "message": "ingestion_service.py started importing", "data": {}, "timestamp": 1770142408833}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:12", "message": "About to import git", "data": {}, "timestamp": 1770142408834}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:13", "message": "git imported successfully", "data": {}, "timestamp": 1770142409083}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:14", "message": "About to import langchain", "data": {}, "timestamp": 1770142409084}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:15", "message": "langchain imported successfully", "data": {}, "timestamp": 1770142417806}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:16", "message": "About to import pgvector", "data": {}, "timestamp": 1770142417807}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:17", "message": "pgvector imported successfully", "data": {}, "timestamp": 1770142417815}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:18", "message": "About to import PGVector", "data": {}, "timestamp": 1770142417815}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:19", "message": "PGVector imported successfully", "data": {}, "timestamp": 1770142417874}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:20", "message": "About to import psycopg", "data": {}, "timestamp": 1770142417875}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:21", "message": "psycopg imported successfully", "data": {}, "timestamp": 1770142418041}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:22", "message": "About to import settings", "data": {}, "timestamp": 1770142418042}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:23", "message": "settings imported successfully", "data": {}, "timestamp": 1770142418043}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:24", "message": "About to import GraphEngine", "data": {}, "timestamp": 1770142418043}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:25", "message": "GraphEngine imported successfully", "data": {}, "timestamp": 1770142418043}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:26", "message": "About to import get_embeddings", "data": {}, "timestamp": 1770142418044}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:27", "message": "get_embeddings imported successfully", "data": {}, "timestamp": 1770142418046}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:19", "message": "health_router imported successfully", "data": {}, "timestamp": 1770142418050}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:20", "message": "About to create api_router", "data": {}, "timestamp": 1770142418050}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:21", "message": "api_router created successfully", "data": {}, "timestamp": 1770142418051}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:24", "message": "About to include users_router", "data": {}, "timestamp": 1770142418051}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:25", "message": "users_router included successfully", "data": {}, "timestamp": 1770142418066}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:28", "message": "About to include health_router", "data": {}, "timestamp": 1770142418067}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "router.py:29", "message": "health_router included successfully", "data": {}, "timestamp": 1770142418069}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "main.py:36", "message": "api_router imported successfully - router.py module completed", "data": {}, "timestamp": 1770142418087}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "C", "location": "main.py:37", "message": "About to import init_db", "data": {}, "timestamp": 1770142418088}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "C", "location": "main.py:38", "message": "init_db imported successfully", "data": {}, "timestamp": 1770142418088}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "D", "location": "main.py:47", "message": "About to create FastAPI app", "data": {}, "timestamp": 1770142418089}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "D", "location": "main.py:52", "message": "FastAPI app created successfully", "data": {}, "timestamp": 1770142418091}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "D", "location": "main.py:155", "message": "About to register router", "data": {"prefix": "/api/v1"}, "timestamp": 1770142418092}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "D", "location": "main.py:156", "message": "Router registered successfully", "data": {}, "timestamp": 1770142418122}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "E", "location": "main.py:159", "message": "Startup event triggered", "data": {}, "timestamp": 1770142418125}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "E", "location": "main.py:165", "message": "About to start init_db thread", "data": {}, "timestamp": 1770142418434}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "main.py:init_db_wrapper", "message": "init_db_wrapper started", "data": {}, "timestamp": 1770142418434}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "E", "location": "main.py:166", "message": "init_db thread started", "data": {}, "timestamp": 1770142418434}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "init_db function entry", "data": {}, "timestamp": 1770142418435}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "Database connection attempt", "data": {"attempt": 1, "maxRetries": 3}, "timestamp": 1770142418436}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "About to test database connection", "data": {}, "timestamp": 1770142418436}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "Database connection test successful", "data": {}, "timestamp": 1770142425159}
