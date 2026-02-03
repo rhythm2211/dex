@@ -235,6 +235,11 @@ def run_ingestion_sequence(repo_path: str, user_id: str):
         # Sync status after processing
         _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         
+        # Handle case where process_repository returns None
+        if result is None:
+            logger.error(f"❌ Ingestion returned None for user {user_id}")
+            result = {"status": "failed", "error": "Ingestion process returned no result"}
+        
         if result.get("status") == "success":
             logger.info(f"💾 Ingestion processing done for user {user_id}. Triggering RAG memory refresh...")
             rag_service = get_rag_service(user_id)

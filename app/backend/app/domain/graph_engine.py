@@ -590,7 +590,7 @@ class GraphEngine:
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    result = session.run(query)
+                    result = session.run(query, user_id=self.user_id)
                     # Fetch all records before session closes to avoid ResultConsumedError
                     return list(result)
             

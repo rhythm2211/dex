@@ -1886,12 +1886,13 @@ class IngestionService:
                     raise RuntimeError(f"Failed to insert vectors: {e}")
             
             logger.info(f"PostgreSQL vector indexing complete: {processed_count} chunks indexed")
+            
+            # Success - update status and return
+            self._update_status("completed", 100, "Analysis Complete.")
+            return {"status": "success", "chunks_processed": processed_count if 'processed_count' in locals() else 0}
         except Exception as e:
             logger.error(f"Vector indexing failed: {e}")
             raise
-            
-            self._update_status("completed", 100, "Analysis Complete.")
-            return {"status": "success", "chunks_processed": processed_count if 'processed_count' in locals() else 0}
 
         except RuntimeError as e:
             if "cancelled" in str(e).lower():

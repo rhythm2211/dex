@@ -161,9 +161,9 @@ class DexClient {
             const session = await getSession();
             
             if (session?.user) {
-              // Priority: user.id (from database) > user.email (from OAuth)
-              // This ensures we always have a valid identifier
-              const userId = (session.user as any).id || session.user.email;
+              // Priority: user.email (always use email for backend compatibility) > user.id (fallback)
+              // Backend expects email format for user identification and auto-creation
+              const userId = session.user.email || (session.user as any).id;
               if (userId) {
                 config.headers['X-User-ID'] = userId as string;
                 console.debug(`[API] Sending X-User-ID: ${userId}`);

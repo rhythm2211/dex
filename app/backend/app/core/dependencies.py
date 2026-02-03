@@ -115,11 +115,14 @@ def get_current_user(
                         detail=f"User not found and could not be created: {user_id}"
                     )
         else:
-            # Not an email and user doesn't exist - return 401 (Unauthorized)
-            logger.warning(f"User not found: {user_id}")
+            # Not an email and user doesn't exist - could be OAuth provider ID
+            # Try to find user by checking if this might be a provider ID that needs email lookup
+            # For now, provide a helpful error message
+            logger.warning(f"User not found: {user_id} (appears to be OAuth provider ID, not email)")
+            logger.warning(f"Frontend should send user email in X-User-ID header, not provider ID")
             raise HTTPException(
                 status_code=401,
-                detail=f"User not found: {user_id}. Please ensure you are logged in."
+                detail=f"User not found: {user_id}. This appears to be an OAuth provider ID. Please ensure the frontend sends the user's email address in the X-User-ID header."
             )
     
     if not user.is_active:
