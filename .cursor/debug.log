@@ -2062,3 +2062,5 @@
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "Database connection attempt", "data": {"attempt": 1, "maxRetries": 3}, "timestamp": 1770142418436}
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "About to test database connection", "data": {}, "timestamp": 1770142418436}
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "Database connection test successful", "data": {}, "timestamp": 1770142425159}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "user.py:init_db", "message": "init_db completed successfully", "data": {"attempt": 1}, "timestamp": 1770142440718}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "F", "location": "main.py:init_db_wrapper", "message": "init_db completed successfully", "data": {}, "timestamp": 1770142440720}

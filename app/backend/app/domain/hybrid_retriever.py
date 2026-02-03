@@ -96,9 +96,10 @@ class HybridRetriever:
                                 'path to', 'selected node']
         is_architecture_query = any(keyword in query_lower for keyword in architecture_keywords)
         
-        # Step 0.6: Detect General/Repository-level queries
-        general_keywords = ['what is', 'what does', 'about this', 'repo about', 'repository about', 
-                           'what is this', 'explain this', 'describe this', 'overview']
+        # Step 0.6: Detect General/Repository-level queries (so we use graph overview when vectors are empty)
+        general_keywords = ['what is', 'what does', 'about this', 'repo about', 'repository about',
+                           'what is this', 'explain this', 'describe this', 'overview',
+                           'this project', 'project about', 'codebase about', 'about the project']
         is_general_query = any(keyword in query_lower for keyword in general_keywords)
         
         # Increase k for architecture queries to get more comprehensive context

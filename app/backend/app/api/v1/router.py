@@ -378,7 +378,7 @@ def expand_graph_node(
         logger.error(f"Neo4j Expand Query Error: {e}")
         return {"nodes": [], "links": []}
 
-@api_router.get("/blast-radius/{node_id}")
+@api_router.get("/blast-radius/{node_id:path}")
 def get_blast_radius(node_id: str, user_id: str = Depends(get_user_id)):
     """
     [LAYER 2 & 3] IMPROVED RISK SCORING: Dynamic Risk Propagation with Relationship Traversal
