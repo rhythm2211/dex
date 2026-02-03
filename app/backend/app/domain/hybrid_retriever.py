@@ -211,21 +211,21 @@ class HybridRetriever:
                             }
                         )
                         results = result.fetchall()
-                            
-                            if results:
-                                logger.info(f"Fallback SQL query returned {len(results)} results")
-                                for content, metadata, file_name, source, similarity in results:
-                                    filename = file_name or source or 'unknown'
-                                    anchors.add(filename)
-                                    # Parse metadata if it's a string (json module is imported at top of file)
-                                    if isinstance(metadata, str):
-                                        try:
-                                            metadata = json.loads(metadata)
-                                        except:
-                                            metadata = {}
-                                    code_context.append(f"--- SNIPPET ({filename}) ---\n{content}")
-                            else:
-                                logger.error("Fallback SQL query also returned 0 results - database might be empty or dimension mismatch")
+                        
+                        if results:
+                            logger.info(f"Fallback SQL query returned {len(results)} results")
+                            for content, metadata, file_name, source, similarity in results:
+                                filename = file_name or source or 'unknown'
+                                anchors.add(filename)
+                                # Parse metadata if it's a string (json module is imported at top of file)
+                                if isinstance(metadata, str):
+                                    try:
+                                        metadata = json.loads(metadata)
+                                    except:
+                                        metadata = {}
+                                code_context.append(f"--- SNIPPET ({filename}) ---\n{content}")
+                        else:
+                            logger.error("Fallback SQL query also returned 0 results - database might be empty or dimension mismatch")
                 except Exception as fallback_e:
                     logger.error(f"Fallback SQL query failed: {fallback_e}", exc_info=True)
             else:
