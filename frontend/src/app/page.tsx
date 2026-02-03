@@ -9,7 +9,7 @@ import {
   Cpu, Search, CheckCircle, Command, Lock, Layers, 
   ChevronRight, Database, Github, Activity, Users, TrendingUp, Flame,
   GitCommit, MessageSquare, TreePine, GitMerge, Rocket, User,
-  AlertTriangle, Target, BarChart3, TestTube, UserCheck, Radio
+  AlertTriangle, Target, BarChart3, TestTube, UserCheck, Radio, Settings
 } from "lucide-react";
 import { dexApi, ActiveZonesResponse, TeamTopologyResponse, ZoneData } from "@/lib/api";
 import MobileWarning from "@/components/MobileWarning";
@@ -1188,6 +1188,8 @@ export default function HomePage() {
              <Link href="#how-it-works" className="hover:text-white transition-colors">Methodology</Link>
              <Link href="#features" className="hover:text-white transition-colors">Features</Link>
              <Link href="#insights" className="hover:text-white transition-colors">Insights</Link>
+             <Link href="/app" className="hover:text-white transition-colors">Dashboard</Link>
+             <Link href="/help" className="hover:text-white transition-colors">Help</Link>
              <Link href="/security" className="hover:text-white transition-colors">Security</Link>
              <Link href="/about" className="hover:text-white transition-colors">About</Link>
              <Link href="/grievance" className="hover:text-white transition-colors">Contact</Link>
@@ -1202,6 +1204,13 @@ export default function HomePage() {
                  >
                    <User size={14} className="text-indigo-400" />
                    <span className="text-xs text-indigo-300 font-medium">Profile</span>
+                 </Link>
+                 <Link 
+                   href="/settings" 
+                   className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 hover:text-indigo-400 transition-all"
+                   title="Settings"
+                 >
+                   <Settings size={14} />
                  </Link>
                  <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border-dashed border-slate-500/30">
                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
@@ -2199,41 +2208,56 @@ export default function HomePage() {
       {/* --- FOOTER --- */}
       <footer className="border-t border-white/5 bg-[#020202] py-12">
         <div className="mx-auto max-w-6xl px-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
                 <div className="col-span-2 md:col-span-1">
                     <div className="flex items-center gap-2 mb-4">
                         <span className="w-6 h-6 bg-slate-800 rounded flex items-center justify-center"><Terminal size={12} /></span>
                         <span className="font-bold text-white">DEX</span>
                     </div>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
                         The intelligence layer for modern software engineering teams.
                     </p>
+                    <div className="flex flex-col gap-2">
+                        <Link href="/app" className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Go to Dashboard →</Link>
+                        <Link href="/help" className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Get Help →</Link>
+                    </div>
                 </div>
                 <div>
-                    <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Product</h4>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Main Pages</h4>
                     <ul className="space-y-2 text-xs text-slate-500">
+                        <li><Link href="/app" className="hover:text-indigo-400">Dashboard</Link></li>
+                        <li><Link href="/health" className="hover:text-indigo-400">Health Dashboard</Link></li>
+                        <li><Link href="/blast-radius" className="hover:text-indigo-400">Blast Radius</Link></li>
+                        <li><Link href="/evolution" className="hover:text-indigo-400">Evolution</Link></li>
+                        <li><Link href="/insights/activity" className="hover:text-indigo-400">Activity Insights</Link></li>
+                        <li><Link href="/insights/team" className="hover:text-indigo-400">Team Insights</Link></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Account & Support</h4>
+                    <ul className="space-y-2 text-xs text-slate-500">
+                        <li><Link href="/profile" className="hover:text-indigo-400">Profile</Link></li>
+                        <li><Link href="/settings" className="hover:text-indigo-400">Settings</Link></li>
+                        <li><Link href="/help" className="hover:text-indigo-400">Help & Docs</Link></li>
+                        <li><Link href="/grievance" className="hover:text-indigo-400">Contact Support</Link></li>
                         <li><Link href="/about" className="hover:text-indigo-400">About</Link></li>
-                        <li><Link href="#" className="hover:text-indigo-400">Features</Link></li>
-                        <li><Link href="#" className="hover:text-indigo-400">Integrations</Link></li>
-                        <li><Link href="#" className="hover:text-indigo-400">Changelog</Link></li>
-                        <li><Link href="#" className="hover:text-indigo-400">Pricing</Link></li>
                     </ul>
                 </div>
                 <div>
-                    <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Resources</h4>
-                    <ul className="space-y-2 text-xs text-slate-500">
-                        <li><Link href="#" className="hover:text-indigo-400">Documentation</Link></li>
-                        <li><Link href="#" className="hover:text-indigo-400">API Reference</Link></li>
-                        <li><Link href="#" className="hover:text-indigo-400">Community</Link></li>
-                    </ul>
-                </div>
-                <div>
-                    <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Legal</h4>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Legal & Security</h4>
                     <ul className="space-y-2 text-xs text-slate-500">
                         <li><Link href="/privacy" className="hover:text-indigo-400">Privacy Policy</Link></li>
                         <li><Link href="/terms" className="hover:text-indigo-400">Terms of Service</Link></li>
                         <li><Link href="/security" className="hover:text-indigo-400">Security</Link></li>
-                        <li><Link href="/grievance" className="hover:text-indigo-400">Contact / Grievance</Link></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">Quick Links</h4>
+                    <ul className="space-y-2 text-xs text-slate-500">
+                        <li><Link href="/login" className="hover:text-indigo-400">Login</Link></li>
+                        <li><Link href="/signup" className="hover:text-indigo-400">Sign Up</Link></li>
+                        <li><Link href="/onboarding" className="hover:text-indigo-400">Onboarding</Link></li>
+                        <li><Link href="/help" className="hover:text-indigo-400">Documentation</Link></li>
                     </ul>
                 </div>
             </div>
