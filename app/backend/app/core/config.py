@@ -63,7 +63,8 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "dex"
     POSTGRES_VECTOR_TABLE: str = "document_vectors"  # Table name for vector storage
     
-    GROQ_API_KEY: str = ""
+    GROQ_API_KEY: str = ""  # Single key (for backward compatibility)
+    GROQ_API_KEYS: str = ""  # Multiple keys (comma-separated) - takes precedence over GROQ_API_KEY
     GITHUB_TOKEN: str = "" 
     OPENAI_API_KEY: str = ""
     VOYAGE_API_KEY: str = ""

@@ -168,8 +168,17 @@ export default function Dashboard() {
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
+
+  // ---------------------------------------------------------------------------
+  // Authentication Check - Redirect if not authenticated
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login?redirect=/app');
+    }
+  }, [status, router]);
   const [mounted, setMounted] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -200,6 +209,19 @@ export default function Dashboard() {
   const loadedChildrenRef = useRef<Map<string, GraphData>>(new Map());
   const loadingNodesRef = useRef<Set<string>>(new Set());
   
+  // Show loading or redirect if not authenticated
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
+    return null; // useEffect will handle redirect
+  }
+
   // Keep refs in sync with state
   useEffect(() => {
     loadedChildrenRef.current = loadedChildren;

@@ -132,6 +132,7 @@ export interface HealthSummary {
 class DexClient {
   private client: AxiosInstance;
   private baseURL: string;
+  private getUserId: (() => Promise<string | null>) | null = null;
 
   constructor() {
     // --- DOCKER / LOCAL NETWORKING ---
@@ -148,6 +149,40 @@ class DexClient {
       headers: { 'Content-Type': 'application/json' },
       timeout: 60000, 
     });
+
+    // Add request interceptor to include X-User-ID header from NextAuth session
+    this.client.interceptors.request.use(
+      async (config) => {
+        // Only add header in browser environment
+        if (typeof window !== 'undefined') {
+          try {
+            // Dynamically import getSession to avoid SSR issues
+            const { getSession } = await import('next-auth/react');
+            const session = await getSession();
+            
+            if (session?.user?.id || session?.user?.email) {
+              // Use user.id if available (from NextAuth), otherwise fall back to email
+              const userId = session.user.id || session.user.email;
+              config.headers['X-User-ID'] = userId;
+            }
+          } catch (error) {
+            // Silently fail if session can't be retrieved (e.g., not authenticated)
+            console.debug('Could not retrieve session for API request:', error);
+          }
+        }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  /**
+   * Set a custom function to get user ID (for testing or custom auth)
+   */
+  public setUserIdGetter(getter: () => Promise<string | null>) {
+    this.getUserId = getter;
   }
 
   // Helper to check if error is an aborted/cancelled request (expected behavior)

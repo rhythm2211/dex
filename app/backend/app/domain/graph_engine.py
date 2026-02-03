@@ -372,7 +372,18 @@ class CodeStructureVisitor(ast.NodeVisitor):
         return self.nodes, self.edges
 
 class GraphEngine:
-    def __init__(self, repo_root=None):
+    def __init__(self, repo_root=None, user_id: str = None):
+        """
+        Initialize GraphEngine with user isolation support.
+        
+        Args:
+            repo_root: Root directory of the repository
+            user_id: User ID for data isolation (required for multi-user support)
+        """
+        if not user_id:
+            raise ValueError("user_id is required for user isolation. All graph operations must be scoped to a user.")
+        
+        self.user_id = user_id
         uri = os.getenv("NEO4J_URI")
         user = os.getenv("NEO4J_USERNAME")
         password = os.getenv("NEO4J_PASSWORD")
@@ -399,8 +410,13 @@ class GraphEngine:
     def _create_indices(self):
         if not self.driver: return
         try:
+            # Create unique constraint on (user_id, id) combination for isolation
             self._safe_session_run(
-                "CREATE CONSTRAINT node_id_unique IF NOT EXISTS FOR (n:CodeNode) REQUIRE n.id IS UNIQUE"
+                "CREATE CONSTRAINT node_id_unique IF NOT EXISTS FOR (n:CodeNode) REQUIRE (n.user_id, n.id) IS UNIQUE"
+            )
+            # Create index on user_id for faster filtering
+            self._safe_session_run(
+                "CREATE INDEX user_id_index IF NOT EXISTS FOR (n:CodeNode) ON (n.user_id)"
             )
         except Exception as e:
             logger.warning(f"Neo4j index skipped: {e}")
@@ -433,7 +449,7 @@ class GraphEngine:
             
             query = """
             UNWIND $nodes AS node
-            MERGE (n:CodeNode {id: node.id})
+            MERGE (n:CodeNode {user_id: $user_id, id: node.id})
             SET n.name = node.name,
                 n.type = node.type,
                 n.val = node.val,
@@ -455,6 +471,7 @@ class GraphEngine:
             """
             
             params = {
+                "user_id": self.user_id,
                 "nodes": [
                     {
                         "id": node.get("id"),
@@ -524,12 +541,13 @@ class GraphEngine:
             for rel_type, type_edges in edges_by_type.items():
                 query = f"""
                 UNWIND $edges AS edge
-                MATCH (a:CodeNode {{id: edge.source}})
-                MATCH (b:CodeNode {{id: edge.target}})
+                MATCH (a:CodeNode {{user_id: $user_id, id: edge.source}})
+                MATCH (b:CodeNode {{user_id: $user_id, id: edge.target}})
                 MERGE (a)-[:{rel_type}]->(b)
                 """
                 
                 params = {
+                    "user_id": self.user_id,
                     "edges": [
                         {"source": edge.get("source"), "target": edge.get("target")}
                         for edge in type_edges
@@ -559,10 +577,11 @@ class GraphEngine:
             query = """
             // Find all source files (not test files) that have no incoming COVERS edges
             MATCH (n:CodeNode)
-            WHERE n.type = 'file' 
+            WHERE n.user_id = $user_id
+            AND n.type = 'file' 
             AND NOT (n.is_test_file = true)
             AND NOT EXISTS {
-                MATCH (test:CodeNode)-[:COVERS]->(n)
+                MATCH (test:CodeNode {user_id: $user_id})-[:COVERS]->(n)
             }
             SET n.untested_critical = true
             RETURN count(n) as untested_count
@@ -583,19 +602,24 @@ class GraphEngine:
             logger.error(f"Failed to mark untested critical files: {e}")
 
     def wipe_graph(self):
+        """Wipe all graph data for the current user"""
         if not self.driver: return
         try:
-            self._safe_session_run("MATCH (n) DETACH DELETE n")
+            self._safe_session_run(
+                "MATCH (n:CodeNode {user_id: $user_id}) DETACH DELETE n",
+                user_id=self.user_id
+            )
         except Exception as e:
-            logger.error(f"Failed to wipe graph: {e}")
+            logger.error(f"Failed to wipe graph for user {self.user_id}: {e}")
             raise
 
     def upsert_node(self, node_data: dict):
         if not self.driver: return
         
         # [NEW] Added 'owner' and 'collaborators' properties
+        # [ISOLATION] Added user_id for multi-user isolation
         query = """
-            MERGE (n:CodeNode {id: $id})
+            MERGE (n:CodeNode {user_id: $user_id, id: $id})
             SET n.name = $name,
                 n.type = $type,
                 n.val = $val,
@@ -617,6 +641,7 @@ class GraphEngine:
             """
         
         params = {
+                "user_id": self.user_id,
                 "id": node_data.get("id"),
                 "name": node_data.get("name", ""),
                 "type": node_data.get("type", "file"),
@@ -656,12 +681,12 @@ class GraphEngine:
             rel_type = relation
         
         # Normalize paths to handle both forward and backslash formats
-        # Try to find the target node with different path formats
+        # Try to find the target node with different path formats - filtered by user_id
         query = f"""
-        MATCH (a:CodeNode)
+        MATCH (a:CodeNode {{user_id: $user_id}})
         WHERE a.id = $source OR a.id = $source_normalized
         WITH a
-        MATCH (b:CodeNode)
+        MATCH (b:CodeNode {{user_id: $user_id}})
         WHERE b.id = $target OR b.id = $target_normalized OR b.id = $target_alt
         MERGE (a)-[:{rel_type}]->(b)
         """
@@ -673,6 +698,7 @@ class GraphEngine:
             
             self._safe_session_run(
                 query, 
+                user_id=self.user_id,
                 source=source, 
                 target=target,
                 source_normalized=source_normalized,
@@ -684,13 +710,14 @@ class GraphEngine:
             # Fallback: try with exact match first, then normalized
             try:
                 query_simple = f"""
-                MATCH (a:CodeNode {{id: $source}})
-                MATCH (b:CodeNode)
+                MATCH (a:CodeNode {{user_id: $user_id, id: $source}})
+                MATCH (b:CodeNode {{user_id: $user_id}})
                 WHERE b.id = $target OR b.id = $target_normalized OR b.id = $target_alt
                 MERGE (a)-[:{rel_type}]->(b)
                 """
                 self._safe_session_run(
                     query_simple,
+                    user_id=self.user_id,
                     source=source,
                     target=target,
                     target_normalized=target.replace("\\", "/"),
@@ -1126,14 +1153,14 @@ class GraphEngine:
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    # First, get all nodes (up to limit)
+                    # First, get all nodes (up to limit) - filtered by user_id
                     # Optimized: Get nodes first, then relationships separately
                     nodes_query = """
-                    MATCH (n:CodeNode)
+                    MATCH (n:CodeNode {user_id: $user_id})
                     RETURN n
                     LIMIT $limit
                     """
-                    result = session.run(nodes_query, limit=limit)
+                    result = session.run(nodes_query, user_id=self.user_id, limit=limit)
                     for record in result:
                         n = dict(record["n"])
                         nodes_map[n["id"]] = n
@@ -1146,12 +1173,12 @@ class GraphEngine:
                         for i in range(0, len(node_ids), chunk_size):
                             chunk = node_ids[i:i + chunk_size]
                             rel_query = """
-                            MATCH (n:CodeNode)-[r]->(m:CodeNode)
+                            MATCH (n:CodeNode {user_id: $user_id})-[r]->(m:CodeNode {user_id: $user_id})
                             WHERE n.id IN $node_ids
                             RETURN n.id as source, m.id as target, type(r) as relation, m as target_node
                             LIMIT 10000
                             """
-                            rel_result = session.run(rel_query, node_ids=chunk)
+                            rel_result = session.run(rel_query, user_id=self.user_id, node_ids=chunk)
                             for record in rel_result:
                                 source_id = record["source"]
                                 target_id = record["target"]
@@ -1191,9 +1218,9 @@ class GraphEngine:
         """
         if not self.driver: return {"nodes": [], "links": []}
 
-        # Query: Find the clicked node (p) and its outgoing children (c)
+        # Query: Find the clicked node (p) and its outgoing children (c) - filtered by user_id
         query = """
-        MATCH (p:CodeNode {id: $id})-[r]->(c:CodeNode)
+        MATCH (p:CodeNode {user_id: $user_id, id: $id})-[r]->(c:CodeNode {user_id: $user_id})
         RETURN p, r, c
         LIMIT 500
         """
@@ -1202,7 +1229,7 @@ class GraphEngine:
         links = []
         
         with self.driver.session(database=self.database) as session:
-            result = session.run(query, id=node_id)
+            result = session.run(query, user_id=self.user_id, id=node_id)
             for record in result:
                 p = dict(record["p"])
                 c = dict(record["c"])
@@ -1226,10 +1253,10 @@ class GraphEngine:
         """
         if not self.driver: return {"nodes": [], "links": []}
         
-        # Cypher: Find all upstream nodes (source) that connect to target
+        # Cypher: Find all upstream nodes (source) that connect to target - filtered by user_id
         query = """
-        MATCH (target:CodeNode {id: $id})
-        MATCH (source)-[r:DEPENDS_ON*1..3]->(target)
+        MATCH (target:CodeNode {user_id: $user_id, id: $id})
+        MATCH (source:CodeNode {user_id: $user_id})-[r:DEPENDS_ON*1..3]->(target)
         RETURN source, r, target
         """
         
@@ -1238,12 +1265,16 @@ class GraphEngine:
         
         with self.driver.session(database=self.database) as session:
             # We first fetch the target node details to be safe
-            target_res = session.run("MATCH (n:CodeNode {id: $id}) RETURN n", id=target_id)
+            target_res = session.run(
+                "MATCH (n:CodeNode {user_id: $user_id, id: $id}) RETURN n",
+                user_id=self.user_id,
+                id=target_id
+            )
             for rec in target_res:
                 nodes_map[target_id] = dict(rec["n"])
 
             # Then fetch dependencies
-            result = session.run(query, id=target_id)
+            result = session.run(query, user_id=self.user_id, id=target_id)
             for record in result:
                 # 'r' is a list of relationships in the path, but we simplify for visualization
                 # Actually, let's use a simpler query pattern for the graph lib

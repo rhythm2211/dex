@@ -311,22 +311,33 @@ class IngestionService:
         ext = os.path.splitext(file_path)[1].lower()
         return self.splitters.get(ext, self.default_splitter)
     
-    def __init__(self):
+    def __init__(self, user_id: str = None):
+        """
+        Initialize IngestionService with user isolation support.
+        
+        Args:
+            user_id: User ID for data isolation (required for multi-user support)
+        """
+        if not user_id:
+            raise ValueError("user_id is required for user isolation. All ingestion operations must be scoped to a user.")
+        
+        self.user_id = user_id
+        
         # Create language-specific splitters for better chunking
         self.splitters: Dict[str, RecursiveCharacterTextSplitter] = {}
         self._init_language_splitters()
         
-        # Initialize the Neo4j-backed Graph Engine
-        self.graph_engine = GraphEngine()
+        # Initialize the Neo4j-backed Graph Engine with user_id
+        self.graph_engine = GraphEngine(user_id=self.user_id)
         # Use configurable embedding provider (supports local, Voyage AI, Cohere, OpenAI, etc.)
         self.embeddings = get_embeddings()
         
-        # Paths
+        # Paths - scoped by user_id for complete isolation
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        self.data_dir = os.path.join(base_dir, "backend", "data")
+        self.data_dir = os.path.join(base_dir, "backend", "data", self.user_id)
         os.makedirs(self.data_dir, exist_ok=True)
         
-        # We still keep history locally for the timeline slider (it's small & sequential)
+        # We still keep history locally for the timeline slider (it's small & sequential) - per user
         self.history_path = os.path.join(self.data_dir, "repo_history.json") 
 
         # SME / Feature mapping caches for graph enrichment
@@ -398,9 +409,9 @@ class IngestionService:
 
     def _wipe_knowledge_base(self):
         """
-        Atomic Wipe: Clears Vector DB (PostgreSQL/pgvector) AND Graph DB (Neo4j).
+        Atomic Wipe: Clears Vector DB (PostgreSQL/pgvector) AND Graph DB (Neo4j) for current user only.
         """
-        # 1. Clear PostgreSQL vector table
+        # 1. Clear PostgreSQL vector table - only for current user
         try:
             conninfo = make_conninfo(
                 host=settings.POSTGRES_HOST,
@@ -409,18 +420,24 @@ class IngestionService:
                 password=settings.POSTGRES_PASSWORD,
                 dbname=settings.POSTGRES_DB
             )
-            with psycopg.connect(conninfo) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(f"TRUNCATE TABLE {settings.POSTGRES_VECTOR_TABLE};")
-                    conn.commit()
-            logger.info(f"PostgreSQL vector table '{settings.POSTGRES_VECTOR_TABLE}' cleared.")
+            # OPTIMIZED: Use connection pool
+            from backend.app.models.user import engine
+            from sqlalchemy import text
+            with engine.begin() as conn:
+                # Use SQLAlchemy text() for parameterized queries
+                result = conn.execute(
+                    text(f"DELETE FROM {settings.POSTGRES_VECTOR_TABLE} WHERE metadata->>'user_id' = :user_id"),
+                    {"user_id": self.user_id}
+                )
+                deleted_count = result.rowcount
+            logger.info(f"PostgreSQL vector table: deleted {deleted_count} vectors for user {self.user_id}.")
         except Exception as e:
             logger.error(f"PostgreSQL vector table wipe failed: {e}")
 
-        # 2. Clear Neo4j
+        # 2. Clear Neo4j - only for current user (already scoped in GraphEngine.wipe_graph)
         try:
             self.graph_engine.wipe_graph()
-            logger.info("Neo4j database wiped.")
+            logger.info(f"Neo4j database wiped for user {self.user_id}.")
         except Exception as e:
             logger.error(f"Neo4j wipe failed: {e}")
 
@@ -1533,7 +1550,7 @@ class IngestionService:
                 
                 with psycopg.connect(conninfo_check) as conn:
                     with conn.cursor() as cur:
-                        # Check if table exists
+                        # Check if table exists (using raw connection from pool)
                         cur.execute(f"""
                             SELECT EXISTS (
                                 SELECT FROM information_schema.tables 
@@ -1598,12 +1615,19 @@ class IngestionService:
                 )
             table_name = settings.POSTGRES_VECTOR_TABLE
             
-            # Process in streaming batches: generate -> accumulate -> insert -> clear
+            # OPTIMIZED: Process in streaming batches with smaller accumulation for memory efficiency
+            # For Railway Hobby Plan (48GB RAM), we can process larger batches, but still optimize
+            # to support 100+ concurrent sessions
             accumulated_texts = []
             accumulated_embeddings = []
             accumulated_metadatas = []
             processed_count = 0
             batch_num = 0
+            
+            # Memory optimization: Use smaller accumulation buffer for high concurrency
+            # This reduces peak memory usage per ingestion session
+            import os
+            optimized_db_batch_size = min(db_batch_size, int(os.getenv("OPTIMIZED_DB_BATCH_SIZE", str(db_batch_size))))
             
             # Process chunks from generator in batches
             current_batch = []
@@ -1621,7 +1645,12 @@ class IngestionService:
                         self._check_cancelled()
                         batch_num += 1
                         batch_texts = [doc.page_content for doc in current_batch]
-                        batch_metadatas = [doc.metadata for doc in current_batch]
+                        # Add user_id to metadata for isolation
+                        batch_metadatas = []
+                        for doc in current_batch:
+                            metadata = doc.metadata.copy()
+                            metadata['user_id'] = self.user_id
+                            batch_metadatas.append(metadata)
                         
                         # Update status with actual progress
                         self._update_status("running", 80 + int((processed_count / max(processed_count + len(current_batch), 1)) * 15), 
@@ -1644,13 +1673,14 @@ class IngestionService:
                         # Clear current batch to free memory
                         current_batch = []
                         
-                        # Insert accumulated embeddings when we reach db_batch_size
-                        if len(accumulated_embeddings) >= db_batch_size:
+                        # Insert accumulated embeddings when we reach optimized batch size
+                        # Use smaller batches for better memory efficiency in high concurrency
+                        if len(accumulated_embeddings) >= optimized_db_batch_size:
                             self._check_cancelled()
                             self._update_status("running", 80 + int((processed_count / max(processed_count + len(accumulated_embeddings), 1)) * 15), 
                                               f"Indexing vectors ({processed_count}/{processed_count + len(accumulated_embeddings)})...")
                             
-                            # Prepare insert data
+                            # Prepare insert data - user_id is already in metadata
                             insert_query = f"""
                                 INSERT INTO {table_name} (content, metadata, embedding, file_name, source, created_at)
                                 VALUES (%s, %s, %s::vector, %s, %s, CURRENT_TIMESTAMP)
@@ -1658,6 +1688,9 @@ class IngestionService:
                             
                             insert_data = []
                             for text, embedding, metadata in zip(accumulated_texts, accumulated_embeddings, accumulated_metadatas):
+                                # Ensure user_id is in metadata (should already be set above)
+                                if 'user_id' not in metadata:
+                                    metadata['user_id'] = self.user_id
                                 file_name = metadata.get('file_name', '')
                                 source = metadata.get('source', '')
                                 embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
@@ -1673,32 +1706,53 @@ class IngestionService:
                             insert_count = len(accumulated_embeddings)
                             
                             try:
-                                with psycopg.connect(conninfo) as conn:
+                                # OPTIMIZED: Use SQLAlchemy connection pool instead of creating new connections
+                                # This significantly improves throughput and reduces connection overhead
+                                from backend.app.models.user import engine
+                                # Get raw connection from pool for bulk inserts (faster)
+                                conn = engine.raw_connection()
+                                try:
                                     with conn.cursor() as cur:
                                         cur.executemany(insert_query, insert_data)
                                         conn.commit()
+                                    logger.info(f"Inserted {insert_count} vectors to database")
+                                finally:
+                                    # Return connection to pool
+                                    conn.close()
                                         
                                 logger.info(f"Inserted {insert_count} vectors to database")
                                 
-                                # Clear accumulated data to free memory
+                                # OPTIMIZED: Explicitly clear and force garbage collection for high concurrency
                                 accumulated_texts.clear()
                                 accumulated_embeddings.clear()
                                 accumulated_metadatas.clear()
+                                insert_data.clear()
+                                # Force garbage collection for memory-intensive operations
+                                import gc
+                                gc.collect()
                                 
                             except (ConnectionError, OSError, psycopg.OperationalError) as e:
                                 error_msg = str(e)
                                 if "Connection reset" in error_msg or "Connection aborted" in error_msg:
                                     logger.warning(f"PostgreSQL connection issue, retrying...")
-                                    # Retry once
+                                    # Retry once with connection pool
                                     try:
-                                        with psycopg.connect(conninfo) as conn:
+                                        from backend.app.models.user import engine
+                                        conn = engine.raw_connection()
+                                        try:
                                             with conn.cursor() as cur:
                                                 cur.executemany(insert_query, insert_data)
                                                 conn.commit()
+                                            logger.info(f"Retry successful: Inserted {insert_count} vectors")
+                                        finally:
+                                            conn.close()
                                         logger.info(f"Retry successful: Inserted {insert_count} vectors")
                                         accumulated_texts.clear()
                                         accumulated_embeddings.clear()
                                         accumulated_metadatas.clear()
+                                        insert_data.clear()
+                                        import gc
+                                        gc.collect()
                                     except Exception as retry_e:
                                         logger.error(f"Retry failed: {retry_e}")
                                         raise RuntimeError(f"Failed to insert vectors after retry: {retry_e}")
@@ -1714,7 +1768,12 @@ class IngestionService:
                     self._check_cancelled()
                     batch_num += 1
                     batch_texts = [doc.page_content for doc in current_batch]
-                    batch_metadatas = [doc.metadata for doc in current_batch]
+                    # Add user_id to metadata for isolation
+                    batch_metadatas = []
+                    for doc in current_batch:
+                        metadata = doc.metadata.copy()
+                        metadata['user_id'] = self.user_id
+                        batch_metadatas.append(metadata)
                     
                     logger.info(f"Generating embeddings: final batch {batch_num}, processing {len(current_batch)} chunks")
                     
@@ -1750,11 +1809,20 @@ class IngestionService:
                         ))
                     
                     try:
-                        with psycopg.connect(conninfo) as conn:
+                        # OPTIMIZED: Use connection pool for better throughput
+                        from backend.app.models.user import engine
+                        conn = engine.raw_connection()
+                        try:
                             with conn.cursor() as cur:
                                 cur.executemany(insert_query, insert_data)
                                 conn.commit()
-                                logger.info(f"Inserted final {insert_count} vectors into PostgreSQL")
+                            logger.info(f"Inserted final {insert_count} vectors into PostgreSQL")
+                        finally:
+                            conn.close()
+                        # Clear memory
+                        insert_data.clear()
+                        import gc
+                        gc.collect()
                     except Exception as e:
                         logger.error(f"Failed to insert final {insert_count} vectors: {e}")
                         raise RuntimeError(f"Failed to insert vectors: {e}")
@@ -1784,11 +1852,20 @@ class IngestionService:
                     ))
                 
                 try:
-                    with psycopg.connect(conninfo) as conn:
+                    # OPTIMIZED: Use connection pool
+                    from backend.app.models.user import engine
+                    conn = engine.raw_connection()
+                    try:
                         with conn.cursor() as cur:
                             cur.executemany(insert_query, insert_data)
                             conn.commit()
-                            logger.info(f"Inserted final {insert_count} vectors into PostgreSQL")
+                        logger.info(f"Inserted final {insert_count} vectors into PostgreSQL")
+                    finally:
+                        conn.close()
+                    # Clear memory
+                    insert_data.clear()
+                    import gc
+                    gc.collect()
                 except Exception as e:
                     logger.error(f"Failed to insert final {insert_count} vectors: {e}")
                     raise RuntimeError(f"Failed to insert vectors: {e}")

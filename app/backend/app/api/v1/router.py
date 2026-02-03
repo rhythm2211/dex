@@ -5,8 +5,10 @@ import time
 import asyncio
 from datetime import datetime, timedelta
 from collections import Counter
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from pydantic import BaseModel, field_validator
+from backend.app.core.dependencies import get_user_id
 
 # #region agent log
 try:
@@ -129,51 +131,66 @@ except Exception as e:
     # #endregion
     raise
 
-# --- Singleton Services (Lazy Initialization) ---
-# Initialize services lazily to avoid blocking on startup
-_ingestion_service = None
-_rag_service = None
-# Lightweight status storage (doesn't require full service initialization)
-_ingestion_status = {"state": "idle", "progress": 0, "step": "Ready"}
-# Track if cancellation was requested
-_cancellation_requested = False
+# --- Per-User Services (Multi-User Support with Isolation) ---
+# Store services per user_id for complete isolation
+_ingestion_services: Dict[str, Any] = {}  # user_id -> IngestionService
+_rag_services: Dict[str, Any] = {}  # user_id -> RAGService
+# Per-user status storage
+_ingestion_statuses: Dict[str, dict] = {}  # user_id -> status
+# Track if cancellation was requested per user
+_cancellation_requested: Dict[str, bool] = {}
 
-def get_ingestion_service():
-    global _ingestion_service
-    if _ingestion_service is None:
+# --- Capacity Management (Railway Hobby Plan + Free Tier Databases) ---
+# Railway Hobby Plan: 48GB RAM / 48 vCPU (NOT a bottleneck)
+# Neon PostgreSQL Free: 100 connections (PRIMARY BOTTLENECK)
+# Neo4j Aura Free: 50 connections (SECONDARY BOTTLENECK)
+# With connection pooling: ~1-2 connections per active session
+# Realistic capacity: 20-25 sessions (limited by Neo4j free tier)
+# Default: 20 sessions (conservative, safe for free tier)
+_MAX_CONCURRENT_INGESTIONS = int(os.getenv("MAX_CONCURRENT_INGESTIONS", "20"))  # Default 20 for free tier databases
+_active_ingestions: Dict[str, str] = {}  # user_id -> repo_path (track active sessions)
+
+def get_ingestion_service(user_id: str):
+    """Get or create IngestionService for a specific user."""
+    global _ingestion_services
+    if user_id not in _ingestion_services:
         try:
             # Lazy import to avoid blocking startup
             from backend.app.services.ingestion_service import IngestionService
-            _ingestion_service = IngestionService()
-            # Sync status after initialization
-            global _ingestion_status
-            _ingestion_status = _ingestion_service.get_current_status()
+            _ingestion_services[user_id] = IngestionService(user_id=user_id)
+            # Initialize status for this user
+            global _ingestion_statuses
+            _ingestion_statuses[user_id] = _ingestion_services[user_id].get_current_status()
         except Exception as e:
-            logger.exception(f"Failed to initialize IngestionService: {e}", exc_info=True)
+            logger.exception(f"Failed to initialize IngestionService for user {user_id}: {e}", exc_info=True)
             raise RuntimeError(f"Failed to initialize ingestion service: {str(e)}") from e
-    return _ingestion_service
+    return _ingestion_services[user_id]
 
-def get_ingestion_status_lightweight():
+def get_ingestion_status_lightweight(user_id: str = None):
     """Get ingestion status without initializing the full service."""
-    global _ingestion_service, _ingestion_status
-    if _ingestion_service is not None:
+    global _ingestion_services, _ingestion_statuses
+    if user_id and user_id in _ingestion_services:
         # Service is initialized, use it
-        return _ingestion_service.get_current_status()
-    else:
+        return _ingestion_services[user_id].get_current_status()
+    elif user_id and user_id in _ingestion_statuses:
         # Service not initialized, return cached status
-        return _ingestion_status
+        return _ingestion_statuses[user_id]
+    else:
+        # Default status
+        return {"state": "idle", "progress": 0, "step": "Ready"}
 
-def get_rag_service():
-    global _rag_service
-    if _rag_service is None:
+def get_rag_service(user_id: str):
+    """Get or create RAGService for a specific user."""
+    global _rag_services
+    if user_id not in _rag_services:
         try:
             # Lazy import to avoid blocking startup
             from backend.app.services.rag_service import RAGService
-            _rag_service = RAGService()
+            _rag_services[user_id] = RAGService(user_id=user_id)
         except Exception as e:
-            logger.exception(f"Failed to initialize RAGService: {e}", exc_info=True)
+            logger.exception(f"Failed to initialize RAGService for user {user_id}: {e}", exc_info=True)
             raise RuntimeError(f"Failed to initialize RAG service: {str(e)}") from e
-    return _rag_service
+    return _rag_services[user_id]
 
 # --- Data Models ---
 class IngestRequest(BaseModel):
@@ -203,38 +220,45 @@ class HybridRAGRequest(BaseModel):
         return v.strip()
 
 # --- Background Task Wrapper ---
-def run_ingestion_sequence(repo_path: str):
-    global _ingestion_status, _cancellation_requested
-    _cancellation_requested = False  # Reset cancellation flag at start
+def run_ingestion_sequence(repo_path: str, user_id: str):
+    """Run ingestion sequence for a specific user."""
+    global _ingestion_statuses, _cancellation_requested
+    _cancellation_requested[user_id] = False  # Reset cancellation flag at start
     try:
-        ingestion_service = get_ingestion_service()
+        ingestion_service = get_ingestion_service(user_id)
         # Sync status immediately after initialization
-        _ingestion_status = ingestion_service.get_current_status()
+        _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         
-        logger.info(f"🚀 Starting background ingestion for: {repo_path}")
+        logger.info(f"🚀 Starting background ingestion for user {user_id}: {repo_path}")
         result = ingestion_service.process_repository(repo_path)
         
         # Sync status after processing
-        _ingestion_status = ingestion_service.get_current_status()
+        _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         
         if result.get("status") == "success":
-            logger.info("💾 Ingestion processing done. Triggering RAG memory refresh...")
-            rag_service = get_rag_service()
+            logger.info(f"💾 Ingestion processing done for user {user_id}. Triggering RAG memory refresh...")
+            rag_service = get_rag_service(user_id)
             rag_service.reload_knowledge_base()
-            logger.info("✅ System fully updated.")
+            logger.info(f"✅ System fully updated for user {user_id}.")
         elif result.get("status") == "cancelled":
-            logger.info("🛑 Ingestion was cancelled by user")
+            logger.info(f"🛑 Ingestion was cancelled by user {user_id}")
         else:
-            logger.error(f"❌ Ingestion failed: {result.get('error')}")
+            logger.error(f"❌ Ingestion failed for user {user_id}: {result.get('error')}")
     except Exception as e:
-        logger.exception(f"Background task crashed: {e}")
+        logger.exception(f"Background task crashed for user {user_id}: {e}")
         try:
-            ingestion_service = get_ingestion_service()
+            ingestion_service = get_ingestion_service(user_id)
             ingestion_service._update_status("error", 0, f"System Error: {str(e)}")
-            _ingestion_status = ingestion_service.get_current_status()
+            _ingestion_statuses[user_id] = ingestion_service.get_current_status()
         except:
             # If service initialization fails, update lightweight status
-            _ingestion_status = {"state": "error", "progress": 0, "step": f"System Error: {str(e)}"}
+            _ingestion_statuses[user_id] = {"state": "error", "progress": 0, "step": f"System Error: {str(e)}"}
+    finally:
+        # Always clean up active ingestion tracking
+        global _active_ingestions
+        if user_id in _active_ingestions:
+            del _active_ingestions[user_id]
+            logger.info(f"Cleaned up active ingestion tracking for user {user_id}")
 
 # --- Endpoints ---
 
@@ -242,11 +266,48 @@ def run_ingestion_sequence(repo_path: str):
 def health_check():
     return {"status": "ok", "version": "1.3.0 (Neo4j Cloud + Onboarding)"}
 
+@api_router.get("/health/capacity")
+def get_capacity_status():
+    """Get current system capacity and resource usage"""
+    try:
+        from backend.app.utils.resource_monitor import ResourceMonitor
+        resource_summary = ResourceMonitor.get_resource_summary()
+        capacity_check = ResourceMonitor.check_capacity_available()
+        
+        global _active_ingestions, _MAX_CONCURRENT_INGESTIONS
+        active_count = len(_active_ingestions)
+        
+        return {
+            "active_ingestions": active_count,
+            "max_concurrent": _MAX_CONCURRENT_INGESTIONS,
+            "available_slots": max(0, _MAX_CONCURRENT_INGESTIONS - active_count),
+            "estimated_capacity": capacity_check.get("estimated_capacity", 0),
+            "memory_constraint": capacity_check.get("memory_constraint", 0),
+            "cpu_constraint": capacity_check.get("cpu_constraint", 0),
+            "resources": resource_summary,
+        }
+    except ImportError:
+        # ResourceMonitor not available (psutil not installed)
+        global _active_ingestions, _MAX_CONCURRENT_INGESTIONS
+        return {
+            "active_ingestions": len(_active_ingestions),
+            "max_concurrent": _MAX_CONCURRENT_INGESTIONS,
+            "available_slots": max(0, _MAX_CONCURRENT_INGESTIONS - len(_active_ingestions)),
+            "note": "Resource monitoring not available (install psutil for detailed metrics)",
+        }
+    except Exception as e:
+        logger.error(f"Failed to get capacity status: {e}")
+        return {
+            "error": str(e),
+            "active_ingestions": len(_active_ingestions) if '_active_ingestions' in globals() else 0,
+        }
+
 @api_router.get("/graph/structure")
-async def get_knowledge_graph():
+async def get_knowledge_graph(user_id: str = Depends(get_user_id)):
     """
-    Fetches the knowledge graph directly from Neo4j Cloud.
+    Fetches the knowledge graph directly from Neo4j Cloud for the authenticated user.
     Now supports massive datasets via smart limits.
+    Graph data is completely isolated per user.
     Made async to prevent blocking and allow timeout handling.
     """
     try:
@@ -254,7 +315,7 @@ async def get_knowledge_graph():
         from concurrent.futures import ThreadPoolExecutor
         
         # Default limit 2500 to prevent browser crash on initial load
-        ingestion_service = get_ingestion_service()
+        ingestion_service = get_ingestion_service(user_id)
         
         # Run the synchronous Neo4j query in a thread pool to avoid blocking
         loop = asyncio.get_event_loop()
@@ -282,33 +343,39 @@ async def get_knowledge_graph():
         return {"nodes": [], "links": []}
 
 @api_router.get("/graph/impact")
-def get_impact_graph(file_id: str = Query(..., description="The file ID (path) to analyze blast radius for")):
+def get_impact_graph(
+    file_id: str = Query(..., description="The file ID (path) to analyze blast radius for"),
+    user_id: str = Depends(get_user_id)
+):
     """
-    IMPACT RADAR: Queries Neo4j for the dependency subgraph.
+    IMPACT RADAR: Queries Neo4j for the dependency subgraph for the authenticated user.
     Returns: All files that depend on 'file_id' (Upstream Dependencies).
     """
     try:
-        ingestion_service = get_ingestion_service()
+        ingestion_service = get_ingestion_service(user_id)
         return ingestion_service.graph_engine.get_impact_subgraph(file_id)
     except Exception as e:
         logger.error(f"Neo4j Impact Query Error: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/graph/expand")
-def expand_graph_node(node_id: str = Query(..., description="The node ID to expand and load children for")):
+def expand_graph_node(
+    node_id: str = Query(..., description="The node ID to expand and load children for"),
+    user_id: str = Depends(get_user_id)
+):
     """
-    LAZY LOADING: Fetches immediate children/neighbors of a node.
+    LAZY LOADING: Fetches immediate children/neighbors of a node for the authenticated user.
     Used when a user expands a node in the graph visualization.
     """
     try:
-        ingestion_service = get_ingestion_service()
+        ingestion_service = get_ingestion_service(user_id)
         return ingestion_service.graph_engine.get_neighbors(node_id)
     except Exception as e:
         logger.error(f"Neo4j Expand Query Error: {e}")
         return {"nodes": [], "links": []}
 
 @api_router.get("/blast-radius/{node_id}")
-def get_blast_radius(node_id: str):
+def get_blast_radius(node_id: str, user_id: str = Depends(get_user_id)):
     """
     [LAYER 2 & 3] IMPROVED RISK SCORING: Dynamic Risk Propagation with Relationship Traversal
     
@@ -319,12 +386,13 @@ def get_blast_radius(node_id: str):
     
     Args:
         node_id: The source node ID (file path or function identifier)
+        user_id: Authenticated user ID (from dependency)
         
     Returns:
         Dict with 'nodes', 'edges', 'total_risk_score', 'test_files', 'warnings', 'expert_recommendations'
     """
     try:
-        ingestion_service = get_ingestion_service()
+        ingestion_service = get_ingestion_service(user_id)
         blast_radius_data = ingestion_service.graph_engine.get_blast_radius(node_id)
         
         # Ensure React Flow compatibility - nodes need 'id' and edges need 'id', 'source', 'target'
@@ -429,24 +497,26 @@ def get_blast_radius(node_id: str):
         }
 
 @api_router.get("/git/history")
-def get_git_history():
+def get_git_history(user_id: str = Depends(get_user_id)):
     """
-    TIME TRAVEL: Returns the commit timeline for the slider.
-    NOTE: History is still kept local (JSON) because it's sequential and small.
+    TIME TRAVEL: Returns the commit timeline for the slider for the authenticated user.
+    NOTE: History is kept per-user in user-specific data directory.
+    Git history is completely isolated per user.
     """
-    # Reuse consistent path logic
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-    history_path = os.path.join(backend_root, "data", "repo_history.json")
+    # Use user-specific history path (same as IngestionService)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    data_dir = os.path.join(base_dir, "backend", "data", user_id)
+    history_path = os.path.join(data_dir, "repo_history.json")
 
     if not os.path.exists(history_path):
+        logger.debug(f"History file not found for user {user_id}: {history_path}")
         return []
 
     try:
-        with open(history_path, 'r') as f:
+        with open(history_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        logger.error(f"History read error: {e}")
+        logger.error(f"History read error for user {user_id}: {e}")
         return []
 
 # ==========================================
@@ -454,13 +524,14 @@ def get_git_history():
 # ==========================================
 
 @api_router.get("/onboarding/team-topology")
-async def get_team_topology():
+async def get_team_topology(user_id: str = Depends(get_user_id)):
     """
-    Returns a social graph of the team.
+    Returns a social graph of the team for the authenticated user.
     Nodes = Developers. Edges = Collaboration strength (co-edited files).
     Uses the Neo4j driver from the existing GraphEngine.
+    Team data is completely isolated per user.
     """
-    ingestion_service = get_ingestion_service()
+    ingestion_service = get_ingestion_service(user_id)
     engine = ingestion_service.graph_engine
     
     if not engine or not engine.driver:
@@ -468,10 +539,10 @@ async def get_team_topology():
         logger.warning("Graph Engine not ready for topology query.")
         return {"nodes": [], "links": []}
 
-    # Cypher: Find pairs of authors who edited the same files
+    # Cypher: Find pairs of authors who edited the same files - filtered by user_id
     # We look for nodes where 'collaborators' list has >1 person
     query = """
-    MATCH (n:CodeNode)
+    MATCH (n:CodeNode {user_id: $user_id})
     WHERE size(n.collaborators) > 1
     UNWIND n.collaborators as author1
     UNWIND n.collaborators as author2
@@ -486,8 +557,8 @@ async def get_team_topology():
     links = []
     
     try:
-        with engine.driver.session() as session:
-            result = session.run(query)
+        with engine.driver.session(database=engine.database) as session:
+            result = session.run(query, user_id=user_id)
             for record in result:
                 a1 = record["author1"]
                 a2 = record["author2"]
@@ -506,15 +577,16 @@ async def get_team_topology():
         return {"nodes": [], "links": []}
 
 @api_router.get("/onboarding/active-zones")
-async def get_active_zones(days: int = 30):
+async def get_active_zones(days: int = 30, user_id: str = Depends(get_user_id)):
     """
-    Returns a Heatmap of the repo.
+    Returns a Heatmap of the repo for the authenticated user.
     Hot Zones = Folders with high commit activity in the last X days.
+    Heatmap data is completely isolated per user.
     """
-    # 1. Resolve Path (Same logic as get_git_history)
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-    history_path = os.path.join(backend_root, "data", "repo_history.json")
+    # 1. Resolve Path (Same logic as get_git_history - user-specific)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    data_dir = os.path.join(base_dir, "backend", "data", user_id)
+    history_path = os.path.join(data_dir, "repo_history.json")
     
     if not os.path.exists(history_path):
         logger.warning(f"Active zones: History file not found at {history_path}")
@@ -576,10 +648,15 @@ async def get_active_zones(days: int = 30):
 # ==========================================
 
 @api_router.post("/ingest")
-async def trigger_ingestion(request: IngestRequest, background_tasks: BackgroundTasks):
+async def trigger_ingestion(
+    request: IngestRequest, 
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_user_id)
+):
     """
     Trigger ingestion in background. Returns immediately.
     Use /ingest/status to check progress.
+    Requires authentication - each user's ingestion is completely isolated.
     """
     try:
         # Input validation and sanitization
@@ -597,17 +674,30 @@ async def trigger_ingestion(request: IngestRequest, background_tasks: Background
             if ".." in repo_path or "//" in repo_path.replace("://", ""):
                 raise HTTPException(status_code=400, detail="Invalid repository path format")
         
-        # Check status without initializing the full service (lazy check)
-        current_status = get_ingestion_status_lightweight()
+        # Check status without initializing the full service (lazy check) - per user
+        current_status = get_ingestion_status_lightweight(user_id)
         
         if current_status["state"] == "running":
-            raise HTTPException(status_code=409, detail="An ingestion task is already running.")
+            raise HTTPException(status_code=409, detail="An ingestion task is already running for this user.")
 
+        # Check system capacity (free tier limits)
+        global _active_ingestions
+        active_count = len(_active_ingestions)
+        
+        if active_count >= _MAX_CONCURRENT_INGESTIONS:
+            raise HTTPException(
+                status_code=429,
+                detail=f"System is at capacity ({_MAX_CONCURRENT_INGESTIONS} concurrent ingestions). Please try again in a few minutes."
+            )
+
+        # Mark this user's ingestion as active
+        _active_ingestions[user_id] = repo_path
+        
         # Start background task - this should return immediately
         # Service initialization will happen in the background task, not here
-        background_tasks.add_task(run_ingestion_sequence, repo_path)
+        background_tasks.add_task(run_ingestion_sequence, repo_path, user_id)
         
-        logger.info(f"Ingestion request accepted for: {repo_path}")
+        logger.info(f"Ingestion request accepted for user {user_id}: {repo_path}")
         return {
             "status": "accepted",
             "message": f"Ingestion started for {repo_path}. Check /ingest/status for progress."
@@ -627,63 +717,82 @@ async def trigger_ingestion(request: IngestRequest, background_tasks: Background
         raise HTTPException(status_code=500, detail=f"Failed to start ingestion: {error_detail}")
 
 @api_router.get("/ingest/status")
-def get_ingestion_status():
+def get_ingestion_status(user_id: str = Depends(get_user_id)):
+    """
+    Get ingestion status for the authenticated user.
+    Returns user-specific status (completely isolated per user).
+    """
     # Use lightweight status check to avoid blocking on service initialization
-    return get_ingestion_status_lightweight()
+    return get_ingestion_status_lightweight(user_id)
 
 @api_router.post("/ingest/cancel")
-def cancel_ingestion():
+def cancel_ingestion(user_id: str = Depends(get_user_id)):
     """
-    Cancel the currently running ingestion process.
+    Cancel the currently running ingestion process for the authenticated user.
     """
-    global _ingestion_status, _cancellation_requested
-    _cancellation_requested = True
+    global _ingestion_statuses, _cancellation_requested
+    _cancellation_requested[user_id] = True
     try:
-        ingestion_service = get_ingestion_service()
+        ingestion_service = get_ingestion_service(user_id)
         ingestion_service.cancel()
-        _ingestion_status = ingestion_service.get_current_status()
-        logger.info("🛑 Ingestion cancellation requested via API")
+        _ingestion_statuses[user_id] = ingestion_service.get_current_status()
+        logger.info(f"🛑 Ingestion cancellation requested via API for user {user_id}")
         return {"status": "cancelled", "message": "Ingestion cancellation requested"}
     except Exception as e:
-        logger.error(f"Failed to cancel ingestion: {e}")
+        logger.error(f"Failed to cancel ingestion for user {user_id}: {e}")
         # Try to update status anyway
-        _ingestion_status = {"state": "cancelled", "progress": 0, "step": "Cancellation attempted"}
+        _ingestion_statuses[user_id] = {"state": "cancelled", "progress": 0, "step": "Cancellation attempted"}
         return {"status": "cancelled", "message": f"Cancellation requested (service may not be initialized): {str(e)}"}
 
 @api_router.post("/ingest/reset")
-def reset_ingestion_status():
+def reset_ingestion_status(user_id: str = Depends(get_user_id)):
     """
-    Reset ingestion status if it gets stuck.
+    Reset ingestion status if it gets stuck for the authenticated user.
     This allows starting a new ingestion after a failed/stuck one.
+    User-specific - only resets status for the authenticated user.
     """
-    global _ingestion_status
+    global _ingestion_statuses, _active_ingestions, _cancellation_requested
     try:
-        # Reset lightweight status immediately
-        _ingestion_status = {"state": "idle", "progress": 0, "step": "Ready"}
+        # Reset user-specific status immediately
+        _ingestion_statuses[user_id] = {"state": "idle", "progress": 0, "step": "Ready"}
         
-        # If service is initialized, also reset it
-        if _ingestion_service is not None:
-            _ingestion_service._update_status("idle", 0, "Ready")
-            _ingestion_status = _ingestion_service.get_current_status()
+        # Clear cancellation flag for this user
+        _cancellation_requested[user_id] = False
         
-        logger.info("Ingestion status reset to idle")
+        # Remove from active ingestions if present
+        if user_id in _active_ingestions:
+            del _active_ingestions[user_id]
+        
+        # If service is initialized for this user, also reset it
+        if user_id in _ingestion_services:
+            try:
+                _ingestion_services[user_id]._update_status("idle", 0, "Ready")
+                _ingestion_statuses[user_id] = _ingestion_services[user_id].get_current_status()
+            except Exception as e:
+                logger.warning(f"Failed to reset service status for user {user_id}: {e}")
+        
+        logger.info(f"✅ Ingestion status reset to idle for user {user_id}")
         return {"status": "reset", "message": "Ingestion status has been reset"}
     except Exception as e:
-        logger.error(f"Failed to reset ingestion status: {e}")
+        logger.error(f"Failed to reset ingestion status for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reset ingestion status: {str(e)}")
 
 @api_router.post("/query/hybrid")
-def execute_hybrid_query(request: HybridRAGRequest):
+def execute_hybrid_query(
+    request: HybridRAGRequest,
+    user_id: str = Depends(get_user_id)
+):
+    """Execute RAG query for the authenticated user. Results are completely isolated per user."""
     try:
-        rag_service = get_rag_service()
+        rag_service = get_rag_service(user_id)
         response = rag_service.answer_query(request.query)
         return response
     except Exception as e:
-        logger.error(f"Query failed: {e}")
+        logger.error(f"Query failed for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/blast-radius/analyze-impact")
-def analyze_impact_with_rag(request: dict):
+def analyze_impact_with_rag(request: dict, user_id: str = Depends(get_user_id)):
     """
     [NEW] RAG-powered Impact Analysis: Answer questions about code changes and their impact.
     
@@ -709,7 +818,7 @@ def analyze_impact_with_rag(request: dict):
         enhanced_query = query_text
         if node_id:
             try:
-                ingestion_service = get_ingestion_service()
+                ingestion_service = get_ingestion_service(user_id)
                 blast_data = ingestion_service.graph_engine.get_blast_radius(node_id)
                 
                 # Add context about affected files
@@ -726,7 +835,7 @@ User Question: {query_text}
                 logger.warning(f"Failed to get blast radius context: {e}")
         
         # Use RAG service to answer the question
-        rag_service = get_rag_service()
+        rag_service = get_rag_service(user_id)
         response = rag_service.answer_query(enhanced_query)
         
         return response

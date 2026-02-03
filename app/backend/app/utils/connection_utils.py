@@ -94,11 +94,20 @@ def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo
             connection_timeout = kwargs.get("connection_timeout", 30)
             connection_acquisition_timeout = kwargs.get("connection_acquisition_timeout", 60)
         
+        # Optimized connection pool for Railway Hobby Plan + Free Tier Databases
+        # Neo4j Aura Free: 50 connections max
+        # With connection pooling: ~1 connection per active session
+        # Default: 30 connections (safe for 20-25 sessions, leaves 20-25 headroom)
+        # For aggressive: 35-40 connections (risky, at limit)
+        import os
+        default_pool_size = int(os.getenv("NEO4J_POOL_SIZE", "30"))  # Conservative for free tier
+        max_pool_size = kwargs.get("max_connection_pool_size", default_pool_size)
+        
         # Configure connection with timeouts and retry settings
         config = {
             "connection_timeout": connection_timeout,
             "max_connection_lifetime": kwargs.get("max_connection_lifetime", 3600),  # 1 hour
-            "max_connection_pool_size": kwargs.get("max_connection_pool_size", 50),
+            "max_connection_pool_size": max_pool_size,  # Configurable pool size
             "connection_acquisition_timeout": connection_acquisition_timeout,
             **kwargs
         }

@@ -1270,20 +1270,12 @@ export default function HomePage() {
             <>
               <ScrollAnimated animation="fade-in" delay={500}>
                 <p className="max-w-2xl mx-auto text-xs leading-relaxed text-slate-600 mb-10">
-                  <span className="text-indigo-400 font-semibold">Sign up</span> for the best experience with full access to all features.
+                  <span className="text-indigo-400 font-semibold">Sign up or login</span> to access the full application with all features.
                 </p>
               </ScrollAnimated>
 
               <ScrollAnimated animation="fade-in-scale" delay={600}>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                  <Link href="/app" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-indigo-600 text-white px-8 py-3.5 transition-all hover:bg-indigo-500 hover:shadow-[0_0_40px_rgba(99,102,241,0.4)] hover:scale-105">
-                    <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
-                      <Rocket size={14} className="group-hover:scale-110 transition-transform" />
-                      Launch App
-                      <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-                    </span>
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                  </Link>
                   <Link href="/signup" className="group relative w-full sm:w-auto overflow-hidden rounded-xl bg-white text-black px-8 py-3.5 transition-all hover:bg-slate-200 hover:shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:scale-105">
                     <span className="relative z-10 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest">
                       Start for free <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />

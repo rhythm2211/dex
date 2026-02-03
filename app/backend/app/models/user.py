@@ -62,11 +62,25 @@ class UserCredentials(Base):
 # Database setup - PostgreSQL only
 # Add connect_args to prefer IPv4 and handle connection issues
 # Note: If using connection pooler (port 6543), it should handle IPv4 automatically
+# Optimized connection pool for Railway Hobby Plan + Free Tier Databases
+# Railway Hobby: 48GB RAM / 48 vCPU (NOT a bottleneck)
+# Neon PostgreSQL Free: 100 connections max
+# With connection pooling: ~1-2 connections per active session
+# Default: 15 base + 25 overflow = 40 total (safe for 20 sessions, leaves 60 headroom)
+# For 25 sessions: Use 20 base + 30 overflow = 50 total
+import os
+POOL_SIZE = int(os.getenv("POSTGRES_POOL_SIZE", "15"))  # Base pool size (conservative for free tier)
+MAX_OVERFLOW = int(os.getenv("POSTGRES_MAX_OVERFLOW", "25"))  # Overflow connections (total: 40)
+POOL_RECYCLE = int(os.getenv("POSTGRES_POOL_RECYCLE", "3600"))  # Recycle connections after 1 hour
+
 engine = create_engine(
     settings.DATABASE_URL, 
-    pool_pre_ping=True, 
-    pool_size=5, 
-    max_overflow=10,
+    pool_pre_ping=True,  # Verify connections before using
+    pool_size=POOL_SIZE,  # Base connection pool size
+    max_overflow=MAX_OVERFLOW,  # Additional connections when pool is exhausted
+    pool_recycle=POOL_RECYCLE,  # Recycle connections to prevent stale connections
+    pool_reset_on_return='commit',  # Reset connections on return
+    echo=False,  # Set to True for SQL debugging
     connect_args={
         "connect_timeout": 10,  # 10 second timeout
         # Note: statement_timeout removed - not supported by Neon DB connection pooler
@@ -74,6 +88,7 @@ engine = create_engine(
         "sslmode": "require",  # Require SSL for secure connections (especially for Neon DB)
         # For Neon DB, hostname is kept for SNI support
         # If hostname is used, psycopg2 will do its own resolution
+        "application_name": "dex_backend",  # Identify connections in PostgreSQL
     }
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

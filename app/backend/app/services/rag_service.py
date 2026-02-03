@@ -12,10 +12,22 @@ from backend.app.utils.embedding_utils import get_embeddings
 logger = logging.getLogger("dex-core")
 
 class RAGService:
-    def __init__(self):
+    def __init__(self, user_id: str = None):
+        """
+        Initialize RAGService with user isolation support.
+        
+        Args:
+            user_id: User ID for data isolation (required for multi-user support)
+        """
+        if not user_id:
+            raise ValueError("user_id is required for user isolation. All RAG operations must be scoped to a user.")
+        
+        self.user_id = user_id
+        
         # Validate required configuration
-        if not settings.GROQ_API_KEY:
-            raise ValueError("GROQ_API_KEY is required but not set. Please configure it in environment variables.")
+        api_keys = settings.get_groq_api_keys()
+        if not api_keys:
+            raise ValueError("GROQ_API_KEY or GROQ_API_KEYS is required but not set. Please configure it in environment variables.")
         
         if not settings.POSTGRES_CONNECTION_STRING:
             raise ValueError("POSTGRES_CONNECTION_STRING is required but not set. Please configure database connection.")
@@ -33,14 +45,24 @@ class RAGService:
                 use_jsonb=True  # Use JSONB for metadata
             )
             
-            # Initialize Retriever (loads graph into memory)
-            self.retriever = HybridRetriever(self.vector_store)
+            # Initialize Retriever (loads graph into memory) with user_id
+            self.retriever = HybridRetriever(self.vector_store, user_id=self.user_id)
             
-            self.llm = ChatGroq(
-                model_name="llama-3.3-70b-versatile",
-                temperature=0,
-                groq_api_key=settings.GROQ_API_KEY
-            )
+            # Use GroqKeyManager for round-robin API key rotation
+            from backend.app.utils.groq_key_manager import get_groq_manager
+            try:
+                self.groq_manager = get_groq_manager()
+                # Get LLM instance (will use round-robin key selection)
+                self.llm = self.groq_manager.get_llm()
+            except RuntimeError:
+                # Manager not initialized, fall back to direct initialization
+                logger.warning("⚠️ GroqKeyManager not initialized, using single key fallback")
+                self.groq_manager = None
+                self.llm = ChatGroq(
+                    model_name="llama-3.3-70b-versatile",
+                    temperature=0,
+                    groq_api_key=api_keys[0] if api_keys else settings.GROQ_API_KEY
+                )
         except Exception as e:
             logger.error(f"Failed to initialize RAGService components: {e}")
             raise RuntimeError(f"RAGService initialization failed: {str(e)}") from e
@@ -203,14 +225,28 @@ class RAGService:
             Provide a technical, well-structured, markdown-formatted response with clear sections."""
         )
         
-        # 5. Execution
+        # 5. Execution with round-robin API key rotation
         try:
-            chain = prompt | self.llm
-            response = chain.invoke({
-                "code_context": code_context, 
-                "graph_context": graph_context, 
-                "question": query_text
-            })
+            # Use GroqKeyManager for automatic retry on 429 errors
+            if hasattr(self, 'groq_manager') and self.groq_manager:
+                # Use round-robin manager with automatic retry
+                def invoke_chain(llm):
+                    chain_with_llm = prompt | llm
+                    return chain_with_llm.invoke({
+                        "code_context": code_context, 
+                        "graph_context": graph_context, 
+                        "question": query_text
+                    })
+                
+                response = self.groq_manager.call_with_retry(invoke_chain)
+            else:
+                # Fallback to direct chain invocation
+                chain = prompt | self.llm
+                response = chain.invoke({
+                    "code_context": code_context, 
+                    "graph_context": graph_context, 
+                    "question": query_text
+                })
             
             return {
                 "answer": response.content,

@@ -300,6 +300,23 @@ def startup_event():
     except: pass
     # #endregion
     logger.info("🚀 Starting backend services...")
+    
+    # Initialize Groq API key manager with round-robin support
+    try:
+        from backend.app.utils.groq_key_manager import initialize_groq_manager
+        api_keys = settings.get_groq_api_keys()
+        if api_keys:
+            initialize_groq_manager(
+                api_keys=api_keys,
+                model_name="llama-3.3-70b-versatile",
+                temperature=0
+            )
+            logger.info(f"✅ GroqKeyManager initialized with {len(api_keys)} API key(s)")
+        else:
+            logger.warning("⚠️ No Groq API keys found. Set GROQ_API_KEYS (comma-separated) or GROQ_API_KEY")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize GroqKeyManager: {e}")
+        # Don't fail startup, but RAG queries will fail
     # Run init_db in background thread to avoid blocking
     import threading
     # #region agent log

@@ -93,16 +93,22 @@ export default function AboutPage() {
             Built for engineers who refuse to choose between speed and correctness.
           </p>
 
-          {/* Launch App Button - primary CTA */}
-          <div className="animate-fade-in delay-300">
+          {/* Sign Up/Login CTA */}
+          <div className="animate-fade-in delay-300 flex gap-4 justify-center">
             <Link
-              href="/app"
+              href="/signup"
               className="group relative inline-flex items-center justify-center gap-3 rounded-xl bg-white text-black px-10 py-4 text-sm font-bold uppercase tracking-widest transition-all hover:bg-slate-200 hover:shadow-[0_0_50px_rgba(255,255,255,0.25)] shadow-[0_0_30px_rgba(255,255,255,0.12)] overflow-hidden"
             >
               <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
               <Rocket size={18} className="text-black/80 group-hover:scale-110 transition-transform" />
-              <span className="relative">Launch App</span>
+              <span className="relative">Sign Up</span>
               <ArrowRight size={16} className="relative opacity-70 group-hover:translate-x-1 transition-transform" />
+            </Link>
+            <Link
+              href="/login"
+              className="group relative inline-flex items-center justify-center gap-3 rounded-xl border border-white/20 bg-white/5 text-white px-10 py-4 text-sm font-bold uppercase tracking-widest transition-all hover:bg-white/10 hover:border-white/30 overflow-hidden"
+            >
+              <span className="relative">Login</span>
             </Link>
           </div>
         </section>
@@ -179,10 +185,10 @@ export default function AboutPage() {
           <div className="rounded-2xl border border-white/10 bg-[#0F0F10]/80 p-8">
             <p className="text-slate-400 text-sm mb-6">Ready to explore your codebase with full context?</p>
             <Link
-              href="/app"
+              href="/signup"
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-6 py-3 text-xs font-bold uppercase tracking-widest text-slate-200 hover:bg-white/10 hover:text-white hover:border-indigo-500/30 transition-all"
             >
-              Launch App <ArrowRight size={14} />
+              Get Started <ArrowRight size={14} />
             </Link>
           </div>
         </section>

@@ -14,13 +14,36 @@ from backend.app.utils.embedding_utils import get_embeddings
 logger = logging.getLogger("dex-core")
 
 class HybridRetriever:
-    def __init__(self, vector_store: Union[PGVector, VectorStore]):
+    def __init__(self, vector_store: Union[PGVector, VectorStore], user_id: str = None):
+        """
+        Initialize HybridRetriever with user isolation support.
+        
+        Args:
+            vector_store: PGVector store for semantic search
+            user_id: User ID for data isolation (required for multi-user support)
+        """
+        if not user_id:
+            raise ValueError("user_id is required for user isolation. All retrieval operations must be scoped to a user.")
+        
+        self.user_id = user_id
         self.vector_store = vector_store
-        self.llm = ChatGroq(
-            model_name="llama-3.3-70b-versatile",
-            temperature=0,
-            groq_api_key=settings.GROQ_API_KEY
-        )
+        
+        # Use GroqKeyManager for round-robin API key rotation
+        from backend.app.utils.groq_key_manager import get_groq_manager
+        try:
+            self.groq_manager = get_groq_manager()
+            # Get LLM instance (will use round-robin key selection)
+            self.llm = self.groq_manager.get_llm()
+        except RuntimeError:
+            # Manager not initialized, fall back to direct initialization
+            logger.warning("⚠️ GroqKeyManager not initialized, using single key fallback")
+            self.groq_manager = None
+            api_keys = settings.get_groq_api_keys()
+            self.llm = ChatGroq(
+                model_name="llama-3.3-70b-versatile",
+                temperature=0,
+                groq_api_key=api_keys[0] if api_keys else settings.GROQ_API_KEY
+            )
         # Use configurable embedding provider (supports local, Voyage AI, Cohere, OpenAI, etc.)
         self.embeddings = get_embeddings()
         
@@ -166,18 +189,28 @@ class HybridRetriever:
                         dbname=settings.POSTGRES_DB
                     )
                     
-                    with psycopg.connect(conninfo) as conn:
-                        with conn.cursor() as cur:
-                            # Use cosine distance for similarity search
-                            sql_query = f"""
-                                SELECT content, metadata, file_name, source,
-                                       1 - (embedding <=> %s::vector) as similarity
-                                FROM {settings.POSTGRES_VECTOR_TABLE}
-                                ORDER BY embedding <=> %s::vector
-                                LIMIT %s
-                            """
-                            cur.execute(sql_query, (embedding_str, embedding_str, k_vectors))
-                            results = cur.fetchall()
+                    # OPTIMIZED: Use connection pool for vector search
+                    from backend.app.models.user import engine
+                    from sqlalchemy import text
+                    with engine.connect() as conn:
+                        # Use cosine distance for similarity search - filtered by user_id
+                        sql_query = text(f"""
+                            SELECT content, metadata, file_name, source,
+                                   1 - (embedding <=> :embedding::vector) as similarity
+                            FROM {settings.POSTGRES_VECTOR_TABLE}
+                            WHERE metadata->>'user_id' = :user_id
+                            ORDER BY embedding <=> :embedding::vector
+                            LIMIT :limit
+                        """)
+                        result = conn.execute(
+                            sql_query,
+                            {
+                                "embedding": embedding_str,
+                                "user_id": self.user_id,
+                                "limit": k_vectors
+                            }
+                        )
+                        results = result.fetchall()
                             
                             if results:
                                 logger.info(f"Fallback SQL query returned {len(results)} results")
@@ -346,7 +379,7 @@ class HybridRetriever:
         # Note: Neo4j Cypher doesn't support // comments, so we use /* */ style
         query = """
         UNWIND $node_names AS search_name
-        MATCH (n:CodeNode)
+        MATCH (n:CodeNode {user_id: $user_id})
         WHERE 
             toLower(n.name) = toLower(search_name) OR
             toLower(n.id) = toLower(search_name) OR
@@ -355,7 +388,7 @@ class HybridRetriever:
             toLower(n.id) CONTAINS toLower(search_name) OR
             toLower(n.id) CONTAINS ('::' + toLower(search_name) + '::') OR
             toLower(n.id) ENDS WITH ('::' + toLower(search_name))
-        OPTIONAL MATCH (n)-[r]-(m:CodeNode)
+        OPTIONAL MATCH (n)-[r]-(m:CodeNode {user_id: $user_id})
         RETURN DISTINCT n, r, m, search_name
         ORDER BY 
             CASE 
@@ -374,7 +407,7 @@ class HybridRetriever:
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    result = session.run(query, node_names=node_names)
+                    result = session.run(query, user_id=self.user_id, node_names=node_names)
                     # Fetch all records before session closes to avoid ResultConsumedError
                     return list(result)
             
@@ -496,7 +529,14 @@ class HybridRetriever:
 Query: {query}
 
 Person name:"""
-            response = self.llm.invoke(prompt)
+            # Use round-robin manager with retry if available
+            if hasattr(self, 'groq_manager') and self.groq_manager:
+                def invoke_llm(llm):
+                    return llm.invoke(prompt)
+                response = self.groq_manager.call_with_retry(invoke_llm)
+            else:
+                response = self.llm.invoke(prompt)
+            
             name = response.content.strip()
             if name and name.upper() != "NONE" and len(name) > 2:
                 return name
@@ -518,12 +558,12 @@ Person name:"""
         
         # Cypher query to find all nodes where this person is involved
         query = """
-        MATCH (n:CodeNode)
+        MATCH (n:CodeNode {user_id: $user_id})
         WHERE 
             toLower(n.last_author) CONTAINS $person_name OR
             toLower(n.top_owner) CONTAINS $person_name OR
             ANY(collab IN n.collaborators WHERE toLower(collab) CONTAINS $person_name)
-        OPTIONAL MATCH (n)-[r]-(m:CodeNode)
+        OPTIONAL MATCH (n)-[r]-(m:CodeNode {user_id: $user_id})
         RETURN n, r, m
         ORDER BY n.commit_count DESC
         LIMIT 50
@@ -538,7 +578,7 @@ Person name:"""
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    result = session.run(query, person_name=person_lower)
+                    result = session.run(query, user_id=self.user_id, person_name=person_lower)
                     # Fetch all records before session closes to avoid ResultConsumedError
                     return list(result)
             
@@ -655,9 +695,9 @@ Person name:"""
         # For architecture queries with higher limit, we get more comprehensive context
         query = f"""
         UNWIND $anchors AS filename
-        MATCH (n:CodeNode) 
+        MATCH (n:CodeNode {{user_id: $user_id}}) 
         WHERE n.id STARTS WITH filename
-        OPTIONAL MATCH (n)-[r]-(m:CodeNode)
+        OPTIONAL MATCH (n)-[r]-(m:CodeNode {{user_id: $user_id}})
         RETURN n, r, m
         LIMIT {limit}
         """
@@ -668,7 +708,7 @@ Person name:"""
             @retry_on_connection_error(max_retries=3, delay=1.0)
             def _execute_query():
                 with self.driver.session(database=self.database) as session:
-                    result = session.run(query, anchors=file_anchors)
+                    result = session.run(query, user_id=self.user_id, anchors=file_anchors)
                     # Fetch all records before session closes to avoid ResultConsumedError
                     return list(result)
             
