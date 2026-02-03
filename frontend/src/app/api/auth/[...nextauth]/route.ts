@@ -93,6 +93,32 @@ const handler = NextAuth({
     signIn: '/login', 
   },
   callbacks: {
+    async jwt({ token, user, account }) {
+      // Add user id to token when user signs in
+      if (user) {
+        // For credentials provider, user.id is already available
+        if (user.id) {
+          token.id = user.id;
+        } else if (user.email) {
+          // For OAuth providers, fetch user id from database
+          try {
+            const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+            const response = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(user.email)}`);
+            if (response.ok) {
+              const userData = await response.json();
+              token.id = userData.id || user.email; // Fallback to email if no id
+            } else {
+              token.id = user.email; // Fallback to email
+            }
+          } catch (error) {
+            token.id = user.email; // Fallback to email on error
+          }
+        }
+        token.email = user.email;
+        token.name = user.name;
+      }
+      return token;
+    },
     async signIn({ account, profile, user }) {
       if (account) {
         console.log(`User logged in via ${account.provider}`);
@@ -174,6 +200,13 @@ const handler = NextAuth({
       return true;
     },
     async session({ session, token }) {
+      // Add user id to session from token
+      if (session.user && token) {
+        session.user.id = token.id as string;
+        session.user.email = token.email as string | null | undefined;
+        session.user.name = token.name as string | null | undefined;
+      }
+      
       // Add user profile completion status to session
       if (session?.user?.email) {
         try {
@@ -183,6 +216,10 @@ const handler = NextAuth({
           if (response.ok) {
             const userData = await response.json();
             (session.user as any).profile_completed = userData.profile_completed || false;
+            // Ensure id is set from database if not already in token
+            if (!session.user.id && userData.id) {
+              session.user.id = userData.id;
+            }
           }
         } catch (error) {
           console.error("Failed to fetch user profile:", error);

@@ -269,12 +269,12 @@ def health_check():
 @api_router.get("/health/capacity")
 def get_capacity_status():
     """Get current system capacity and resource usage"""
+    global _active_ingestions, _MAX_CONCURRENT_INGESTIONS
     try:
         from backend.app.utils.resource_monitor import ResourceMonitor
         resource_summary = ResourceMonitor.get_resource_summary()
         capacity_check = ResourceMonitor.check_capacity_available()
         
-        global _active_ingestions, _MAX_CONCURRENT_INGESTIONS
         active_count = len(_active_ingestions)
         
         return {
@@ -288,7 +288,6 @@ def get_capacity_status():
         }
     except ImportError:
         # ResourceMonitor not available (psutil not installed)
-        global _active_ingestions, _MAX_CONCURRENT_INGESTIONS
         return {
             "active_ingestions": len(_active_ingestions),
             "max_concurrent": _MAX_CONCURRENT_INGESTIONS,

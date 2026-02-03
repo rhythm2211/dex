@@ -160,10 +160,12 @@ class DexClient {
             const { getSession } = await import('next-auth/react');
             const session = await getSession();
             
-            if (session?.user?.id || session?.user?.email) {
+            if (session?.user) {
               // Use user.id if available (from NextAuth), otherwise fall back to email
-              const userId = session.user.id || session.user.email;
-              config.headers['X-User-ID'] = userId;
+              const userId = (session.user as any).id || session.user.email;
+              if (userId) {
+                config.headers['X-User-ID'] = userId;
+              }
             }
           } catch (error) {
             // Silently fail if session can't be retrieved (e.g., not authenticated)
