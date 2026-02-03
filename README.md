@@ -1,7 +1,5 @@
 # DEX - Developer Experience Platform
 
-<!-- CI/CD enabled and tested -->
-
 [![Production Ready](https://img.shields.io/badge/status-production%20ready-green)](https://github.com)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
@@ -9,18 +7,20 @@
 
 DEX (Developer Experience) is a production-grade codebase intelligence platform that combines semantic search, graph-based dependency analysis, and AI-powered code understanding. The system uses a hybrid RAG (Retrieval-Augmented Generation) approach to provide context-aware answers about codebases.
 
-## 🚀 Features
+## Features
 
-- **🔍 Semantic Code Search**: Vector-based semantic search across codebases using PostgreSQL + pgvector
-- **📊 Knowledge Graph Visualization**: Interactive D3.js graph showing code structure and dependencies
-- **🤖 AI-Powered Q&A**: Natural language queries answered using Groq (Llama 3.3 70B) with hybrid RAG
-- **📈 Code Health Dashboard**: Automated detection of circular dependencies, god objects, and orphan code
-- **👥 Team Collaboration Insights**: Visualize team topology and active development zones
-- **⏱️ Time Travel**: Browse codebase evolution through git history
-- **🌐 Multi-Language Support**: Processes 80+ file types across major programming languages
-- **🔐 Authentication**: NextAuth.js with OAuth (GitHub, Google) and credential-based signup
+- **Semantic Code Search**: Vector-based semantic search across codebases using PostgreSQL + pgvector
+- **Knowledge Graph Visualization**: Interactive D3.js graph showing code structure and dependencies
+- **AI-Powered Q&A**: Natural language queries answered using Groq (Llama 3.3 70B) with hybrid RAG
+- **Code Health Dashboard**: Automated detection of circular dependencies, god objects, and orphan code
+- **Team Collaboration Insights**: Visualize team topology and active development zones
+- **Time Travel**: Browse codebase evolution through git history
+- **Multi-Language Support**: Processes 80+ file types across major programming languages
+- **Authentication**: NextAuth.js with OAuth (GitHub, Google) and credential-based signup
 
-## 🏗️ Architecture
+See [features.md](./features.md) for a complete feature list.
+
+## Architecture
 
 DEX consists of three main components:
 
@@ -32,7 +32,7 @@ DEX consists of three main components:
 
 See [architecture.md](./architecture.md) for detailed architecture documentation.
 
-## 📋 Prerequisites
+## Prerequisites
 
 - **Docker & Docker Compose** (recommended) or
 - **Node.js 20+** and **Python 3.11+** (for manual setup)
@@ -40,7 +40,7 @@ See [architecture.md](./architecture.md) for detailed architecture documentation
 - **Neo4j** (Aura Cloud recommended) or self-hosted
 - **API Keys**: GROQ_API_KEY (required), Neo4j credentials (required)
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Option 1: Docker Compose (Recommended)
 
@@ -51,8 +51,8 @@ cd dex
 ```
 
 2. **Configure environment**:
-   - Create `app/.env` (see [SETUP.md](./SETUP.md#backend-environment-variables))
-   - Create `frontend/.env.local` (see [SETUP.md](./SETUP.md#frontend-environment-variables))
+   - Create `app/.env` with backend environment variables
+   - Create `frontend/.env.local` with frontend environment variables
 
 3. **Start services**:
 ```bash
@@ -66,16 +66,15 @@ docker compose --env-file app/.env up -d
 
 ### Option 2: Manual Setup
 
-See [SETUP.md](./SETUP.md) for detailed manual setup instructions.
+For detailed manual setup instructions, refer to the [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) guide.
 
-## 📚 Documentation
+## Documentation
 
-- **[SETUP.md](./SETUP.md)**: Comprehensive production deployment guide
+- **[features.md](./features.md)**: Complete feature list and capabilities
 - **[architecture.md](./architecture.md)**: System architecture and design
-- **[README.DOCKER.md](./README.DOCKER.md)**: Docker-specific setup guide
 - **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**: Common issues and solutions
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
@@ -102,32 +101,30 @@ NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your_secret
 ```
 
-See [SETUP.md](./SETUP.md#environment-configuration) for complete configuration.
+## Usage
 
-## 🎯 Usage
-
-### 1. Ingest a Repository
+### Ingest a Repository
 
 1. Navigate to the app dashboard
 2. Enter a GitHub repository URL
 3. Click "Ingest Repository"
 4. Monitor progress in real-time
 
-### 2. Query the Codebase
+### Query the Codebase
 
 1. Use the chat interface to ask natural language questions
-2. Examples:
+2. Example queries:
    - "How does authentication work?"
    - "What files depend on the user model?"
    - "Show me the main entry point"
 
-### 3. Explore the Knowledge Graph
+### Explore the Knowledge Graph
 
 1. View the interactive graph visualization
 2. Click nodes to see dependencies
 3. Use the impact analysis to see upstream dependencies
 
-### 4. Health Dashboard
+### Health Dashboard
 
 1. Navigate to the health dashboard
 2. View code quality metrics:
@@ -135,7 +132,7 @@ See [SETUP.md](./SETUP.md#environment-configuration) for complete configuration.
    - God objects (high coupling)
    - Orphan code (unused files)
 
-## 🛠️ Development
+## Development
 
 ### Local Development
 
@@ -173,9 +170,7 @@ DEX includes comprehensive CI/CD pipelines using GitHub Actions:
 - **Deployment**: Automated deployment to staging and production environments
 - **Release Management**: Automatic release creation on version tags
 
-See [CI_CD.md](./CI_CD.md) for detailed CI/CD documentation and [.github/workflows/README.md](./.github/workflows/README.md) for workflow details.
-
-## 🔒 Security
+## Security
 
 - Input validation and sanitization
 - CORS configuration
@@ -184,35 +179,27 @@ See [CI_CD.md](./CI_CD.md) for detailed CI/CD documentation and [.github/workflo
 - Production error handling (no sensitive data exposure)
 - Health check endpoints for monitoring
 
-See [SETUP.md](./SETUP.md#security-hardening) for production security guidelines.
+## Deployment
 
-## 🚀 Free Production Deployment
+DEX can be deployed using:
+- **Docker Compose**: Simple single-server deployment
+- **Cloud Platforms**: Vercel (frontend), Railway/Render (backend)
+- **Databases**: PostgreSQL with pgvector, Neo4j Aura (cloud) or self-hosted
 
-DEX can be deployed for **free** (except domain ~$1/month) using:
-- **Frontend**: Vercel (free tier)
-- **Backend**: Railway (free tier)
-- **PostgreSQL**: Railway/Supabase/Neon (free tier)
-- **Neo4j**: Neo4j Aura (free tier)
+See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for deployment guidance.
 
-See **[FREE_HOSTING_GUIDE.md](./FREE_HOSTING_GUIDE.md)** for complete step-by-step instructions.
+## Production Features
 
-## 📊 Production Deployment
+DEX includes production-grade features:
+- Production-safe error handling
+- Health check endpoints (`/health`)
+- Environment-based configuration
+- Security hardening (CORS, input validation, XSS protection)
+- Structured logging
+- Database connection retry logic
+- Docker optimization
 
-DEX is production-ready with:
-
-- ✅ Production-grade error handling
-- ✅ Health check endpoints
-- ✅ Environment-based configuration
-- ✅ Resource limits and monitoring
-- ✅ Security hardening
-- ✅ Database connection retry logic
-- ✅ Input validation and sanitization
-- ✅ Structured logging
-- ✅ Docker optimization
-
-See [SETUP.md](./SETUP.md) for complete production deployment guide.
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 Common issues and solutions:
 
@@ -223,26 +210,27 @@ Common issues and solutions:
 
 See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for detailed troubleshooting.
 
-## 📈 Performance
+## Performance
 
 - **Vector Search**: HNSW indexing for fast similarity search
-- **Graph Queries**: Optimized Cypher queries with limits
+- **Graph Queries**: Optimized Cypher queries with pagination
 - **Lazy Loading**: On-demand graph expansion
-- **Background Tasks**: Asynchronous ingestion
+- **Background Tasks**: Asynchronous ingestion with progress tracking
 - **Connection Pooling**: Efficient database connections
+- **Batch Processing**: Vector embeddings in batches of 100
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
 4. Submit a pull request
 
-## 📝 License
+## License
 
 [Add your license here]
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **Groq**: LLM inference
 - **Neo4j**: Graph database
@@ -251,21 +239,15 @@ See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for detailed troubleshooting.
 - **FastAPI**: Backend framework
 - **D3.js**: Graph visualization
 
-## 📞 Support
+## Support
 
-- Documentation: See [SETUP.md](./SETUP.md) and [architecture.md](./architecture.md)
+- Documentation: See [architecture.md](./architecture.md) and [features.md](./features.md)
 - Issues: Check [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 - Logs: `docker compose logs -f`
 
-## 🗺️ Roadmap
-
-- [ ] Incremental repository updates
-- [ ] Webhook integration for auto-ingestion
-- [ ] Multi-repository support
-- [ ] Advanced analytics and metrics
-- [ ] Real-time collaboration features
-- [ ] Enhanced language support with tree-sitter
-
 ---
 
-**Built with ❤️ for developers**
+## Developed By
+
+**Rhythm Suthar**  
+Email: rhythmsuthar123@gmail.com

@@ -1,8 +1,10 @@
-# DEX Architecture Documentation
+# DEX Architecture
 
 ## Overview
 
 DEX (Developer Experience) is a codebase intelligence platform that combines semantic search, graph-based dependency analysis, and AI-powered code understanding. The system uses a hybrid RAG (Retrieval-Augmented Generation) approach to provide context-aware answers about codebases.
+
+See [features.md](./features.md) for a complete list of features.
 
 ## System Architecture
 
@@ -478,90 +480,17 @@ INTERNAL_API_URL=http://dex-backend:8000  # Docker internal
 10. **Progress Monitoring**: Real-time progress updates with file type breakdowns
 11. **Efficient File Scanning**: Parallel file type detection and loading
 
-## Supported Languages & File Types
+## Supported Languages
 
-### Programming Languages (80+ file types)
-- **Python**: `.py`, `.pyw`, `.pyi`, `.pyx`
-- **JavaScript/TypeScript**: `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.d.ts`
-- **Java Ecosystem**: `.java`, `.kt`, `.kts`, `.scala`
-- **C/C++**: `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hxx`, `.hh`
-- **C#**: `.cs`, `.csx`
-- **Go**: `.go`
-- **Rust**: `.rs`
-- **Ruby**: `.rb`, `.rake`, `.rbw`
-- **PHP**: `.php`, `.phtml`, `.php3`, `.php4`, `.php5`
-- **Swift**: `.swift`
-- **Objective-C**: `.m`, `.mm`
-- **R**: `.r`, `.R`
-- **Lua**: `.lua`
-- **Perl**: `.pl`, `.pm`, `.t`
-- **Shell**: `.sh`, `.bash`, `.zsh`, `.fish`, `.ksh`
-- **SQL**: `.sql`
-- **Other**: Dart, Elm, Elixir, Clojure, Haskell, OCaml, Vim, Lisp, Julia, Nim, Crystal, D, Pascal, VB, Verilog, SystemVerilog
+DEX supports **80+ file types** across major programming languages including:
+- **Python**: Full AST parsing
+- **JavaScript/TypeScript**: ES6+ syntax support
+- **Java/Kotlin/Scala**: Package import resolution
+- **C/C++**: Include dependency tracking
+- **Go, Rust, Ruby, PHP**: Regex-based extraction
+- **Web Technologies**: HTML, CSS, Vue, Svelte
+- **Data Formats**: JSON, YAML, TOML
+- **Documentation**: Markdown, RST, Text
+- **Configuration**: Docker, Git, package managers
 
-### Web Technologies
-- **HTML**: `.html`, `.htm`, `.xhtml`
-- **CSS**: `.css`, `.scss`, `.sass`, `.less`, `.styl`
-- **Frameworks**: `.vue`, `.svelte`
-- **XML**: `.xml`, `.xsl`, `.xslt`
-
-### Data Formats
-- **JSON**: `.json`, `.json5`, `.jsonc`
-- **YAML**: `.yaml`, `.yml`
-- **TOML**: `.toml`
-- **Config**: `.ini`, `.cfg`, `.conf`
-- **Data**: `.csv`, `.tsv`
-
-### Documentation
-- **Markdown**: `.md`, `.markdown`, `.mdown`, `.mkdn`
-- **Text**: `.txt`, `.text`
-- **RST**: `.rst`
-- **AsciiDoc**: `.adoc`, `.asciidoc`
-
-### Configuration Files
-- **Docker**: `.dockerfile`, `.dockerignore`
-- **Git**: `.gitignore`, `.gitattributes`
-- **Environment**: `.env`, `.env.example`
-- **Build Systems**: `.makefile`, `.mk`, `.cmake`, `.gradle`, `.maven`, `.pom`
-- **Package Managers**: `.package.json`, `.package-lock.json`, `.requirements.txt`, `.gemfile`, `.cargo.toml`, `.composer.json`, `.pubspec.yaml`
-
-## Language-Specific Features
-
-### Python
-- Full AST parsing for accurate structure extraction
-- Complete import resolution
-- Class and function hierarchy tracking
-
-### JavaScript/TypeScript
-- Class and function extraction
-- ES6+ syntax support (arrow functions, async/await)
-- Import/require statement tracking
-- Module system support (CommonJS, ES modules)
-
-### Java/Kotlin/Scala
-- Class and method extraction
-- Package import resolution
-- Access modifier awareness
-
-### C/C++
-- Class/struct extraction
-- Function and method detection
-- Include dependency tracking
-
-### Other Languages
-- Regex-based structure extraction
-- Language-specific import/dependency patterns
-- Fallback to generic text processing for unknown languages
-
-## Future Enhancements
-
-1. **Tree-sitter Integration**: Full AST parsing for all supported languages (currently regex fallback)
-2. **Incremental Updates**: Support partial re-indexing on file changes
-3. **Webhook Integration**: Auto-trigger ingestion on GitHub pushes
-4. **Multi-repository**: Support multiple repos per user
-5. **Collaboration**: Share graphs and queries with team
-6. **Advanced Analytics**: Code quality metrics, dependency health scores
-7. **Language-Specific Optimizations**: Custom parsing strategies per language
-8. **Real-time Updates**: WebSocket-based progress updates
-9. **Repository Templates**: Pre-configured ingestion profiles for common project types
-10. **Code Quality Scoring**: Automated code quality and maintainability metrics
+See [features.md](./features.md) for complete language support details.
