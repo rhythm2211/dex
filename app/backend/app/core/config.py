@@ -99,6 +99,27 @@ class Settings(BaseSettings):
             warnings.warn("GROQ_API_KEY is not set. RAG queries will fail!")
         return v
     
+    def get_groq_api_keys(self) -> list[str]:
+        """
+        Get list of Groq API keys for round-robin rotation.
+        Supports both GROQ_API_KEYS (comma-separated) and GROQ_API_KEY (single key).
+        
+        Returns:
+            List of API keys (at least one key required)
+        """
+        # If GROQ_API_KEYS is set, use it (comma-separated)
+        if self.GROQ_API_KEYS:
+            keys = [key.strip() for key in self.GROQ_API_KEYS.split(",") if key.strip()]
+            if keys:
+                return keys
+        
+        # Fall back to single GROQ_API_KEY
+        if self.GROQ_API_KEY:
+            return [self.GROQ_API_KEY]
+        
+        # No keys found
+        return []
+    
     def _is_neon_db(self, hostname: str) -> bool:
         """Check if hostname is a Neon DB endpoint"""
         return "neon.tech" in hostname or "neon.com" in hostname

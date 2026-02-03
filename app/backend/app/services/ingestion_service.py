@@ -1626,7 +1626,7 @@ class IngestionService:
             
             # Memory optimization: Use smaller accumulation buffer for high concurrency
             # This reduces peak memory usage per ingestion session
-            import os
+            # Note: os is imported at module level, don't import locally
             optimized_db_batch_size = min(db_batch_size, int(os.getenv("OPTIMIZED_DB_BATCH_SIZE", str(db_batch_size))))
             
             # Process chunks from generator in batches

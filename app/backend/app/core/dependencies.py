@@ -89,10 +89,38 @@ def get_current_user(
     # Validate user exists and is active
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=404,
-            detail=f"User not found: {user_id}"
-        )
+        # If user_id looks like an email, try to find by email or create user
+        if "@" in user_id:
+            user = db.query(User).filter(User.email == user_id).first()
+            if not user:
+                # Auto-create user if they don't exist (for OAuth users)
+                logger.info(f"Auto-creating user for email: {user_id}")
+                try:
+                    user = User(
+                        id=user_id,
+                        email=user_id,
+                        name=user_id.split("@")[0],  # Use email prefix as name
+                        is_active=True,
+                        profile_completed=False
+                    )
+                    db.add(user)
+                    db.commit()
+                    db.refresh(user)
+                    logger.info(f"✅ Auto-created user: {user_id}")
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"Failed to auto-create user {user_id}: {e}")
+                    raise HTTPException(
+                        status_code=401,
+                        detail=f"User not found and could not be created: {user_id}"
+                    )
+        else:
+            # Not an email and user doesn't exist - return 401 (Unauthorized)
+            logger.warning(f"User not found: {user_id}")
+            raise HTTPException(
+                status_code=401,
+                detail=f"User not found: {user_id}. Please ensure you are logged in."
+            )
     
     if not user.is_active:
         raise HTTPException(
