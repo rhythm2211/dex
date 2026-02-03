@@ -191,7 +191,6 @@ export default function Dashboard() {
   const [step, setStep] = useState('');
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'assistant' | 'details'>('assistant');
