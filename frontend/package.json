@@ -35,7 +35,7 @@
     "nodemailer": "^7.0.12",
     "react": "19.2.3",
     "react-d3-tree": "^3.6.6",
-    "react-dom": "19.2.3",
+    "react-dom": "19.2.4",
     "react-force-graph-2d": "^1.29.0",
     "react-force-graph-3d": "^1.29.0",
     "react-markdown": "^10.1.0",
