@@ -446,6 +446,12 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Store callbacks in refs to avoid dependency issues
+  const loadGraphRef = useRef(loadGraph);
+  useEffect(() => {
+    loadGraphRef.current = loadGraph;
+  }, [loadGraph]);
+
   const pollIngestion = useCallback(() => {
     const i = setInterval(async () => {
         try {
@@ -457,7 +463,7 @@ export default function Dashboard() {
                 setIngesting(false); 
                 setPollInterval(null);
                 pollIntervalRef.current = null;
-                loadGraph(); 
+                loadGraphRef.current(); 
             }
             if (s.state === 'cancelled') { 
                 clearInterval(i); 
@@ -474,7 +480,13 @@ export default function Dashboard() {
         } catch(e) {}
     }, 1000);
     return i; // Return interval ID so we can clear it
-  }, [loadGraph]);
+  }, []);
+
+  // Store pollIngestion in ref
+  const pollIngestionRef = useRef(pollIngestion);
+  useEffect(() => {
+    pollIngestionRef.current = pollIngestion;
+  }, [pollIngestion]);
 
   useEffect(() => {
     let mounted = true;
@@ -484,16 +496,16 @@ export default function Dashboard() {
         
         if(s.state === 'running') {
             setIngesting(true); 
-            const interval = pollIngestion();
+            const interval = pollIngestionRef.current();
             setPollInterval(interval);
             pollIntervalRef.current = interval;
         } else if(s.state === 'completed') {
             // Load graph data if ingestion is already completed
-            loadGraph();
+            loadGraphRef.current();
         }
     }).catch(() => {});
     // Also try to load graph data on mount in case there's existing data
-    loadGraph();
+    loadGraphRef.current();
     
     // Cleanup interval on unmount
     return () => {
@@ -503,7 +515,8 @@ export default function Dashboard() {
             pollIntervalRef.current = null;
         }
     };
-  }, [pollIngestion, loadGraph]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   const handleIngest = async () => {
       setIngesting(true); setGraphData({ nodes: [], links: [] });
