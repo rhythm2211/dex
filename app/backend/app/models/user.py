@@ -224,10 +224,21 @@ def init_db():
                             embedding vector({embedding_dim}),
                             file_name TEXT,
                             source TEXT,
+                            user_id TEXT NOT NULL,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         );
                     """))
                     conn.commit()
+                    
+                    # Add user_id column if table exists but column doesn't (migration)
+                    try:
+                        conn.execute(text(f"""
+                            ALTER TABLE {table_name}
+                            ADD COLUMN IF NOT EXISTS user_id TEXT;
+                        """))
+                        conn.commit()
+                    except Exception:
+                        pass  # Column may already exist or migration not needed
                     
                     # Create indexes if they don't exist (non-blocking)
                     try:
@@ -255,6 +266,15 @@ def init_db():
                         conn.execute(text(f"""
                             CREATE INDEX IF NOT EXISTS {table_name}_file_name_idx
                             ON {table_name} (file_name);
+                        """))
+                        conn.commit()
+                    except Exception:
+                        pass
+                    
+                    try:
+                        conn.execute(text(f"""
+                            CREATE INDEX IF NOT EXISTS {table_name}_user_id_idx
+                            ON {table_name} (user_id);
                         """))
                         conn.commit()
                     except Exception:

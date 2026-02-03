@@ -1682,8 +1682,8 @@ class IngestionService:
                             
                             # Prepare insert data - user_id is already in metadata
                             insert_query = f"""
-                                INSERT INTO {table_name} (content, metadata, embedding, file_name, source, created_at)
-                                VALUES (%s, %s, %s::vector, %s, %s, CURRENT_TIMESTAMP)
+                                INSERT INTO {table_name} (content, metadata, embedding, file_name, source, user_id, created_at)
+                                VALUES (%s, %s, %s::vector, %s, %s, %s, CURRENT_TIMESTAMP)
                             """
                             
                             insert_data = []
@@ -1691,6 +1691,8 @@ class IngestionService:
                                 # Ensure user_id is in metadata (should already be set above)
                                 if 'user_id' not in metadata:
                                     metadata['user_id'] = self.user_id
+                                # Extract user_id from metadata for the column
+                                user_id = metadata.get('user_id', self.user_id)
                                 file_name = metadata.get('file_name', '')
                                 source = metadata.get('source', '')
                                 embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
@@ -1699,7 +1701,8 @@ class IngestionService:
                                     json.dumps(metadata),
                                     embedding_str,
                                     file_name,
-                                    source
+                                    source,
+                                    user_id
                                 ))
                             
                             # Store count before clearing
@@ -1792,11 +1795,16 @@ class IngestionService:
                     self._check_cancelled()
                     insert_count = len(accumulated_embeddings)
                     insert_query = f"""
-                        INSERT INTO {table_name} (content, metadata, embedding, file_name, source, created_at)
-                        VALUES (%s, %s, %s::vector, %s, %s, CURRENT_TIMESTAMP)
+                        INSERT INTO {table_name} (content, metadata, embedding, file_name, source, user_id, created_at)
+                        VALUES (%s, %s, %s::vector, %s, %s, %s, CURRENT_TIMESTAMP)
                     """
                     insert_data = []
                     for text, embedding, metadata in zip(accumulated_texts, accumulated_embeddings, accumulated_metadatas):
+                        # Ensure user_id is in metadata
+                        if 'user_id' not in metadata:
+                            metadata['user_id'] = self.user_id
+                        # Extract user_id from metadata for the column
+                        user_id = metadata.get('user_id', self.user_id)
                         file_name = metadata.get('file_name', '')
                         source = metadata.get('source', '')
                         embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
@@ -1805,7 +1813,8 @@ class IngestionService:
                             json.dumps(metadata),
                             embedding_str,
                             file_name,
-                            source
+                            source,
+                            user_id
                         ))
                     
                     try:
@@ -1835,11 +1844,16 @@ class IngestionService:
                 self._check_cancelled()
                 insert_count = len(accumulated_embeddings)
                 insert_query = f"""
-                    INSERT INTO {table_name} (content, metadata, embedding, file_name, source, created_at)
-                    VALUES (%s, %s, %s::vector, %s, %s, CURRENT_TIMESTAMP)
+                    INSERT INTO {table_name} (content, metadata, embedding, file_name, source, user_id, created_at)
+                    VALUES (%s, %s, %s::vector, %s, %s, %s, CURRENT_TIMESTAMP)
                 """
                 insert_data = []
                 for text, embedding, metadata in zip(accumulated_texts, accumulated_embeddings, accumulated_metadatas):
+                    # Ensure user_id is in metadata
+                    if 'user_id' not in metadata:
+                        metadata['user_id'] = self.user_id
+                    # Extract user_id from metadata for the column
+                    user_id = metadata.get('user_id', self.user_id)
                     file_name = metadata.get('file_name', '')
                     source = metadata.get('source', '')
                     embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
@@ -1848,7 +1862,8 @@ class IngestionService:
                         json.dumps(metadata),
                         embedding_str,
                         file_name,
-                        source
+                        source,
+                        user_id
                     ))
                 
                 try:

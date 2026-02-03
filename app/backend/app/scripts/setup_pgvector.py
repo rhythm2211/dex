@@ -96,12 +96,24 @@ def setup_pgvector():
                     embedding vector({embedding_dim}),
                     file_name TEXT,
                     source TEXT,
+                    user_id TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
                 cur.execute(create_table_sql)
                 conn.commit()
                 logger.info(f"✅ Table '{table_name}' created")
+                
+                # 2.5. Add user_id column if table exists but column doesn't (migration)
+                try:
+                    cur.execute(f"""
+                        ALTER TABLE {table_name}
+                        ADD COLUMN IF NOT EXISTS user_id TEXT;
+                    """)
+                    conn.commit()
+                    logger.info("✅ Added user_id column (if needed)")
+                except Exception:
+                    pass  # Column may already exist
                 
                 # 3. Create HNSW index for fast similarity search
                 logger.info("Creating HNSW index for vector similarity search...")
@@ -136,6 +148,19 @@ def setup_pgvector():
                 cur.execute(file_name_index_sql)
                 conn.commit()
                 logger.info("✅ File name index created")
+                
+                # 6. Create user_id index for faster filtering by user
+                logger.info("Creating user_id index...")
+                try:
+                    user_id_index_sql = f"""
+                    CREATE INDEX IF NOT EXISTS {table_name}_user_id_idx
+                    ON {table_name} (user_id);
+                    """
+                    cur.execute(user_id_index_sql)
+                    conn.commit()
+                    logger.info("✅ User ID index created")
+                except Exception:
+                    pass  # Index may already exist
                 
                 logger.info("🎉 pgvector setup completed successfully!")
                 return True

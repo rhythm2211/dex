@@ -3442,3 +3442,33 @@
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770103741133}
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770103741768}
 {"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770103741789}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106352940}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106353599}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106353621}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106362926}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106363652}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106363682}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106375374}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106376076}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106376103}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106392540}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106393234}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106393260}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106402126}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106402808}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106402834}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106409654}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106410365}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106410413}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106412336}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106413005}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106413027}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106425334}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106426068}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106426093}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106445255}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106445929}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106445953}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "EARLY", "location": "main.py:7", "message": "Module main.py imported", "data": {}, "timestamp": 1770106459673}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:33", "message": "About to import config settings", "data": {}, "timestamp": 1770106460603}
+{"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "A", "location": "main.py:34", "message": "Config import failed", "data": {"error": "'type' object is not subscriptable", "errorType": "TypeError"}, "timestamp": 1770106460632}
