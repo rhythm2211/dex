@@ -430,7 +430,22 @@ class GraphEngine:
         # Verify connection before use
         if not verify_neo4j_connection(self.driver, database=self.database):
             logger.warning("Neo4j connection lost, attempting to reconnect...")
-            # Driver will attempt to reconnect automatically on next query
+            # Recreate driver to handle routing/defunct connections
+            uri = os.getenv("NEO4J_URI")
+            user = os.getenv("NEO4J_USERNAME")
+            password = os.getenv("NEO4J_PASSWORD")
+            new_driver = None
+            if uri and user and password:
+                new_driver = create_neo4j_driver(uri, user, password, database=self.database)
+            if new_driver:
+                try:
+                    self.driver.close()
+                except Exception:
+                    pass
+                self.driver = new_driver
+                logger.info("✅ Neo4j driver reconnected successfully")
+            else:
+                raise RuntimeError("Neo4j reconnection failed")
         
         with self.driver.session(database=self.database) as session:
             return session.run(query, **params)

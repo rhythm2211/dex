@@ -129,9 +129,41 @@ def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo
             logger.info("✅ Neo4j driver created and verified")
             return driver
         except Exception as e:
+            error_msg = str(e).lower()
             # If neo4j+s:// fails for Aura, try bolt+s://
             if is_aura and uri_lower.startswith('neo4j+s://'):
                 logger.warning(f"neo4j+s:// connection failed, trying bolt+s://: {e}")
+                bolt_uri = uri.replace('neo4j+s://', 'bolt+s://')
+                try:
+                    driver = GraphDatabase.driver(bolt_uri, auth=(user, password), **config)
+                    with driver.session(database=database) as session:
+                        result = session.run("RETURN 1")
+                        result.consume()
+                    logger.info("✅ Neo4j driver created with bolt+s:// and verified")
+                    return driver
+                except Exception as e2:
+                    logger.error(f"❌ Both neo4j+s:// and bolt+s:// failed: {e2}")
+                    if driver:
+                        driver.close()
+                    raise e2
+            # Routing failures often mean a non-routing URI was used (neo4j:// on single instance)
+            if "routing" in error_msg and uri_lower.startswith('neo4j://'):
+                logger.warning(f"neo4j:// routing failed, trying bolt://: {e}")
+                bolt_uri = uri.replace('neo4j://', 'bolt://')
+                try:
+                    driver = GraphDatabase.driver(bolt_uri, auth=(user, password), **config)
+                    with driver.session(database=database) as session:
+                        result = session.run("RETURN 1")
+                        result.consume()
+                    logger.info("✅ Neo4j driver created with bolt:// and verified")
+                    return driver
+                except Exception as e2:
+                    logger.error(f"❌ Both neo4j:// and bolt:// failed: {e2}")
+                    if driver:
+                        driver.close()
+                    raise e2
+            if "routing" in error_msg and uri_lower.startswith('neo4j+s://'):
+                logger.warning(f"neo4j+s:// routing failed, trying bolt+s://: {e}")
                 bolt_uri = uri.replace('neo4j+s://', 'bolt+s://')
                 try:
                     driver = GraphDatabase.driver(bolt_uri, auth=(user, password), **config)
