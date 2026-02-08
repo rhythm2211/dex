@@ -180,17 +180,29 @@ def init_db():
                     logger.warning(f"⚠️ user_credentials table creation skipped: {e}")
                 
                 # Migrate existing password_hash from users table to user_credentials table
+                # Only run if users.password_hash exists to avoid transaction aborts
                 try:
-                    conn.execute(text("""
-                        INSERT INTO user_credentials (user_id, password_hash, created_at, updated_at)
-                        SELECT id, password_hash, created_at, updated_at
-                        FROM users
-                        WHERE password_hash IS NOT NULL
-                        AND id NOT IN (SELECT user_id FROM user_credentials)
-                    """))
-                    conn.commit()
-                    logger.info("✅ Migrated existing password hashes to user_credentials table")
+                    has_password_hash = conn.execute(text("""
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'users'
+                          AND column_name = 'password_hash'
+                        LIMIT 1
+                    """)).first() is not None
+                    if has_password_hash:
+                        conn.execute(text("""
+                            INSERT INTO user_credentials (user_id, password_hash, created_at, updated_at)
+                            SELECT id, password_hash, created_at, updated_at
+                            FROM users
+                            WHERE password_hash IS NOT NULL
+                              AND id NOT IN (SELECT user_id FROM user_credentials)
+                        """))
+                        conn.commit()
+                        logger.info("✅ Migrated existing password hashes to user_credentials table")
+                    else:
+                        logger.info("ℹ️ Skipping password migration (users.password_hash not present)")
                 except Exception as e:
+                    conn.rollback()
                     logger.warning(f"⚠️ Password migration skipped: {e}")
                 
                 # Remove password_hash column from users table (optional - can be done later)
