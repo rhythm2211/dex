@@ -3,9 +3,9 @@ import logging
 import socket
 from typing import List, Union, Optional
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyHttpUrl, field_validator
+from pydantic import AnyHttpUrl, field_validator, model_validator
 from dotenv import load_dotenv
 
 # Setup Logging
@@ -98,6 +98,30 @@ class Settings(BaseSettings):
             import warnings
             warnings.warn("GROQ_API_KEY is not set. RAG queries will fail!")
         return v
+
+    @model_validator(mode="after")
+    def normalize_postgres_config(self):
+        """
+        Support POSTGRES_HOST being a full connection string or host+db+params.
+        This prevents invalid host values like 'host/db?sslmode=...'.
+        """
+        host = self.POSTGRES_HOST or ""
+        if any(token in host for token in ["://", "/", "?"]):
+            raw = host
+            if "://" not in raw:
+                raw = f"postgresql://{raw}"
+            parsed = urlparse(raw)
+            if parsed.hostname:
+                self.POSTGRES_HOST = parsed.hostname
+            if parsed.port:
+                self.POSTGRES_PORT = parsed.port
+            if parsed.username:
+                self.POSTGRES_USER = parsed.username
+            if parsed.password:
+                self.POSTGRES_PASSWORD = parsed.password
+            if parsed.path and parsed.path != "/":
+                self.POSTGRES_DB = parsed.path.lstrip("/")
+        return self
     
     def get_groq_api_keys(self) -> list[str]:
         """
