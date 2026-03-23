@@ -6,10 +6,35 @@ import time
 import logging
 from functools import wraps
 from typing import Callable, Any, Optional
+import socket
+from urllib.parse import urlparse, urlunparse
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, TransientError
 
 logger = logging.getLogger("dex-core")
+
+def _normalize_neo4j_uri(uri: str, default_port: int = 7687) -> str:
+    """
+    Ensure the Neo4j URI includes an explicit port.
+
+    Some environments/drivers behave poorly when the port is omitted and will
+    attempt DNS resolution for a combined host:port string.
+    """
+    parsed = urlparse(uri)
+    # If it doesn't parse as a normal URI, don't try to change it.
+    if not parsed.scheme or not parsed.hostname:
+        return uri
+    if parsed.port is not None:
+        return uri
+    # Rebuild netloc as <hostname>:<port> (preserve userinfo if present).
+    if parsed.username:
+        userinfo = parsed.username
+        if parsed.password:
+            userinfo = f"{userinfo}:{parsed.password}"
+        netloc = f"{userinfo}@{parsed.hostname}:{default_port}"
+    else:
+        netloc = f"{parsed.hostname}:{default_port}"
+    return urlunparse(parsed._replace(netloc=netloc))
 
 
 def retry_on_connection_error(
@@ -79,6 +104,8 @@ def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo
         Neo4j driver instance or None if connection fails
     """
     try:
+        uri = _normalize_neo4j_uri(uri)
+
         # Check URI scheme to determine encryption settings
         # URI schemes like 'neo4j+s://' or 'bolt+s://' already indicate encryption
         # Only set 'encrypted' for 'neo4j://' or 'bolt://' schemes
