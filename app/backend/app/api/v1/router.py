@@ -5,10 +5,10 @@ import time
 import asyncio
 from datetime import datetime, timedelta
 from collections import Counter
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from pydantic import BaseModel, field_validator
-from backend.app.core.dependencies import get_user_id
+from backend.app.core.dependencies import get_user_id, get_user_id_optional
 
 # #region agent log
 try:
@@ -528,13 +528,17 @@ def get_git_history(user_id: str = Depends(get_user_id)):
 # ==========================================
 
 @api_router.get("/onboarding/team-topology")
-async def get_team_topology(user_id: str = Depends(get_user_id)):
+async def get_team_topology(user_id: Optional[str] = Depends(get_user_id_optional)):
     """
     Returns a social graph of the team for the authenticated user.
     Nodes = Developers. Edges = Collaboration strength (co-edited files).
     Uses the Neo4j driver from the existing GraphEngine.
     Team data is completely isolated per user.
     """
+    # Allow unauthenticated calls to avoid noisy 401s for crawlers/health checks.
+    if not user_id:
+        return {"nodes": [], "links": [], "msg": "Authentication required."}
+
     ingestion_service = get_ingestion_service(user_id)
     engine = ingestion_service.graph_engine
     
@@ -581,12 +585,16 @@ async def get_team_topology(user_id: str = Depends(get_user_id)):
         return {"nodes": [], "links": []}
 
 @api_router.get("/onboarding/active-zones")
-async def get_active_zones(days: int = 30, user_id: str = Depends(get_user_id)):
+async def get_active_zones(days: int = 30, user_id: Optional[str] = Depends(get_user_id_optional)):
     """
     Returns a Heatmap of the repo for the authenticated user.
     Hot Zones = Folders with high commit activity in the last X days.
     Heatmap data is completely isolated per user.
     """
+    # Allow unauthenticated calls to avoid noisy 401s for crawlers/health checks.
+    if not user_id:
+        return {"zones": [], "msg": "Authentication required."}
+
     # 1. Resolve Path (Same logic as get_git_history - user-specific)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     data_dir = os.path.join(base_dir, "backend", "data", user_id)

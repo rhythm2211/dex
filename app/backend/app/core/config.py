@@ -168,9 +168,25 @@ class Settings(BaseSettings):
     
     def _resolve_ipv4_host(self, hostname: str) -> str:
         """Resolve hostname to IPv4 address to avoid IPv6 issues.
-        For Neon DB, keep hostname for SNI support."""
-        # Neon DB requires hostname for SNI, don't resolve to IP
+        For Neon DB:
+        - pooler endpoints: prefer IPv4 (avoids IPv6 "network unreachable")
+        - non-pooler endpoints: keep hostname for SNI support
+        """
+        # Neon DB requires hostname for SNI on non-pooler connections.
+        # For pooler connections, we can safely prefer IPv4 to avoid dual-stack failures.
         if self._is_neon_db(hostname):
+            if "-pooler" in hostname:
+                try:
+                    addrinfo = socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_STREAM)
+                    if addrinfo:
+                        ipv4_address = addrinfo[0][4][0]
+                        logger.info(f"✅ Resolved Neon pooler {hostname} to IPv4: {ipv4_address}")
+                        return ipv4_address
+                except (socket.gaierror, OSError, socket.herror):
+                    # Fall back to hostname if IPv4 resolution fails.
+                    logger.warning(f"⚠️ Failed to resolve Neon pooler {hostname} to IPv4; falling back to hostname.")
+                    return hostname
+
             logger.info(f"✅ Using Neon DB hostname for SNI: {hostname}")
             return hostname
         

@@ -137,3 +137,33 @@ def get_current_user(
 def get_user_id(user: User = Depends(get_current_user)) -> str:
     """Extract user_id from authenticated user"""
     return user.id
+
+
+def get_current_user_optional(
+    request: Request,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None),
+    db: SessionLocal = Depends(get_db),
+) -> Optional[User]:
+    """
+    Optional authentication dependency.
+
+    Returns `None` when the request has no/invalid credentials (401/403),
+    but still raises for unexpected errors.
+    """
+    try:
+        return get_current_user(
+            request=request,
+            x_user_id=x_user_id,
+            authorization=authorization,
+            db=db,
+        )
+    except HTTPException as e:
+        if e.status_code in (401, 403):
+            return None
+        raise
+
+
+def get_user_id_optional(user: Optional[User] = Depends(get_current_user_optional)) -> Optional[str]:
+    """Extract user_id if authenticated; otherwise return None."""
+    return user.id if user else None

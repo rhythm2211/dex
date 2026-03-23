@@ -33,7 +33,7 @@ if sys.platform == "win32":
         pass
 
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi import HTTPException
@@ -238,8 +238,20 @@ async def request_interceptor(request: Request, call_next):
             # In development, show full error
             error_message = error_str
         
+        # If this is a DB connectivity issue, surface it as "service unavailable"
+        # so clients can retry (instead of treating it like auth failure).
+        db_markers = [
+            "psycopg2.OperationalError",
+            "timeout expired",
+            "Network is unreachable",
+            "connection to server at",
+            "Connection refused",
+        ]
+        is_db_unavailable = any(marker.lower() in error_str.lower() for marker in db_markers)
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE if is_db_unavailable else status.HTTP_500_INTERNAL_SERVER_ERROR
+
         return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status_code,
             content={"error": error_message, "request_id": request_id, "error_type": error_type}
         )
 
@@ -452,6 +464,13 @@ async def health_probe():
     # Return appropriate status code
     status_code = 200 if health_status["status"] == "active" else 503
     return JSONResponse(content=health_status, status_code=status_code)
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    # Stop 404s for simple crawlers / load balancers that check robots.
+    # Adjust rules if you want crawlers to access the UI.
+    return PlainTextResponse("User-agent: *\nDisallow: /\n", media_type="text/plain")
 
 if __name__ == "__main__":
     # #region agent log
