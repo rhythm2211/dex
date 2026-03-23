@@ -35,7 +35,6 @@ except ImportError:
     from app.core.config import settings
 
 import psycopg
-from psycopg.conninfo import make_conninfo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,20 +46,13 @@ def migrate_embeddings():
     This requires dropping the old table and recreating it.
     """
     try:
-        conninfo = make_conninfo(
-            host=settings.POSTGRES_HOST,
-            port=settings.POSTGRES_PORT,
-            user=settings.POSTGRES_USER,
-            password=settings.POSTGRES_PASSWORD,
-            dbname=settings.POSTGRES_DB
-        )
-        
         logger.info(f"Connecting to PostgreSQL at {settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}")
         
         table_name = settings.POSTGRES_VECTOR_TABLE
         new_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage AI
         
-        with psycopg.connect(conninfo) as conn:
+        # Use settings.POSTGRES_CONNECTION_STRING so Neon pooler endpoint options are included.
+        with psycopg.connect(settings.POSTGRES_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
                 # Check if table exists
                 cur.execute(f"""

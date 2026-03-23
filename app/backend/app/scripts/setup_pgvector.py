@@ -15,7 +15,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from backend.app.core.config import settings
 import psycopg
-from psycopg.conninfo import make_conninfo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,17 +25,9 @@ def setup_pgvector():
     """
     try:
         # Build connection string
-        conninfo = make_conninfo(
-            host=settings.POSTGRES_HOST,
-            port=settings.POSTGRES_PORT,
-            user=settings.POSTGRES_USER,
-            password=settings.POSTGRES_PASSWORD,
-            dbname=settings.POSTGRES_DB
-        )
-        
         logger.info(f"Connecting to PostgreSQL at {settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}")
-        
-        with psycopg.connect(conninfo) as conn:
+        # Use settings.POSTGRES_CONNECTION_STRING so Neon pooler endpoint options are included.
+        with psycopg.connect(settings.POSTGRES_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
                 # 1. Enable pgvector extension
                 logger.info("Enabling pgvector extension...")

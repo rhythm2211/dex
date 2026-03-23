@@ -413,13 +413,9 @@ class IngestionService:
         """
         # 1. Clear PostgreSQL vector table - only for current user
         try:
-            conninfo = make_conninfo(
-                host=settings.POSTGRES_HOST,
-                port=settings.POSTGRES_PORT,
-                user=settings.POSTGRES_USER,
-                password=settings.POSTGRES_PASSWORD,
-                dbname=settings.POSTGRES_DB
-            )
+            # Neon: ensure pooler endpoint options are present.
+            # This variable is kept for historical reasons; the actual queries use SQLAlchemy engine.
+            conninfo = settings.POSTGRES_CONNECTION_STRING
             # OPTIMIZED: Use connection pool
             from backend.app.models.user import engine
             from sqlalchemy import text
@@ -1539,13 +1535,7 @@ class IngestionService:
                 logger.info(f"Initializing PGVector store...")
                 
                 # Verify table dimension before proceeding
-                conninfo_check = make_conninfo(
-                        host=settings.POSTGRES_HOST,
-                        port=settings.POSTGRES_PORT,
-                        user=settings.POSTGRES_USER,
-                        password=settings.POSTGRES_PASSWORD,
-                        dbname=settings.POSTGRES_DB
-                )
+                conninfo_check = settings.POSTGRES_CONNECTION_STRING
                 expected_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage AI
                 
                 with psycopg.connect(conninfo_check) as conn:
@@ -1606,13 +1596,7 @@ class IngestionService:
             logger.info(f"Generating and inserting embeddings in streaming batches of {embedding_batch_size}...")
             
             # Prepare connection for bulk inserts
-            conninfo = make_conninfo(
-                    host=settings.POSTGRES_HOST,
-                    port=settings.POSTGRES_PORT,
-                    user=settings.POSTGRES_USER,
-                    password=settings.POSTGRES_PASSWORD,
-                    dbname=settings.POSTGRES_DB
-                )
+            conninfo = settings.POSTGRES_CONNECTION_STRING
             table_name = settings.POSTGRES_VECTOR_TABLE
             
             # OPTIMIZED: Process in streaming batches with smaller accumulation for memory efficiency

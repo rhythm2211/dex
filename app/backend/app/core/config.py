@@ -240,7 +240,7 @@ class Settings(BaseSettings):
             # client cannot reliably use SNI). Always include it for consistency.
             endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
             encoded_endpoint_id = quote_plus(endpoint_id)
-            connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require"
+            connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require&channel_binding=require"
         else:
             # For local databases (localhost), disable SSL
             # For remote databases in production, require SSL; in development, prefer SSL
@@ -289,7 +289,7 @@ class Settings(BaseSettings):
             # client cannot reliably use SNI). Always include it for consistency.
             endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
             encoded_endpoint_id = quote_plus(endpoint_id)
-            connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require"
+            connection_string += f"?options=endpoint%3D{encoded_endpoint_id}&sslmode=require&channel_binding=require"
         else:
             # For local databases (localhost), disable SSL
             # For remote databases in production, require SSL; in development, prefer SSL
@@ -304,8 +304,16 @@ class Settings(BaseSettings):
                     else:
                         connection_string += "?sslmode=prefer"
         
-        # Log connection details (without password) for debugging
-        logger.info(f"Database connection: {self.POSTGRES_USER}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}")
+        # Log connection details (without password) for debugging.
+        # Also log whether Neon endpoint option is present.
+        if self._is_neon_db(self.POSTGRES_HOST):
+            endpoint_id = self._extract_neon_endpoint_id(self.POSTGRES_HOST)
+            logger.info(
+                f"Database connection: {self.POSTGRES_USER}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB} "
+                f"(neon endpoint option: endpoint_id={endpoint_id})"
+            )
+        else:
+            logger.info(f"Database connection: {self.POSTGRES_USER}@{resolved_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}")
         return connection_string 
 
     model_config = SettingsConfigDict(

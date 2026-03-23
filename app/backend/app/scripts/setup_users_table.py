@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 from backend.app.core.config import settings
 from backend.app.models.user import Base, engine
 import psycopg
-from psycopg.conninfo import make_conninfo
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,16 +32,9 @@ def setup_users_table():
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Users table created")
         
-        # Verify table exists and check structure
-        conninfo = make_conninfo(
-            host=settings.POSTGRES_HOST,
-            port=settings.POSTGRES_PORT,
-            user=settings.POSTGRES_USER,
-            password=settings.POSTGRES_PASSWORD,
-            dbname=settings.POSTGRES_DB
-        )
-        
-        with psycopg.connect(conninfo) as conn:
+        # Verify table exists and check structure.
+        # Use settings.POSTGRES_CONNECTION_STRING so Neon pooler endpoint options are included.
+        with psycopg.connect(settings.POSTGRES_CONNECTION_STRING) as conn:
             with conn.cursor() as cur:
                 # Check if table exists
                 cur.execute("""
