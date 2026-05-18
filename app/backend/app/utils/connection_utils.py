@@ -13,6 +13,35 @@ from neo4j.exceptions import ServiceUnavailable, TransientError
 
 logger = logging.getLogger("dex-core")
 
+def _neo4j_hostname_from_uri(uri: str) -> Optional[str]:
+    parsed = urlparse(uri)
+    return parsed.hostname if parsed.scheme and parsed.hostname else None
+
+
+def _preflight_neo4j_dns(uri: str) -> None:
+    """
+    Fail fast with an actionable message when the Aura hostname does not resolve.
+    Railway/Neon IPv4 tricks do not apply here — Neo4j Aura TLS requires the real hostname.
+    """
+    host = _neo4j_hostname_from_uri(uri)
+    if not host:
+        return
+    try:
+        socket.inet_aton(host)
+        return  # already an IPv4 literal
+    except OSError:
+        pass
+    try:
+        socket.getaddrinfo(host, 7687, type=socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise ConnectionError(
+            f"Neo4j hostname '{host}' does not resolve ({e}). "
+            "This usually means the Aura instance was deleted, paused, or NEO4J_URI on Railway is outdated. "
+            "Open https://console.neo4j.io → your instance → Connect → copy a fresh "
+            "neo4j+s://… URI and update NEO4J_URI, NEO4J_USERNAME, and NEO4J_PASSWORD."
+        ) from e
+
+
 def _normalize_neo4j_uri(uri: str, default_port: int = 7687) -> str:
     """
     Ensure the Neo4j URI includes an explicit port.
@@ -105,6 +134,7 @@ def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo
     """
     try:
         uri = _normalize_neo4j_uri(uri)
+        _preflight_neo4j_dns(uri)
 
         # Check URI scheme to determine encryption settings
         # URI schemes like 'neo4j+s://' or 'bolt+s://' already indicate encryption
@@ -209,8 +239,21 @@ def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo
                     driver.close()
                 raise e
         
+    except ConnectionError as e:
+        logger.error(f"❌ Neo4j configuration error: {e}")
+        return None
     except Exception as e:
-        logger.error(f"❌ Failed to create Neo4j driver: {e}")
+        err = str(e).lower()
+        if "name or service not known" in err or "failed to dns resolve" in err:
+            host = _neo4j_hostname_from_uri(uri) or "unknown"
+            logger.error(
+                "❌ Neo4j DNS lookup failed for %s. Update NEO4J_URI in Railway from "
+                "https://console.neo4j.io (instance may be paused or deleted). Original: %s",
+                host,
+                e,
+            )
+        else:
+            logger.error(f"❌ Failed to create Neo4j driver: {e}")
         return None
 
 
