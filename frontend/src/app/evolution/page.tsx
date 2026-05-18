@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
+import AppShell from '@/components/AppShell';
 import { dexApi, GraphData, CommitNode } from '@/lib/api';
 import { 
   Play, Pause, ChevronLeft, ChevronRight, 
@@ -163,7 +164,8 @@ export default function EvolutionPage() {
   }, [currentCommit, getNodeColor]);
 
   return (
-    <div className="flex h-screen w-full bg-[#050505] text-slate-200 overflow-hidden font-sans">
+    <AppShell variant="fullBleed">
+    <div className="flex h-full w-full min-h-0 bg-[#050505] text-slate-200 overflow-hidden">
       
       {/* --- SIDEBAR: EVOLUTION DETAILS --- */}
       <aside className="w-[350px] flex flex-col border-r border-white/5 bg-[#0a0a0a] z-20">
@@ -330,5 +332,6 @@ export default function EvolutionPage() {
         </div>
       </main>
     </div>
+    </AppShell>
   );
 }

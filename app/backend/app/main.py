@@ -75,6 +75,7 @@ try:
 except: pass
 # #endregion
 try:
+    from backend.app.utils.rate_limiter import general_limiter
     from backend.app.api.v1.router import api_router
     # #region agent log
     try:
@@ -197,6 +198,22 @@ app.add_middleware(
 async def request_interceptor(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.perf_counter()
+
+    _rate_exempt = {
+        "/health",
+        "/robots.txt",
+        f"{settings.API_V1_STR.rstrip('/')}/integrations/webhooks/github",
+    }
+    if (
+        request.method != "OPTIONS"
+        and request.url.path not in _rate_exempt
+        and not general_limiter.allow(request.client.host if request.client else "unknown")
+    ):
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Too many requests. Please slow down.", "retry_after": 60},
+            headers={"Retry-After": "60"},
+        )
     
     # Log origin for CORS debugging (only for non-OPTIONS to avoid conflicts)
     if request.method != "OPTIONS":

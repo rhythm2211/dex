@@ -3,12 +3,32 @@ import json
 import logging
 import time
 import asyncio
+import threading
 from datetime import datetime, timedelta
 from collections import Counter
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
+from typing import Dict, Any, Optional, List
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends, Request
 from pydantic import BaseModel, field_validator
 from backend.app.core.dependencies import get_user_id, get_user_id_optional
+from backend.app.utils.cache import graph_cache, health_cache, team_cache
+from backend.app.utils.rate_limiter import ingest_limiter, query_limiter
+
+logger = logging.getLogger("dex-core")
+
+
+def _require_scoped_user_id(user_id: Optional[str]) -> str:
+    """
+    Normalize and validate user_id before graph/RAG service lookup.
+    Prevents empty-string query params or whitespace-only IDs from reaching
+    IngestionService / RAGService (which would raise opaque initialization errors).
+    """
+    uid = (user_id or "").strip()
+    if not uid:
+        raise ValueError(
+            "user_id is required for user isolation. All ingestion operations must be scoped to a user."
+        )
+    return uid
+
 
 # #region agent log
 try:
@@ -51,6 +71,12 @@ try:
 except: pass
 # #endregion
 try:
+    from backend.app.api.v1.endpoints.pr_review import router as pr_review_router
+except Exception as e:
+    logger.warning(f"PR Review router import failed (non-fatal): {e}")
+    pr_review_router = None
+
+try:
     from backend.app.api.v1.endpoints.health import router as health_router
     # #region agent log
     try:
@@ -66,8 +92,6 @@ except Exception as e:
     except: pass
     # #endregion
     raise
-
-logger = logging.getLogger("dex-core")
 
 # #region agent log
 try:
@@ -131,6 +155,75 @@ except Exception as e:
     # #endregion
     raise
 
+# Include PR review routes (non-fatal — fails gracefully if httpx not installed)
+if pr_review_router is not None:
+    api_router.include_router(pr_review_router, prefix="/pr-review", tags=["pr-review"])
+
+try:
+    from backend.app.api.v1.endpoints.github_webhooks import router as github_webhooks_router
+except Exception as e:
+    logger.warning(f"github_webhooks router import failed (non-fatal): {e}")
+    github_webhooks_router = None
+
+try:
+    from backend.app.api.v1.endpoints.github_integrations import router as github_integrations_router
+except Exception as e:
+    logger.warning(f"github_integrations router import failed (non-fatal): {e}")
+    github_integrations_router = None
+
+try:
+    from backend.app.api.v1.endpoints.insights_leadership import router as insights_leadership_router
+except Exception as e:
+    logger.warning(f"insights_leadership router import failed (non-fatal): {e}")
+    insights_leadership_router = None
+
+try:
+    from backend.app.api.v1.endpoints.architecture import router as architecture_router
+except Exception as e:
+    logger.warning(f"architecture router import failed (non-fatal): {e}")
+    architecture_router = None
+
+try:
+    from backend.app.api.v1.endpoints.observability import router as observability_router
+except Exception as e:
+    logger.warning(f"observability router import failed (non-fatal): {e}")
+    observability_router = None
+
+try:
+    from backend.app.api.v1.endpoints.workspace import router as workspace_router
+except Exception as e:
+    logger.warning(f"workspace router import failed (non-fatal): {e}")
+    workspace_router = None
+
+try:
+    from backend.app.api.v1.endpoints.digest import router as digest_router
+except Exception as e:
+    logger.warning(f"digest router import failed (non-fatal): {e}")
+    digest_router = None
+
+try:
+    from backend.app.api.v1.endpoints.team_whatif import router as team_whatif_router
+except Exception as e:
+    logger.warning(f"team_whatif router import failed (non-fatal): {e}")
+    team_whatif_router = None
+
+if github_webhooks_router is not None:
+    api_router.include_router(github_webhooks_router, prefix="/integrations", tags=["integrations"])
+if github_integrations_router is not None:
+    api_router.include_router(github_integrations_router, prefix="/integrations", tags=["integrations"])
+if insights_leadership_router is not None:
+    api_router.include_router(insights_leadership_router, prefix="/insights", tags=["insights"])
+if architecture_router is not None:
+    api_router.include_router(architecture_router, prefix="/architecture", tags=["architecture"])
+if observability_router is not None:
+    api_router.include_router(observability_router, prefix="/observability", tags=["observability"])
+if workspace_router is not None:
+    api_router.include_router(workspace_router, prefix="/workspace", tags=["workspace"])
+if digest_router is not None:
+    api_router.include_router(digest_router, prefix="/digest", tags=["digest"])
+if team_whatif_router is not None:
+    api_router.include_router(team_whatif_router, prefix="/insights", tags=["insights"])
+
 # --- Per-User Services (Multi-User Support with Isolation) ---
 # Store services per user_id for complete isolation
 _ingestion_services: Dict[str, Any] = {}  # user_id -> IngestionService
@@ -152,6 +245,7 @@ _active_ingestions: Dict[str, str] = {}  # user_id -> repo_path (track active se
 
 def get_ingestion_service(user_id: str):
     """Get or create IngestionService for a specific user."""
+    user_id = _require_scoped_user_id(user_id)
     global _ingestion_services
     if user_id not in _ingestion_services:
         try:
@@ -166,21 +260,23 @@ def get_ingestion_service(user_id: str):
             raise RuntimeError(f"Failed to initialize ingestion service: {str(e)}") from e
     return _ingestion_services[user_id]
 
-def get_ingestion_status_lightweight(user_id: str = None):
+def get_ingestion_status_lightweight(user_id: Optional[str] = None):
     """Get ingestion status without initializing the full service."""
     global _ingestion_services, _ingestion_statuses
-    if user_id and user_id in _ingestion_services:
+    uid = (user_id or "").strip() or None
+    if uid and uid in _ingestion_services:
         # Service is initialized, use it
-        return _ingestion_services[user_id].get_current_status()
-    elif user_id and user_id in _ingestion_statuses:
+        return _ingestion_services[uid].get_current_status()
+    elif uid and uid in _ingestion_statuses:
         # Service not initialized, return cached status
-        return _ingestion_statuses[user_id]
+        return _ingestion_statuses[uid]
     else:
         # Default status
         return {"state": "idle", "progress": 0, "step": "Ready"}
 
 def get_rag_service(user_id: str):
     """Get or create RAGService for a specific user."""
+    user_id = _require_scoped_user_id(user_id)
     global _rag_services
     if user_id not in _rag_services:
         try:
@@ -191,6 +287,33 @@ def get_rag_service(user_id: str):
             logger.exception(f"Failed to initialize RAGService for user {user_id}: {e}", exc_info=True)
             raise RuntimeError(f"Failed to initialize RAG service: {str(e)}") from e
     return _rag_services[user_id]
+
+
+def _get_history_path(user_id: str) -> str:
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    data_dir = os.path.join(base_dir, "backend", "data", user_id)
+    os.makedirs(data_dir, exist_ok=True)
+    return os.path.join(data_dir, "query_history.json")
+
+
+def _save_query_history(user_id: str, query: str, answer: str) -> None:
+    path = _get_history_path(user_id)
+    try:
+        history: List[dict] = []
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        history.insert(0, {
+            "query": query,
+            "answer": answer[:500],
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+        history = history[:100]
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(f"Failed to save query history for {user_id}: {e}")
+
 
 # --- Data Models ---
 class IngestRequest(BaseModel):
@@ -244,6 +367,9 @@ def run_ingestion_sequence(repo_path: str, user_id: str):
             logger.info(f"💾 Ingestion processing done for user {user_id}. Triggering RAG memory refresh...")
             rag_service = get_rag_service(user_id)
             rag_service.reload_knowledge_base()
+            graph_cache.invalidate_prefix(f"graph:{user_id}")
+            health_cache.invalidate_prefix(f"health:{user_id}")
+            team_cache.invalidate_prefix(f"team:{user_id}")
             logger.info(f"✅ System fully updated for user {user_id}.")
         elif result.get("status") == "cancelled":
             logger.info(f"🛑 Ingestion was cancelled by user {user_id}")
@@ -317,6 +443,11 @@ async def get_knowledge_graph(user_id: str = Depends(get_user_id)):
     try:
         import asyncio
         from concurrent.futures import ThreadPoolExecutor
+
+        cache_key = f"graph:{user_id}:structure"
+        cached = graph_cache.get(cache_key)
+        if cached is not None:
+            return cached
         
         # Default limit 2500 to prevent browser crash on initial load
         ingestion_service = get_ingestion_service(user_id)
@@ -339,6 +470,7 @@ async def get_knowledge_graph(user_id: str = Depends(get_user_id)):
             return {"nodes": [], "links": []}
         
         logger.info(f"Graph loaded successfully: {len(graph_data.get('nodes', []))} nodes, {len(graph_data.get('links', []))} links")
+        graph_cache.set(cache_key, graph_data)
         return graph_data
     except Exception as e:
         logger.error(f"Neo4j Read Error: {e}")
@@ -356,8 +488,14 @@ def get_impact_graph(
     Returns: All files that depend on 'file_id' (Upstream Dependencies).
     """
     try:
+        cache_key = f"graph:{user_id}:impact:{file_id}"
+        cached = graph_cache.get(cache_key)
+        if cached is not None:
+            return cached
         ingestion_service = get_ingestion_service(user_id)
-        return ingestion_service.graph_engine.get_impact_subgraph(file_id)
+        result = ingestion_service.graph_engine.get_impact_subgraph(file_id)
+        graph_cache.set(cache_key, result, ttl=60)
+        return result
     except Exception as e:
         logger.error(f"Neo4j Impact Query Error: {e}")
         return {"nodes": [], "links": []}
@@ -372,8 +510,14 @@ def expand_graph_node(
     Used when a user expands a node in the graph visualization.
     """
     try:
+        cache_key = f"graph:{user_id}:expand:{node_id}"
+        cached = graph_cache.get(cache_key)
+        if cached is not None:
+            return cached
         ingestion_service = get_ingestion_service(user_id)
-        return ingestion_service.graph_engine.get_neighbors(node_id)
+        result = ingestion_service.graph_engine.get_neighbors(node_id)
+        graph_cache.set(cache_key, result, ttl=60)
+        return result
     except Exception as e:
         logger.error(f"Neo4j Expand Query Error: {e}")
         return {"nodes": [], "links": []}
@@ -396,6 +540,10 @@ def get_blast_radius(node_id: str, user_id: str = Depends(get_user_id)):
         Dict with 'nodes', 'edges', 'total_risk_score', 'test_files', 'warnings', 'expert_recommendations'
     """
     try:
+        cache_key = f"graph:{user_id}:blast:{node_id}"
+        cached = graph_cache.get(cache_key)
+        if cached is not None:
+            return cached
         ingestion_service = get_ingestion_service(user_id)
         blast_radius_data = ingestion_service.graph_engine.get_blast_radius(node_id)
         
@@ -467,7 +615,7 @@ def get_blast_radius(node_id: str, user_id: str = Depends(get_user_id)):
         except Exception as e:
             logger.warning(f"Failed to get expert recommendations: {e}")
         
-        return {
+        out = {
             "nodes": nodes,
             "edges": react_flow_edges,
             "total_risk_score": blast_radius_data.get("total_risk_score", 0),
@@ -481,6 +629,8 @@ def get_blast_radius(node_id: str, user_id: str = Depends(get_user_id)):
                 "logic_breakage": []
             })
         }
+        graph_cache.set(cache_key, out, ttl=90)
+        return out
     except Exception as e:
         logger.error(f"Blast radius query error: {e}")
         import traceback
@@ -539,6 +689,11 @@ async def get_team_topology(user_id: Optional[str] = Depends(get_user_id_optiona
     if not user_id:
         return {"nodes": [], "links": [], "msg": "Authentication required."}
 
+    cache_key = f"team:{user_id}:topology"
+    cached = team_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     ingestion_service = get_ingestion_service(user_id)
     engine = ingestion_service.graph_engine
     
@@ -578,7 +733,9 @@ async def get_team_topology(user_id: Optional[str] = Depends(get_user_id_optiona
         
         # Format for D3.js (People Nodes)
         node_list = [{"id": name, "group": "person", "radius": 20} for name in nodes]
-        return {"nodes": node_list, "links": links}
+        topo = {"nodes": node_list, "links": links}
+        team_cache.set(cache_key, topo)
+        return topo
         
     except Exception as e:
         logger.error(f"Team Topology Query Error: {e}")
@@ -594,6 +751,11 @@ async def get_active_zones(days: int = 30, user_id: Optional[str] = Depends(get_
     # Allow unauthenticated calls to avoid noisy 401s for crawlers/health checks.
     if not user_id:
         return {"zones": [], "msg": "Authentication required."}
+
+    cache_key = f"team:{user_id}:zones:{days}"
+    cached = team_cache.get(cache_key)
+    if cached is not None:
+        return cached
 
     # 1. Resolve Path (Same logic as get_git_history - user-specific)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -648,7 +810,9 @@ async def get_active_zones(days: int = 30, user_id: Optional[str] = Depends(get_
         
         # Run blocking I/O in thread pool
         results = await asyncio.to_thread(load_and_process)
-        return {"zones": results}
+        zr = {"zones": results}
+        team_cache.set(cache_key, zr, ttl=120)
+        return zr
         
     except Exception as e:
         logger.error(f"Heatmap generation failed: {e}", exc_info=True)
@@ -663,6 +827,7 @@ async def get_active_zones(days: int = 30, user_id: Optional[str] = Depends(get_
 async def trigger_ingestion(
     request: IngestRequest, 
     background_tasks: BackgroundTasks,
+    raw_request: Request,
     user_id: str = Depends(get_user_id)
 ):
     """
@@ -671,6 +836,12 @@ async def trigger_ingestion(
     Requires authentication - each user's ingestion is completely isolated.
     """
     try:
+        client_ip = raw_request.client.host if raw_request.client else user_id
+        if not ingest_limiter.allow(client_ip):
+            raise HTTPException(
+                status_code=429,
+                detail="Too many ingestion requests. Please wait before retrying.",
+            )
         # Input validation and sanitization
         repo_path = request.repo_path.strip()
         if not repo_path:
@@ -795,13 +966,53 @@ def execute_hybrid_query(
     user_id: str = Depends(get_user_id)
 ):
     """Execute RAG query for the authenticated user. Results are completely isolated per user."""
+    if not query_limiter.allow(user_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Query rate limit reached (30/min). Please slow down.",
+        )
     try:
         rag_service = get_rag_service(user_id)
         response = rag_service.answer_query(request.query)
+        ans = response.get("answer", "") if isinstance(response, dict) else str(response)
+        threading.Thread(
+            target=_save_query_history,
+            args=(user_id, request.query, ans),
+            daemon=True,
+        ).start()
         return response
     except Exception as e:
         logger.error(f"Query failed for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/query/history")
+def get_query_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    user_id: str = Depends(get_user_id),
+):
+    path = _get_history_path(user_id)
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            history = json.load(f)
+        return history[:limit]
+    except Exception as e:
+        logger.error(f"Query history read error for {user_id}: {e}")
+        return []
+
+
+@api_router.delete("/query/history")
+def clear_query_history(user_id: str = Depends(get_user_id)):
+    path = _get_history_path(user_id)
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+        return {"status": "cleared"}
+    except Exception as e:
+        logger.error(f"Failed to clear history for {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to clear query history")
 
 @api_router.post("/blast-radius/analyze-impact")
 def analyze_impact_with_rag(request: dict, user_id: str = Depends(get_user_id)):
@@ -819,6 +1030,11 @@ def analyze_impact_with_rag(request: dict, user_id: str = Depends(get_user_id)):
     Returns:
         Dict with 'answer' (string) and 'context_used' (string)
     """
+    if not query_limiter.allow(user_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Query rate limit reached. Please slow down.",
+        )
     try:
         query_text = request.get("query", "")
         node_id = request.get("node_id", "")

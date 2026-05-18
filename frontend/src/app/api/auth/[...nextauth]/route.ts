@@ -4,6 +4,20 @@ import GithubProvider from "next-auth/providers/github";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 
+const fetchWithTimeout = async (
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 8000
+) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 // Build providers array conditionally based on available credentials
 const providers = [];
 
@@ -22,7 +36,7 @@ providers.push(
 
       try {
         const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const response = await fetch(`${apiUrl}/api/v1/users/verify-credentials`, {
+        const response = await fetchWithTimeout(`${apiUrl}/api/v1/users/verify-credentials`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -148,7 +162,7 @@ const handler = NextAuth({
           // For OAuth providers, use email as id and fetch user id from database
           try {
             const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-            const response = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
+            const response = await fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
             if (response.ok) {
               const userData = await response.json();
               token.id = userData.id || userEmail; // Use database id or email as fallback
@@ -221,7 +235,7 @@ const handler = NextAuth({
           console.log(`[NextAuth] Provider: ${account?.provider}`);
           
           // Check if user exists
-          const checkResponse = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
+          const checkResponse = await fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
           console.log(`[NextAuth] Check user response status: ${checkResponse.status}`);
           
           // Use upsert endpoint to always update user info, even if profile not completed
@@ -232,7 +246,7 @@ const handler = NextAuth({
           }
           
           // Always upsert user to ensure they're updated on every login
-          const upsertResponse = await fetch(`${apiUrl}/api/v1/users/upsert`, {
+          const upsertResponse = await fetchWithTimeout(`${apiUrl}/api/v1/users/upsert`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -251,7 +265,7 @@ const handler = NextAuth({
             console.log(`${wasNew ? '✅ Created' : '✅ Updated'} user profile for: ${userEmail}`);
             
             // Update last_login timestamp for all logins
-            fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}/update-login`, {
+            fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}/update-login`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -262,7 +276,7 @@ const handler = NextAuth({
             
             // Send welcome email only for new users
             if (wasNew) {
-              fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}/send-welcome-email`, {
+              fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}/send-welcome-email`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -307,7 +321,7 @@ const handler = NextAuth({
       if (userEmail) {
         try {
           const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-          const response = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
+          const response = await fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
           
           if (response.ok) {
             const userData = await response.json();

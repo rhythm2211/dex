@@ -254,15 +254,22 @@ export default function ProfilePage() {
   // Fetch user profile
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!session?.user?.email) return;
-      
+      if (!session?.user) return;
+
+      if (!session.user.email) {
+        setLoading(false);
+        setError("Your account has no email on file. Try signing out and back in.");
+        return;
+      }
+
       try {
         setLoading(true);
+        setError(null);
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const response = await fetch(
           `${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`
         );
-        
+
         if (response.ok) {
           const data = await response.json();
           setProfile(data);
@@ -275,16 +282,24 @@ export default function ProfilePage() {
             github_username: data.github_username || "",
           });
         } else {
-          setError("Failed to load profile");
+          const detail = await response.text();
+          setError(
+            response.status === 404
+              ? "No profile found for this account yet. The backend may still be provisioning your user."
+              : `Could not load profile (${response.status}). ${detail.slice(0, 120)}`
+          );
         }
-      } catch (err: any) {
-        setError(err.message || "Failed to load profile");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to load profile";
+        setError(
+          `${message} — check NEXT_PUBLIC_API_URL and that the API is running.`
+        );
       } finally {
         setLoading(false);
       }
     };
 
-    if (session?.user?.email) {
+    if (session?.user) {
       fetchProfile();
     }
   }, [session]);
@@ -397,7 +412,7 @@ export default function ProfilePage() {
     setError(null);
   };
 
-  if (status === "loading" || loading) {
+  if (status === "loading" || (status === "authenticated" && loading)) {
     return (
       <div className="min-h-screen bg-[#050505] flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -405,8 +420,71 @@ export default function ProfilePage() {
     );
   }
 
-  if (!session?.user || !profile) {
+  if (status === "unauthenticated" || !session?.user) {
     return null;
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-slate-200 flex flex-col items-center justify-center px-6">
+        <div className="max-w-md w-full rounded-2xl border border-white/10 bg-[#0a0a0c] p-8 text-center space-y-4">
+          <h1 className="text-lg font-semibold text-white">Profile unavailable</h1>
+          <p className="text-sm text-slate-400 leading-relaxed">
+            {error ||
+              "We couldn’t load your profile from the API. This page used to go blank — here’s what went wrong instead."}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setLoading(true);
+                void (async () => {
+                  if (!session.user?.email) return;
+                  try {
+                    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+                    const response = await fetch(
+                      `${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`
+                    );
+                    if (response.ok) {
+                      const data = await response.json();
+                      setProfile(data);
+                      setEditData({
+                        name: data.name || "",
+                        age: data.age?.toString() || "",
+                        company: data.company || "",
+                        role: data.role || "",
+                        bio: data.bio || "",
+                        github_username: data.github_username || "",
+                      });
+                      setError(null);
+                    } else {
+                      setError(`Still failing (${response.status}). Check API / user record.`);
+                    }
+                  } catch (e: unknown) {
+                    setError(e instanceof Error ? e.message : "Retry failed");
+                  } finally {
+                    setLoading(false);
+                  }
+                })();
+              }}
+              className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500"
+            >
+              Retry
+            </button>
+            <Link
+              href="/app"
+              className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/10"
+            >
+              Back to app
+            </Link>
+            <Link href="/" className="rounded-xl border border-white/15 px-4 py-2.5 text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5">
+              Home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -426,7 +504,7 @@ export default function ProfilePage() {
             <span className="p-2.5 bg-indigo-500/10 rounded-xl border border-indigo-500/20">
               <ArrowLeft size={16} className="text-indigo-400" />
             </span>
-            <span className="text-sm font-semibold text-slate-300">Back to Dashboard</span>
+            <span className="text-sm font-semibold text-slate-300">Back to app</span>
           </Link>
           <div className="flex items-center gap-3">
             {success && (

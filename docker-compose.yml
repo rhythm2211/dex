@@ -1,4 +1,13 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: dex-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - default
+    restart: unless-stopped
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: dex-postgres
@@ -47,11 +56,14 @@ services:
       # If POSTGRES_HOST is not set in .env, it will use the local postgres service
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     volumes:
       - ./app/backend/data:/app/backend/data
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -59,6 +71,46 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  celery-worker:
+    build:
+      context: ./app
+      dockerfile: backend/Dockerfile
+    container_name: dex-celery-worker
+    command: ["celery", "-A", "backend.celery_app", "worker", "--loglevel=info"]
+    env_file:
+      - ./app/.env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - PYTHONPATH=/app
+    volumes:
+      - ./app/backend/data:/app/backend/data
+    depends_on:
+      - redis
+      - backend
+    networks:
+      - default
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ./app
+      dockerfile: backend/Dockerfile
+    container_name: dex-celery-beat
+    command: ["celery", "-A", "backend.celery_app", "beat", "--loglevel=info"]
+    env_file:
+      - ./app/.env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - PYTHONPATH=/app
+    volumes:
+      - ./app/backend/data:/app/backend/data
+    depends_on:
+      - redis
+      - backend
+    networks:
+      - default
+    restart: unless-stopped
     # Production resource limits (adjust based on your infrastructure)
     deploy:
       resources:

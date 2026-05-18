@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import BlastRadiusGraph from '@/components/BlastRadiusGraph';
+import AppShell from '@/components/AppShell';
 import { X, Search, ArrowRight, Code2, GitCommit, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -43,7 +44,8 @@ function BlastRadiusContent() {
   ];
 
   return (
-    <div className="w-full h-screen bg-[#050505] relative overflow-hidden text-gray-200 selection:bg-indigo-500/30 selection:text-indigo-200 font-sans" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+    <AppShell variant="fullBleed">
+    <div className="w-full h-full min-h-0 bg-[#050505] relative overflow-hidden text-slate-200 selection:bg-indigo-500/30 selection:text-indigo-100">
       
       {/* Background Ambient Glows */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-900/20 blur-[120px] rounded-full pointer-events-none" />
@@ -191,20 +193,23 @@ function BlastRadiusContent() {
         )}
       </AnimatePresence>
     </div>
+    </AppShell>
   );
 }
 
 export default function BlastRadiusPage() {
   return (
     <Suspense fallback={
-      <div className="w-full h-screen bg-[#050505] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center border border-white/5 shadow-inner shadow-indigo-500/10 mb-4 mx-auto animate-pulse">
-            <Zap className="w-8 h-8 text-indigo-400" />
+      <AppShell variant="fullBleed">
+        <div className="flex h-full w-full items-center justify-center bg-[#050505]">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center border border-white/5 shadow-inner shadow-indigo-500/10 mb-4 mx-auto animate-pulse">
+              <Zap className="w-8 h-8 text-indigo-400" />
+            </div>
+            <p className="text-slate-400 text-sm">Loading Blast Radius...</p>
           </div>
-          <p className="text-gray-400 text-sm">Loading Blast Radius...</p>
         </div>
-      </div>
+      </AppShell>
     }>
       <BlastRadiusContent />
     </Suspense>

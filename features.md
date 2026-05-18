@@ -169,3 +169,13 @@
 - **Environment-based configuration**
 - **Resource limits** and monitoring
 - **CI/CD ready** with GitHub Actions support
+
+## Engineering Intelligence Platform
+
+- **GitHub PR integration**: Webhook `POST /api/v1/integrations/webhooks/github` (optional `X-Hub-Signature-256` when `GITHUB_WEBHOOK_SECRET` is set) posts sticky PR comments and a GitHub Check; link repos via `/api/v1/integrations/github/repos`.
+- **Leadership dashboard** (`/insights/leadership`): Bus-factor trend, top-risk files, unowned surface %, PR throughput, architecture violation / incident counts, directory ownership heatmap and concentration alerts.
+- **What-if simulation** (`GET /api/v1/insights/team/what-if-leaves`): Critical files if a person leaves + RAG handoff plan.
+- **Weekly digest**: Celery beat (Monday 09:00 UTC) + Resend email + optional Slack webhook; user prefs at `/api/v1/digest/prefs` and Settings UI.
+- **Architecture drift** (`dex.architecture.yaml`): Layer tagging on ingestion, `DEPENDS_ON` violation edges, `POST /api/v1/architecture/recompute`, weekly snapshots in Postgres.
+- **Production-aware risk**: `POST /api/v1/observability/incidents/push` maps incidents to `CodeNode`; blast radius uses `prod_incidents_7d` multiplier.
+- **Cross-repo workspaces**: `POST /api/v1/workspace` groups repos; Neo4j `Repo` + `SAME_WORKSPACE` + OpenAPI `ServiceEndpoint` / `EXPOSES`; extended blast radius across workspace.

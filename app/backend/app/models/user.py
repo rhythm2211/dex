@@ -137,6 +137,11 @@ def init_db():
             # #endregion
             
             # Connection successful, proceed with initialization
+            # Register engineering-intelligence models on same Base before create_all
+            try:
+                import backend.app.models.engineering_models  # noqa: F401
+            except Exception as em:
+                logger.warning(f"engineering_models import skipped: {em}")
             Base.metadata.create_all(bind=engine)
             
             # Run migration to add is_active and last_login columns if they don't exist

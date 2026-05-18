@@ -1,0 +1,18 @@
+# DEX architecture rules (optional). Used after ingestion to tag CodeNode.layer and flag violations.
+layers:
+  - name: domain
+    paths:
+      - "app/backend/app/domain/**"
+    cannot_depend_on: [api]
+  - name: services
+    paths:
+      - "app/backend/app/services/**"
+    cannot_depend_on: [api]
+  - name: api
+    paths:
+      - "app/backend/app/api/**"
+    cannot_depend_on: []
+  - name: frontend
+    paths:
+      - "frontend/**"
+    cannot_depend_on: [api, domain, services]

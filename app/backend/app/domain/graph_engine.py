@@ -1,5 +1,6 @@
 import os
 import ast
+import math
 import logging
 import time
 import re
@@ -389,7 +390,8 @@ class GraphEngine:
         password = os.getenv("NEO4J_PASSWORD")
         self.database = os.getenv("NEO4J_DATABASE", "neo4j")
         self.repo_root = repo_root or ""
-        
+        self.repo_full_name = ""  # e.g. owner/repo for workspace / cross-repo views
+
         # Initialize PathResolver if repo_root is provided
         self.path_resolver = PathResolver(self.repo_root) if self.repo_root else None
         
@@ -482,7 +484,10 @@ class GraphEngine:
                 n.sensitivity = node.sensitivity,
                 n.risk_multiplier = node.risk_multiplier,
                 n.api_route = node.api_route,
-                n.infrastructure = node.infrastructure
+                n.infrastructure = node.infrastructure,
+                n.layer = coalesce(node.layer, n.layer, ''),
+                n.repo_full_name = coalesce(node.repo_full_name, n.repo_full_name, ''),
+                n.prod_incidents_7d = coalesce(node.prod_incidents_7d, n.prod_incidents_7d, 0)
             """
             
             params = {
@@ -508,6 +513,9 @@ class GraphEngine:
                         "risk_multiplier": node.get("risk_multiplier", 1.0),
                         "api_route": node.get("api_route", False),
                         "infrastructure": node.get("infrastructure", False),
+                        "layer": node.get("layer", ""),
+                        "repo_full_name": node.get("repo_full_name", self.repo_full_name or ""),
+                        "prod_incidents_7d": node.get("prod_incidents_7d", 0),
                     }
                     for node in batch
                 ]
@@ -624,9 +632,38 @@ class GraphEngine:
                 "MATCH (n:CodeNode {user_id: $user_id}) DETACH DELETE n",
                 user_id=self.user_id
             )
+            self._safe_session_run(
+                "MATCH (r:Repo {user_id: $user_id}) DETACH DELETE r",
+                user_id=self.user_id,
+            )
+            self._safe_session_run(
+                "MATCH (e:ServiceEndpoint {user_id: $user_id}) DETACH DELETE e",
+                user_id=self.user_id,
+            )
+            self._safe_session_run(
+                "MATCH (i:Incident {user_id: $user_id}) DETACH DELETE i",
+                user_id=self.user_id,
+            )
         except Exception as e:
             logger.error(f"Failed to wipe graph for user {self.user_id}: {e}")
             raise
+
+    def propagate_repo_slug_to_files(self, repo_slug: str):
+        """Set repo_full_name on all file nodes (after ingestion)."""
+        if not self.driver or not (repo_slug or "").strip():
+            return
+        try:
+            self._safe_session_run(
+                """
+                MATCH (n:CodeNode {user_id: $user_id})
+                WHERE n.type = 'file'
+                SET n.repo_full_name = $slug
+                """,
+                user_id=self.user_id,
+                slug=repo_slug.strip(),
+            )
+        except Exception as e:
+            logger.warning(f"propagate_repo_slug_to_files failed: {e}")
 
     def upsert_node(self, node_data: dict):
         if not self.driver: return
@@ -652,7 +689,10 @@ class GraphEngine:
                 n.sensitivity = $sensitivity,
                 n.risk_multiplier = $risk_multiplier,
                 n.api_route = $api_route,
-                n.infrastructure = $infrastructure
+                n.infrastructure = $infrastructure,
+                n.layer = coalesce($layer, n.layer, ''),
+                n.repo_full_name = coalesce(nullif($repo_full_name,''), n.repo_full_name, ''),
+                n.prod_incidents_7d = coalesce($prod_incidents_7d, n.prod_incidents_7d, 0)
             """
         
         params = {
@@ -676,6 +716,9 @@ class GraphEngine:
                 "risk_multiplier": node_data.get("risk_multiplier", 1.0),
                 "api_route": node_data.get("api_route", False),
                 "infrastructure": node_data.get("infrastructure", False),
+                "layer": node_data.get("layer", ""),
+                "repo_full_name": node_data.get("repo_full_name", self.repo_full_name or ""),
+                "prod_incidents_7d": int(node_data.get("prod_incidents_7d") or 0),
             }
         
         try:
@@ -1679,8 +1722,12 @@ class GraphEngine:
                         if "core" in dep_id.lower() or "base" in dep_id.lower():
                             multiplier *= 1.5  # Core/base files are important
                         
-                        # Calculate final risk score
-                        node_risk = min(100, int(round(base_score * multiplier)))
+                        # Calculate final risk score (prod-aware)
+                        prod_n = float(node_dict.get("prod_incidents_7d") or 0)
+                        node_risk = min(
+                            100,
+                            int(round(base_score * multiplier * (1.0 + math.log1p(prod_n)))),
+                        )
                         total_risk_score += node_risk
                         
                         # Dynamic color based on risk score (not hop distance)
@@ -1764,7 +1811,11 @@ class GraphEngine:
                         if churn_score > 0.7:
                             multiplier *= 1.3
                         
-                        node_risk = min(100, int(round(base_score * multiplier)))
+                        prod_n = float(node_dict.get("prod_incidents_7d") or 0)
+                        node_risk = min(
+                            100,
+                            int(round(base_score * multiplier * (1.0 + math.log1p(prod_n)))),
+                        )
                         total_risk_score += node_risk * 0.3  # Dependencies contribute less
                         
                         # Color based on risk
@@ -1859,7 +1910,11 @@ class GraphEngine:
                                   for keyword in ["auth", "payment", "security", "config", "main", "init"]):
                                 multiplier *= 1.8
                             
-                            node_risk = min(100, int(round(base_score * multiplier)))
+                            prod_n = float(node_dict.get("prod_incidents_7d") or 0)
+                            node_risk = min(
+                                100,
+                                int(round(base_score * multiplier * (1.0 + math.log1p(prod_n)))),
+                            )
                             total_risk_score += node_risk
                             
                             if node_risk >= 75:

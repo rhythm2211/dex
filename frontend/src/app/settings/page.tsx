@@ -9,6 +9,7 @@ import {
   Moon, Sun, Globe, Save, CheckCircle, AlertCircle, Trash2,
   Mail, Lock, Eye, EyeOff, Database, Server, Activity
 } from "lucide-react";
+import { dexApi } from "@/lib/api";
 
 export default function SettingsPage() {
   const { data: session, status } = useSession();
@@ -51,6 +52,14 @@ export default function SettingsPage() {
     timezone: 'UTC',
   });
 
+  const [dexLeadership, setDexLeadership] = useState({
+    weeklyDigest: false,
+    slackUrl: "",
+    ghOwner: "",
+    ghRepo: "",
+  });
+  const [linkedRepos, setLinkedRepos] = useState<Array<{ owner: string; repo: string }>>([]);
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/login?redirect=/settings");
@@ -66,6 +75,24 @@ export default function SettingsPage() {
       });
     }
   }, [session]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || activeTab !== "notifications") return;
+    (async () => {
+      try {
+        const p = await dexApi.getDigestPrefs();
+        setDexLeadership((d) => ({
+          ...d,
+          weeklyDigest: !!p.weekly_digest_enabled,
+          slackUrl: p.slack_webhook_url || "",
+        }));
+        const repos = await dexApi.listGithubRepos();
+        setLinkedRepos(Array.isArray(repos) ? repos : []);
+      } catch {
+        /* backend optional */
+      }
+    })();
+  }, [status, activeTab]);
 
   const handleSaveAccount = async () => {
     setSaving(true);
@@ -324,6 +351,114 @@ export default function SettingsPage() {
                 <div className="space-y-6">
                   <div>
                     <h2 className="text-xl font-bold text-white mb-6">Notification Preferences</h2>
+
+                    <div className="mb-8 p-4 rounded-lg bg-indigo-500/10 border border-indigo-500/20 space-y-4">
+                      <h3 className="text-sm font-semibold text-indigo-200">DEX — Leadership digest</h3>
+                      <label className="flex items-center justify-between text-sm text-slate-300">
+                        <span>Weekly email digest (Monday)</span>
+                        <input
+                          type="checkbox"
+                          checked={dexLeadership.weeklyDigest}
+                          onChange={(e) =>
+                            setDexLeadership((d) => ({ ...d, weeklyDigest: e.target.checked }))
+                          }
+                          className="accent-indigo-500"
+                        />
+                      </label>
+                      <div>
+                        <label className="text-xs text-slate-500 block mb-1">Slack incoming webhook (optional)</label>
+                        <input
+                          type="url"
+                          value={dexLeadership.slackUrl}
+                          onChange={(e) => setDexLeadership((d) => ({ ...d, slackUrl: e.target.value }))}
+                          placeholder="https://hooks.slack.com/..."
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                        />
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        <input
+                          placeholder="GitHub owner"
+                          value={dexLeadership.ghOwner}
+                          onChange={(e) => setDexLeadership((d) => ({ ...d, ghOwner: e.target.value }))}
+                          className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                        />
+                        <input
+                          placeholder="repo"
+                          value={dexLeadership.ghRepo}
+                          onChange={(e) => setDexLeadership((d) => ({ ...d, ghRepo: e.target.value }))}
+                          className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setSaving(true);
+                            setError(null);
+                            try {
+                              await dexApi.putDigestPrefs({
+                                weekly_digest_enabled: dexLeadership.weeklyDigest,
+                                slack_webhook_url: dexLeadership.slackUrl || null,
+                              });
+                              if (dexLeadership.ghOwner.trim() && dexLeadership.ghRepo.trim()) {
+                                await dexApi.linkGithubRepo(
+                                  dexLeadership.ghOwner.trim(),
+                                  dexLeadership.ghRepo.trim()
+                                );
+                                const repos = await dexApi.listGithubRepos();
+                                setLinkedRepos(Array.isArray(repos) ? repos : []);
+                              }
+                              setSuccess(true);
+                              setTimeout(() => setSuccess(false), 3000);
+                            } catch (err: unknown) {
+                              setError(err instanceof Error ? err.message : "Save failed");
+                            } finally {
+                              setSaving(false);
+                            }
+                          }}
+                          className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"
+                        >
+                          Save DEX notifications
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await dexApi.sendDigestNow();
+                              setSuccess(true);
+                              setTimeout(() => setSuccess(false), 3000);
+                            } catch (err: unknown) {
+                              setError(err instanceof Error ? err.message : "Send failed");
+                            }
+                          }}
+                          className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm"
+                        >
+                          Send digest now
+                        </button>
+                      </div>
+                      {linkedRepos.length > 0 && (
+                        <ul className="text-xs text-slate-400 space-y-1">
+                          {linkedRepos.map((r) => (
+                            <li key={`${r.owner}/${r.repo}`} className="flex justify-between gap-2">
+                              <span>
+                                {r.owner}/{r.repo}
+                              </span>
+                              <button
+                                type="button"
+                                className="text-rose-400 hover:underline"
+                                onClick={async () => {
+                                  await dexApi.unlinkGithubRepo(r.owner, r.repo);
+                                  setLinkedRepos((prev) => prev.filter((x) => !(x.owner === r.owner && x.repo === r.repo)));
+                                }}
+                              >
+                                Unlink
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
                     <div className="space-y-4">
                       {Object.entries(notifications).map(([key, value]) => (
                         <div key={key} className="flex items-center justify-between p-4 rounded-lg bg-white/5 border border-white/10">

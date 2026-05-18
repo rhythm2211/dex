@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useSession, signOut } from 'next-auth/react';
-import { Terminal, LogOut, ArrowLeft, Users } from 'lucide-react';
+import AppShell from '@/components/AppShell';
+import { ArrowLeft, Users, UserX } from 'lucide-react';
 import * as d3 from 'd3';
 import { dexApi, TeamTopologyResponse } from '@/lib/api';
 
@@ -26,10 +26,12 @@ const GlobalStyles = () => (
 );
 
 export default function TeamInsightsPage() {
-  const { data: session } = useSession();
   const svgRef = useRef<SVGSVGElement>(null);
   const [data, setData] = useState<TeamTopologyResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [whatIfPerson, setWhatIfPerson] = useState('');
+  const [whatIfLoading, setWhatIfLoading] = useState(false);
+  const [whatIfResult, setWhatIfResult] = useState<{ critical_files: { file: string; bus_risk: number; next_owners: string[] }[]; handoff_plan: string } | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -98,7 +100,10 @@ export default function TeamInsightsPage() {
       .attr("dx", 22)
       .attr("dy", 4)
       .attr("fill", "#e2e8f0") // Slate-200
-      .attr("font-family", "system-ui");
+      .attr(
+        "font-family",
+        "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif"
+      );
 
     // Update positions on tick
     simulation.on("tick", () => {
@@ -145,7 +150,7 @@ export default function TeamInsightsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-slate-200 overflow-x-hidden relative selection:bg-indigo-500/30 selection:text-white font-sans">
+    <AppShell>
       <GlobalStyles />
 
       {/* Background (matches main) */}
@@ -156,49 +161,15 @@ export default function TeamInsightsPage() {
         <div className="absolute inset-0 cyber-grid" />
       </div>
 
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#050505]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 h-16">
-          <Link href="/" className="group inline-flex items-center gap-3">
-            <span className="relative flex items-center justify-center h-8 w-8 rounded bg-[#0A0A0A] border border-white/10 group-hover:border-indigo-500/50 transition-colors shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-              <Terminal className="text-white relative z-10 group-hover:text-indigo-400 transition-colors" size={16} />
-            </span>
-            <span className="text-sm font-bold tracking-[0.2em] text-white">DEX</span>
-          </Link>
-          <div className="hidden md:flex items-center gap-8 text-xs font-medium text-slate-400">
-            <Link href="/#how-it-works" className="hover:text-white transition-colors">Methodology</Link>
-            <Link href="/#features" className="hover:text-white transition-colors">Features</Link>
-            <Link href="/security" className="hover:text-white transition-colors">Security</Link>
-            <Link href="/about" className="hover:text-white transition-colors">About</Link>
-          </div>
-          <div className="flex items-center gap-4">
-            {session?.user ? (
-              <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs text-slate-300 max-w-[100px] truncate">{session.user.email}</span>
-                <button onClick={() => signOut()} className="text-slate-500 hover:text-white ml-1"><LogOut size={12} /></button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <Link href="/login" className="text-xs font-semibold text-slate-400 hover:text-white transition-colors">Log in</Link>
-                <Link href="/signup" className="hidden sm:inline-flex items-center justify-center rounded-lg bg-indigo-600 text-white px-4 py-2 text-xs font-bold hover:bg-indigo-500 transition-all shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)]">
-                  Public Beta Access
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <main className="relative pt-24 pb-20 z-10">
-        <div className="max-w-6xl mx-auto px-6">
+      <main className="relative z-10 overflow-x-hidden pb-20">
+        <div className="max-w-6xl mx-auto px-6 pt-6">
           {/* Back Button */}
           <Link 
-            href="/about" 
+            href="/app" 
             className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-indigo-400 transition-colors mb-6 group"
           >
             <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-            Back to About
+            Back to Dashboard
           </Link>
 
           {/* Header Section */}
@@ -228,15 +199,83 @@ export default function TeamInsightsPage() {
             )}
             <svg ref={svgRef} className="w-full h-full"></svg>
           </div>
+
+          <div className="mt-10 bg-[#0A0A0A] border border-white/10 rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <UserX className="text-indigo-400" size={20} />
+              <h2 className="text-xl font-semibold text-white">What if they leave?</h2>
+            </div>
+            <p className="text-sm text-slate-400 mb-4">
+              Enter a developer name as it appears in <code className="text-indigo-300">top_owner</code> from git blame (e.g. from graph node details).
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <input
+                value={whatIfPerson}
+                onChange={(e) => setWhatIfPerson(e.target.value)}
+                placeholder="Developer name"
+                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white"
+              />
+              <button
+                type="button"
+                disabled={whatIfLoading || !whatIfPerson.trim()}
+                onClick={async () => {
+                  setWhatIfLoading(true);
+                  setWhatIfResult(null);
+                  try {
+                    const r = await dexApi.getWhatIfLeaves(whatIfPerson.trim());
+                    setWhatIfResult(r);
+                  } catch (e) {
+                    console.error(e);
+                    setWhatIfResult({ critical_files: [], handoff_plan: String(e) });
+                  } finally {
+                    setWhatIfLoading(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:opacity-40"
+              >
+                {whatIfLoading ? 'Analyzing…' : 'Simulate'}
+              </button>
+            </div>
+            {whatIfResult && (
+              <div className="space-y-4 text-sm">
+                <p className="text-slate-300">
+                  <span className="text-white font-medium">{whatIfResult.critical_files?.length || 0}</span> files
+                  list this person as primary owner.
+                </p>
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-white/10">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-white/5 text-slate-500">
+                      <tr>
+                        <th className="p-2">File</th>
+                        <th className="p-2">Bus risk</th>
+                        <th className="p-2">Next owners</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(whatIfResult.critical_files || []).slice(0, 40).map((row) => (
+                        <tr key={row.file} className="border-t border-white/5">
+                          <td className="p-2 font-mono text-indigo-200">{row.file}</td>
+                          <td className="p-2">{row.bus_risk.toFixed(2)}</td>
+                          <td className="p-2">{(row.next_owners || []).join(', ') || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="rounded-lg bg-white/5 border border-white/10 p-4 text-slate-300 whitespace-pre-wrap">
+                  {whatIfResult.handoff_plan}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/5 bg-[#020202] py-8">
+      <footer className="relative z-10 border-t border-white/5 bg-[#020202] py-8">
         <div className="mx-auto max-w-6xl px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="w-5 h-5 bg-slate-800 rounded flex items-center justify-center"><Terminal size={10} /></span>
-            <span className="font-bold text-white text-sm">DEX</span>
+            <span className="font-black tracking-[0.2em] text-white text-xs">DEX</span>
           </div>
           <div className="flex gap-6 text-xs text-slate-500">
             <Link href="/" className="hover:text-indigo-400 transition-colors">Home</Link>
@@ -251,6 +290,6 @@ export default function TeamInsightsPage() {
           </div>
         </div>
       </footer>
-    </div>
+    </AppShell>
   );
 }

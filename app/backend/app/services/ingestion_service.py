@@ -343,6 +343,9 @@ class IngestionService:
         # SME / Feature mapping caches for graph enrichment
         self._expert_map: Dict[str, list] = {}
         self._feature_mappings: Dict[str, dict] = {}
+        # Last successfully processed repo root (temp clone path during ingest; used for architecture pass)
+        self.last_ingested_repo_root: Optional[str] = None
+        self.last_repo_full_name: Optional[str] = None
 
         # Internal status for polling
         self._status = {"state": "idle", "progress": 0, "step": "Ready"}
@@ -826,6 +829,17 @@ class IngestionService:
         # Otherwise, just use first line (truncated)
         return first_line[:120]
 
+    def _github_slug_from_url(self, repo_path: str) -> Optional[str]:
+        """Return owner/repo for GitHub HTTPS or SSH URLs."""
+        u = (repo_path or "").strip()
+        m = re.match(r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", u)
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+        m2 = re.match(r"git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$", u)
+        if m2:
+            return f"{m2.group(1)}/{m2.group(2)}"
+        return None
+
     def _validate_repo_url(self, repo_path: str) -> None:
         """
         Validates that a repository URL is properly formatted.
@@ -1016,6 +1030,10 @@ class IngestionService:
                             raise RuntimeError("Git clone failed for unknown reason")
                     
                     actual_path = temp_dir
+                    slug = self._github_slug_from_url(repo_path)
+                    if slug:
+                        self.last_repo_full_name = slug
+                        self.graph_engine.repo_full_name = slug
                     elapsed_time = (datetime.now() - clone_start_time).total_seconds()
                     logger.info(f"Clone completed successfully in {elapsed_time:.1f} seconds")
                     self._update_status("running", 25, "Clone completed successfully")
@@ -1271,6 +1289,7 @@ class IngestionService:
                 logger.info(f"File breakdown: {', '.join([f'{count} {ext}' for ext, count in file_counts.items()])}")
 
             # --- PHASE 2: STREAM TO CLOUD (NEO4J) - OPTIMIZED WITH BATCHING ---
+            self.last_ingested_repo_root = actual_path
             total_docs = len(raw_docs)
             logger.info(f"Starting Neo4j streaming for {total_docs} files (using batch inserts for performance)...")
             
@@ -1447,6 +1466,41 @@ class IngestionService:
                     self.graph_engine.upsert_feature_mappings(feature_mappings)
             except Exception as e:
                 logger.error(f"Failed to upsert Feature mappings: {e}")
+
+            try:
+                if self.last_repo_full_name:
+                    self.graph_engine.propagate_repo_slug_to_files(self.last_repo_full_name)
+            except Exception as e:
+                logger.debug(f"repo slug propagation skipped: {e}")
+
+            try:
+                from backend.app.domain.cross_repo_resolver import attach_openapi_service_nodes
+
+                if self.last_repo_full_name:
+                    attach_openapi_service_nodes(self.user_id, self.graph_engine, actual_path, self.last_repo_full_name)
+            except Exception as e:
+                logger.debug(f"OpenAPI attach skipped: {e}")
+
+            try:
+                from backend.app.domain.architecture_engine import (
+                    apply_architecture_layers_after_ingestion,
+                    record_architecture_snapshot,
+                )
+
+                arch_stats = apply_architecture_layers_after_ingestion(
+                    self.graph_engine, actual_path, self.user_id
+                )
+                record_architecture_snapshot(self.user_id, int(arch_stats.get("violations_tagged", 0)))
+                logger.info(f"Architecture pass: {arch_stats}")
+            except Exception as e:
+                logger.warning(f"Architecture layer pass skipped: {e}")
+
+            try:
+                from backend.app.domain.cross_repo_resolver import link_workspace_repos_neo4j
+
+                link_workspace_repos_neo4j(self.user_id, self.graph_engine)
+            except Exception as e:
+                logger.debug(f"cross-repo resolver skipped: {e}")
 
             # --- PHASE 3: VECTOR EMBEDDINGS (PostgreSQL/pgvector) ---
             self._check_cancelled()

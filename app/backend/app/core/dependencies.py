@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 from fastapi import Depends, HTTPException, Header, Request
 from backend.app.models.user import SessionLocal, User
+from backend.app.core.extension_auth import validate_extension_access_token
 
 logger = logging.getLogger("dex-core")
 
@@ -44,9 +45,13 @@ def get_current_user(
         try:
             # Format: "Bearer <token>" or just "<token>"
             token = authorization.replace("Bearer ", "").strip()
-            # For now, we'll use the token as user_id if it's an email
-            # In production, you'd decode JWT or validate session token
-            if "@" in token:  # Likely an email
+
+            # Extension bearer token support (signed token)
+            extension_payload = validate_extension_access_token(token)
+            if extension_payload and extension_payload.get("sub"):
+                user_id = str(extension_payload["sub"]).strip()
+            # Legacy behavior for email-based auth fallback
+            elif "@" in token:  # Likely an email
                 user_id = token
             else:
                 # Could be a session token - would need to validate with NextAuth

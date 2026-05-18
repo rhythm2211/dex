@@ -5,7 +5,7 @@ import { ToastProvider } from "./Toast";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <SessionProvider>
+    <SessionProvider basePath="/api/auth">
       <ToastProvider>
         {children}
       </ToastProvider>

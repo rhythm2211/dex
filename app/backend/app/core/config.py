@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    EXTENSION_AUTH_SECRET: str = os.getenv("EXTENSION_AUTH_SECRET", "")
     
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
@@ -65,7 +66,11 @@ class Settings(BaseSettings):
     
     GROQ_API_KEY: str = ""  # Single key (for backward compatibility)
     GROQ_API_KEYS: str = ""  # Multiple keys (comma-separated) - takes precedence over GROQ_API_KEY
-    GITHUB_TOKEN: str = "" 
+    GITHUB_TOKEN: str = ""
+    # HMAC secret for GitHub webhook `X-Hub-Signature-256` (GitHub App or repo webhook)
+    GITHUB_WEBHOOK_SECRET: str = ""
+    # Optional: weekly digest / Slack (see UserNotificationPrefs)
+    SLACK_WEBHOOK_URL_DEFAULT: str = ""
     OPENAI_API_KEY: str = ""
     VOYAGE_API_KEY: str = ""
     COHERE_API_KEY: str = ""
@@ -98,6 +103,24 @@ class Settings(BaseSettings):
             import warnings
             warnings.warn("GROQ_API_KEY is not set. RAG queries will fail!")
         return v
+
+    @field_validator("GITHUB_TOKEN", mode="before")
+    def normalize_github_token(cls, v):
+        """
+        Strip whitespace/quotes and accidental Authorization prefixes from .env pastes.
+        GitHub returns 401 Bad credentials if the value includes 'Bearer ' or extra quotes.
+        """
+        if v is None:
+            return ""
+        s = str(v).strip()
+        if not s:
+            return ""
+        if (len(s) >= 2) and ((s[0] == s[-1] == '"') or (s[0] == s[-1] == "'")):
+            s = s[1:-1].strip()
+        for prefix in ("Bearer ", "bearer ", "token ", "Token ", "GITHUB_TOKEN="):
+            if s.startswith(prefix):
+                s = s[len(prefix) :].strip()
+        return s
 
     @model_validator(mode="after")
     def normalize_postgres_config(self):

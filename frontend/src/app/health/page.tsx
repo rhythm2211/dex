@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useSession } from 'next-auth/react';
+import AppShell from '@/components/AppShell';
 import { 
   ArrowLeft, RefreshCw, AlertTriangle, FileCode, Users, Activity, 
   GitBranch, TrendingUp, Shield, Zap, Code2, Github, 
@@ -289,7 +289,6 @@ function CycleVisualizer({ cycles }: { cycles: CycleDetected[] }) {
 }
 
 export default function HealthDashboardPage() {
-  const { data: session } = useSession();
   const [summary, setSummary] = useState<HealthSummary | null>(null);
   const [cycles, setCycles] = useState<CycleDetected[]>([]);
   const [godObjects, setGodObjects] = useState<GodObject[]>([]);
@@ -337,14 +336,14 @@ export default function HealthDashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050505] text-slate-200 overflow-x-hidden relative">
+      <AppShell>
         <GlobalStyles />
         <div className="fixed inset-0 z-0 pointer-events-none">
           <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-900/8 blur-[120px] rounded-full mix-blend-screen opacity-40"></div>
           <div className="absolute top-[40%] right-[-10%] w-[40%] h-[40%] bg-emerald-900/5 blur-[100px] rounded-full mix-blend-screen opacity-30"></div>
           <div className="absolute inset-0 cyber-grid"></div>
         </div>
-        <div className="flex items-center justify-center h-screen relative z-10">
+        <div className="flex items-center justify-center min-h-[60vh] relative z-10">
           <div className="text-center">
             <div className="relative inline-block mb-6">
               <Github className="w-14 h-14 mx-auto text-indigo-400/80 animate-float" />
@@ -360,14 +359,14 @@ export default function HealthDashboardPage() {
             </div>
           </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-slate-200 overflow-x-hidden relative selection:bg-indigo-500/30 selection:text-white font-sans">
+    <AppShell>
       <GlobalStyles />
-      
+
       {/* Dynamic Background - Subtle */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-900/8 blur-[120px] rounded-full mix-blend-screen opacity-40"></div>
@@ -376,42 +375,40 @@ export default function HealthDashboardPage() {
         <div className="absolute inset-0 cyber-grid"></div>
       </div>
 
-      {/* Header - Cleaner */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#050505]/70 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Link
-                href="/app"
-                className="p-1.5 hover:bg-white/5 rounded-lg transition-colors"
-                aria-label="Back to dashboard"
-              >
-                <ArrowLeft className="w-4 h-4 text-slate-400" />
-              </Link>
-              <div className="flex items-center gap-2.5">
-                <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
-                  <Activity className="w-5 h-5 text-indigo-400" />
-                </div>
-                <div>
-                  <h1 className="text-lg font-semibold gradient-text">Health Dashboard</h1>
-                  <p className="text-xs text-slate-500">Code quality & technical debt analysis</p>
-                </div>
+      {/* Page toolbar (under global nav) */}
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2 border-b border-white/5 bg-[#050505]/40 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link
+              href="/app"
+              className="p-1.5 hover:bg-white/5 rounded-lg transition-colors shrink-0"
+              aria-label="Back to dashboard"
+            >
+              <ArrowLeft className="w-4 h-4 text-slate-400" />
+            </Link>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 shrink-0">
+                <Activity className="w-5 h-5 text-indigo-400" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg font-semibold gradient-text truncate">Health Dashboard</h1>
+                <p className="text-xs text-slate-500">Code quality & technical debt analysis</p>
               </div>
             </div>
-            <button
-              onClick={fetchHealthData}
-              disabled={refreshing}
-              className="flex items-center gap-2 px-3 py-1.5 glass-panel rounded-lg transition-all hover-lift disabled:opacity-50 text-sm"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-rotate-slow' : ''}`} />
-              <span>Refresh</span>
-            </button>
           </div>
+          <button
+            onClick={fetchHealthData}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-1.5 glass-panel rounded-lg transition-all hover-lift disabled:opacity-50 text-sm shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-rotate-slow' : ''}`} />
+            <span>Refresh</span>
+          </button>
         </div>
-      </header>
+      </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-12 relative z-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12 relative z-10">
         {summary && (
           <>
             {/* Top Row: Health Score + Stats - Cleaner */}
@@ -578,6 +575,6 @@ export default function HealthDashboardPage() {
           </>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

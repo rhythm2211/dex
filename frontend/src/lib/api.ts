@@ -128,6 +128,57 @@ export interface HealthSummary {
   bus_factor_risk: number; // Average bus risk score
 }
 
+export interface PRFileRisk {
+  file: string;
+  risk_score: number;
+  owner: string;
+  bus_risk: number;
+  collaborators: string[];
+  downstream_count: number;
+  is_new_circular_dep: boolean;
+}
+
+export interface PRReviewResponse {
+  pr_url: string | null;
+  overall_risk: number;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  changed_files: string[];
+  file_risks: PRFileRisk[];
+  blast_files: string[];
+  new_circular_deps: string[];
+  bus_factor_regressions: Array<{ file: string; owner: string; bus_risk: number }>;
+  suggested_reviewers: Array<{ name: string; confidence: number }>;
+  ci_checklist: string[];
+  ai_summary: string;
+  ownership_changes: Array<{ file: string; owner: string; bus_risk: number; collaborators: string[] }>;
+  architecture_violations?: string[];
+  prod_incident_touch?: Array<{ file: string; incidents_7d: number }>;
+}
+
+export interface LeadershipInsights {
+  bus_factor_trend: Array<{ week: string; commits: number; top_author_share: number }>;
+  top_risk_files: Array<{ file: string; owner?: string; score: number; fan_in?: number; incidents_7d?: number }>;
+  unowned_surface_pct: number;
+  pr_throughput: Array<{ week: string; events: number }>;
+  architecture_violations_this_week: number;
+  incidents_this_week: number;
+  ownership_heatmap: Array<{ zone: string; files: number; distinct_owners: number; concentration: number }>;
+  concentration_alerts: Array<{ zone: string; message: string }>;
+}
+
+/** Backend HTTPException handler uses `{ error: detail }` (not FastAPI's `detail` key). */
+function messageFromAxiosErrorData(data: unknown): string | undefined {
+  if (data == null || typeof data !== "object") return undefined;
+  const rec = data as Record<string, unknown>;
+  const err = rec.error;
+  if (typeof err === "string" && err.trim()) return err.trim();
+  if (Array.isArray(err)) return err.map(String).join("; ");
+  const det = rec.detail;
+  if (typeof det === "string" && det.trim()) return det.trim();
+  if (Array.isArray(det)) return JSON.stringify(det);
+  return undefined;
+}
+
 // --- The Singleton Client ---
 class DexClient {
   private client: AxiosInstance;
@@ -243,16 +294,22 @@ class DexClient {
       });
       return res.data;
     } catch (error: any) {
-      console.error("Ingestion Trigger Failure:", error?.message);
-      console.error("Full error:", error);
-      console.error("Error details:", {
-        message: error?.message,
-        code: error?.code,
-        response: error?.response?.data,
-        status: error?.response?.status,
-        baseURL: this.baseURL,
-        endpoint: `${this.baseURL}/api/v1/ingest`
-      });
+      const status = error?.response?.status;
+      // 409 is an expected state when a background ingestion is already running.
+      if (status === 409) {
+        console.info("Ingestion already running for this user.");
+      } else {
+        console.error("Ingestion Trigger Failure:", error?.message);
+        console.error("Full error:", error);
+        console.error("Error details:", {
+          message: error?.message,
+          code: error?.code,
+          response: error?.response?.data,
+          status,
+          baseURL: this.baseURL,
+          endpoint: `${this.baseURL}/api/v1/ingest`
+        });
+      }
       
       // Provide more detailed error information
       let errorMessage = "Failed to start ingestion";
@@ -261,7 +318,7 @@ class DexClient {
         errorMessage = `Cannot connect to backend at ${this.baseURL}. Please check if the backend is running and accessible.`;
       } else if (error?.response?.status === 400) {
         errorMessage = error.response.data?.detail || "Invalid request. Please check the repository URL.";
-      } else if (error?.response?.status === 409) {
+      } else if (status === 409) {
         errorMessage = error.response.data?.detail || "An ingestion task is already running.";
       } else if (error?.response?.data?.detail) {
         errorMessage = error.response.data.detail;
@@ -533,7 +590,71 @@ class DexClient {
     }
   }
 
-  // [NEW] 13. RAG-powered Impact Analysis
+  public async analyzePR(prUrl?: string, changedFiles?: string[]): Promise<PRReviewResponse> {
+    try {
+      const trimmed = prUrl?.trim();
+      const body: { pr_url?: string; changed_files?: string[] } = {};
+      if (trimmed) body.pr_url = trimmed;
+      if (changedFiles?.length) body.changed_files = changedFiles;
+
+      const res = await this.client.post('/pr-review/analyze', body, { timeout: 120000 });
+      return res.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const isNetworkError =
+        error?.code === 'ECONNREFUSED' ||
+        error?.code === 'ERR_NETWORK' ||
+        error?.message?.includes('Network Error');
+      const isTimeout =
+        error?.code === 'ECONNABORTED' ||
+        error?.message?.toLowerCase?.().includes('timeout');
+
+      if (isNetworkError) {
+        console.warn("PR Review Failure (network):", {
+          message: error?.message,
+          baseURL: this.baseURL,
+          endpoint: `${this.baseURL}/api/v1/pr-review/analyze`,
+        });
+        throw new Error(
+          `Cannot reach backend at ${this.baseURL}. Ensure backend is running and accessible, then retry PR review.`
+        );
+      }
+
+      if (isTimeout) {
+        console.warn("PR Review Failure (timeout):", error?.message);
+        throw new Error("PR review timed out. Please retry in a moment.");
+      }
+
+      const data = error?.response?.data;
+      const detailStr = messageFromAxiosErrorData(data);
+      const statusText = error?.response?.statusText;
+      const debugLine = [
+        `message=${String(error?.message ?? "")}`,
+        `code=${String(error?.code ?? "")}`,
+        `status=${String(status ?? "")}`,
+        `statusText=${String(statusText ?? "")}`,
+        `apiMessage=${detailStr ?? "null"}`,
+        `data=${typeof data === "string" ? data.slice(0, 500) : JSON.stringify(data ?? null)}`,
+      ].join(" | ");
+      console.error("PR Review Failure:", debugLine);
+
+      if (status && status >= 500) {
+        throw new Error(
+          detailStr ||
+            `PR review failed (HTTP ${status}${statusText ? ` ${statusText}` : ""}). Check backend logs and database connectivity.`
+        );
+      }
+      if (status === 401) {
+        throw new Error(detailStr || "PR review failed: sign in to DEX first.");
+      }
+      if (status === 403) {
+        throw new Error(detailStr || "PR review failed: access denied.");
+      }
+      throw new Error(detailStr || "PR review analysis failed");
+    }
+  }
+
+  // RAG-powered Impact Analysis
   public async analyzeImpact(query: string, nodeId?: string): Promise<{
     answer: string;
     context_used?: string;
@@ -550,6 +671,78 @@ class DexClient {
       console.error("Impact Analysis Failure:", error?.message);
       throw new Error(error.response?.data?.detail || "Impact analysis failed");
     }
+  }
+
+  public async getLeadershipInsights(): Promise<LeadershipInsights> {
+    const res = await this.client.get('/insights/leadership', { timeout: 60000 });
+    return res.data;
+  }
+
+  public async getWhatIfLeaves(person: string): Promise<{ person: string; critical_files: Array<{ file: string; bus_risk: number; next_owners: string[] }>; handoff_plan: string }> {
+    const res = await this.client.get('/insights/team/what-if-leaves', {
+      params: { person },
+      timeout: 120000,
+    });
+    return res.data;
+  }
+
+  public async getDigestPrefs(): Promise<{ weekly_digest_enabled: boolean; slack_webhook_url: string | null }> {
+    const res = await this.client.get('/digest/prefs');
+    return res.data;
+  }
+
+  public async putDigestPrefs(body: { weekly_digest_enabled: boolean; slack_webhook_url: string | null }): Promise<void> {
+    await this.client.put('/digest/prefs', body);
+  }
+
+  public async sendDigestNow(): Promise<unknown> {
+    const res = await this.client.post('/digest/send-now');
+    return res.data;
+  }
+
+  public async linkGithubRepo(owner: string, repo: string): Promise<unknown> {
+    const res = await this.client.post('/integrations/github/repos', { owner, repo });
+    return res.data;
+  }
+
+  public async listGithubRepos(): Promise<Array<{ owner: string; repo: string }>> {
+    const res = await this.client.get('/integrations/github/repos');
+    return res.data;
+  }
+
+  public async unlinkGithubRepo(owner: string, repo: string): Promise<void> {
+    await this.client.delete(`/integrations/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`);
+  }
+
+  public async listWorkspaces(): Promise<Array<{ id: number; name: string; repos: Array<Record<string, unknown>> }>> {
+    const res = await this.client.get('/workspace/list');
+    return res.data;
+  }
+
+  public async createWorkspace(name: string, repos: Array<{ repo_full_name: string; repo_clone_url?: string | null; sort_order?: number }>): Promise<unknown> {
+    const res = await this.client.post('/workspace/create', { name, repos });
+    return res.data;
+  }
+
+  public async deleteWorkspace(id: number): Promise<void> {
+    await this.client.delete(`/workspace/${id}`);
+  }
+
+  public async pushIncidents(incidents: Array<{ file_path: string; count_7d: number }>, source = 'manual'): Promise<unknown> {
+    const res = await this.client.post('/observability/incidents/push', { source, incidents });
+    return res.data;
+  }
+
+  public async recomputeArchitecture(repoRoot?: string): Promise<unknown> {
+    const res = await this.client.post(
+      '/architecture/recompute',
+      {},
+      {
+        params: repoRoot ? { repo_root: repoRoot } : {},
+        timeout: 120000,
+      }
+    );
+    return res.data;
   }
 }
 

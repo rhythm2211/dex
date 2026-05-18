@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSession, signOut } from 'next-auth/react';
-import { Terminal, LogOut, ArrowLeft, Activity, Flame } from 'lucide-react';
+import AppShell from '@/components/AppShell';
+import { ArrowLeft, Activity } from 'lucide-react';
 import { dexApi, ActiveZonesResponse, ZoneData } from '@/lib/api';
 
 const GlobalStyles = () => (
@@ -25,7 +25,6 @@ const GlobalStyles = () => (
 );
 
 export default function ActivityInsightsPage() {
-  const { data: session } = useSession();
   const [data, setData] = useState<ActiveZonesResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -58,7 +57,7 @@ export default function ActivityInsightsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-slate-200 overflow-x-hidden relative selection:bg-indigo-500/30 selection:text-white font-sans">
+    <AppShell>
       <GlobalStyles />
 
       {/* Background (matches main) */}
@@ -69,49 +68,15 @@ export default function ActivityInsightsPage() {
         <div className="absolute inset-0 cyber-grid" />
       </div>
 
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/5 bg-[#050505]/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 h-16">
-          <Link href="/" className="group inline-flex items-center gap-3">
-            <span className="relative flex items-center justify-center h-8 w-8 rounded bg-[#0A0A0A] border border-white/10 group-hover:border-indigo-500/50 transition-colors shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-              <Terminal className="text-white relative z-10 group-hover:text-indigo-400 transition-colors" size={16} />
-            </span>
-            <span className="text-sm font-bold tracking-[0.2em] text-white">DEX</span>
-          </Link>
-          <div className="hidden md:flex items-center gap-8 text-xs font-medium text-slate-400">
-            <Link href="/#how-it-works" className="hover:text-white transition-colors">Methodology</Link>
-            <Link href="/#features" className="hover:text-white transition-colors">Features</Link>
-            <Link href="/security" className="hover:text-white transition-colors">Security</Link>
-            <Link href="/about" className="hover:text-white transition-colors">About</Link>
-          </div>
-          <div className="flex items-center gap-4">
-            {session?.user ? (
-              <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs text-slate-300 max-w-[100px] truncate">{session.user.email}</span>
-                <button onClick={() => signOut()} className="text-slate-500 hover:text-white ml-1"><LogOut size={12} /></button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <Link href="/login" className="text-xs font-semibold text-slate-400 hover:text-white transition-colors">Log in</Link>
-                <Link href="/signup" className="hidden sm:inline-flex items-center justify-center rounded-lg bg-indigo-600 text-white px-4 py-2 text-xs font-bold hover:bg-indigo-500 transition-all shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)]">
-                  Public Beta Access
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <main className="relative pt-24 pb-20 z-10">
-        <div className="max-w-6xl mx-auto px-6">
+      <main className="relative z-10 overflow-x-hidden pb-20">
+        <div className="max-w-6xl mx-auto px-6 pt-6">
           {/* Back Button */}
           <Link 
-            href="/about" 
+            href="/app" 
             className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-indigo-400 transition-colors mb-6 group"
           >
             <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-            Back to About
+            Back to Dashboard
           </Link>
 
           {/* Header Section */}
@@ -190,11 +155,10 @@ export default function ActivityInsightsPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-white/5 bg-[#020202] py-8">
+      <footer className="relative z-10 border-t border-white/5 bg-[#020202] py-8">
         <div className="mx-auto max-w-6xl px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="w-5 h-5 bg-slate-800 rounded flex items-center justify-center"><Terminal size={10} /></span>
-            <span className="font-bold text-white text-sm">DEX</span>
+            <span className="font-black tracking-[0.2em] text-white text-xs">DEX</span>
           </div>
           <div className="flex gap-6 text-xs text-slate-500">
             <Link href="/" className="hover:text-indigo-400 transition-colors">Home</Link>
@@ -209,6 +173,6 @@ export default function ActivityInsightsPage() {
           </div>
         </div>
       </footer>
-    </div>
+    </AppShell>
   );
 }
