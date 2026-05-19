@@ -1,11 +1,16 @@
-# DEX - Developer Experience Platform
+# DEX — Open-source codebase intelligence
 
-[![Production Ready](https://img.shields.io/badge/status-production%20ready-green)](https://github.com)
+> AST + dependency graph + citations — for repos too big to read linearly.
+
+[![Status](https://img.shields.io/badge/status-open%20beta-orange)](https://github.com/rhythm2211/dex)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Next.js](https://img.shields.io/badge/next.js-16+-black)](https://nextjs.org/)
 
-DEX (Developer Experience) is a production-grade codebase intelligence platform that combines semantic search, graph-based dependency analysis, and AI-powered code understanding. The system uses a hybrid RAG (Retrieval-Augmented Generation) approach to provide context-aware answers about codebases.
+> **Status:** DEX is in **open beta**, actively developed by a solo founder. Built with real workloads in mind. [Issues](https://github.com/rhythm2211/dex/issues) and feedback welcome — especially the brutal kind.
+
+DEX is open-source codebase intelligence for teams working in large or legacy repos. Ask questions in plain English and get grounded answers with **file:line citations** — powered by hybrid RAG over AST parsing, dependency graphs, and semantic search. Self-hostable; your code stays on your infrastructure.
 
 ## Features
 
@@ -19,6 +24,18 @@ DEX (Developer Experience) is a production-grade codebase intelligence platform 
 - **Authentication**: NextAuth.js with OAuth (GitHub, Google) and credential-based signup
 
 See [features.md](./features.md) for a complete feature list.
+
+## How DEX is different
+
+| Approach | What you get | Tradeoff |
+|----------|--------------|----------|
+| **GitHub Copilot / Cursor / Claude Code** | Fast in-editor help on open files and selections | LLM-first: limited repo-wide structure; can invent imports, callers, or APIs |
+| **Sourcegraph** | Mature enterprise code search and navigation | Powerful, but heavier setup and cost; often overkill for small teams |
+| **Greptile** | AI codebase Q&A with citations (closest to DEX's pitch) | Closed-source, cloud-hosted; not self-hostable on your infra |
+| **repoingest / gitingest / repomix** | Whole-repo text dump into a prompt | Simple, but no AST or dependency graph; context limits and weak structure on large repos |
+| **DEX** | AST + dependency graph + vector search → cited answers | **Open beta**, **open-source**, **self-hostable** — you operate the stack and keep code local |
+
+**In short:** DEX gives you structural understanding of how code connects, with verifiable citations — without sending source to a closed SaaS.
 
 ## Architecture
 
@@ -46,7 +63,7 @@ See [architecture.md](./architecture.md) for detailed architecture documentation
 
 1. **Clone the repository**:
 ```bash
-git clone <repository-url>
+git clone https://github.com/rhythm2211/dex.git
 cd dex
 ```
 
@@ -163,12 +180,11 @@ npm test
 
 ### CI/CD
 
-DEX includes comprehensive CI/CD pipelines using GitHub Actions:
+DEX uses GitHub Actions for CI:
 
-- **CI Pipeline**: Automated linting, testing, and building on every push/PR
-- **Docker Build**: Automatic Docker image building and pushing to GitHub Container Registry
-- **Deployment**: Automated deployment to staging and production environments
-- **Release Management**: Automatic release creation on version tags
+- Lint and test on every push/PR
+- Docker image builds (publishing setup planned)
+- Automated release tagging
 
 ## Security
 
@@ -176,28 +192,28 @@ DEX includes comprehensive CI/CD pipelines using GitHub Actions:
 - CORS configuration
 - Environment variable validation
 - Secure authentication (NextAuth.js)
-- Production error handling (no sensitive data exposure)
+- Safe error handling (no sensitive data exposure)
 - Health check endpoints for monitoring
 
 ## Deployment
 
 DEX can be deployed using:
+
 - **Docker Compose**: Simple single-server deployment
 - **Cloud Platforms**: Vercel (frontend), Railway/Render (backend)
 - **Databases**: PostgreSQL with pgvector, Neo4j Aura (cloud) or self-hosted
 
-See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for deployment guidance.
+Operational features for self-hosted deployments:
 
-## Production Features
-
-DEX includes production-grade features:
-- Production-safe error handling
+- Safe error handling (no sensitive data exposure)
 - Health check endpoints (`/health`)
 - Environment-based configuration
 - Security hardening (CORS, input validation, XSS protection)
 - Structured logging
 - Database connection retry logic
 - Docker optimization
+
+See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for deployment guidance.
 
 ## Troubleshooting
 
@@ -228,7 +244,29 @@ See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for detailed troubleshooting.
 
 ## License
 
-[Add your license here]
+DEX is licensed under **GNU AGPL-3.0** (see [LICENSE](LICENSE) for 
+full terms).
+
+### What this means in practice
+
+- ✅ **Free for self-hosted use.** Run DEX on your own infrastructure, 
+  for your own team's internal use, no cost.
+- ✅ **Free for contributing back.** Fork, modify, submit PRs, build 
+  on top — as long as derivative work stays AGPL-licensed.
+- ✅ **Free for educational and research use.** No restrictions.
+- ⚠️ **AGPL is "viral" for SaaS.** If you modify DEX and offer it as 
+  a hosted service to others, you must release your modifications 
+  under AGPL too.
+- 💼 **Commercial licensing available.** If you want to embed DEX in 
+  a closed-source product, offer DEX as a managed service to 
+  customers, or otherwise cannot comply with AGPL-3.0, a commercial 
+  license is available. Contact rhythmsuthar123@gmail.com.
+
+### Coming soon
+
+A managed cloud version of DEX (no self-hosting required) is in 
+development for teams who want DEX without operating the 
+infrastructure. Join the waitlist at [dex.net.in](https://dex.net.in).
 
 ## Acknowledgments
 
