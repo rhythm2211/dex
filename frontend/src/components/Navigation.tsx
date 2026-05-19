@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import {
-  User, LogOut, Menu, X, Settings, GitPullRequest,
+  Terminal, User, LogOut, Menu, X, Settings, GitPullRequest,
   Zap, Shield, Activity, Users, Clock, Command,
   Home, BarChart3
 } from "lucide-react";
@@ -68,15 +67,15 @@ export default function Navigation() {
         <div className="mx-auto max-w-7xl px-5 sm:px-6 h-16 flex items-center justify-between gap-4">
 
           {/* Logo */}
-          <Link href="/" className="group flex shrink-0 items-center rounded-lg transition-opacity hover:opacity-90">
-            <Image
-              src="/dex-logo.png"
-              alt="DEX"
-              width={1024}
-              height={440}
-              className="h-9 w-auto"
-              priority
-            />
+          <Link href="/" className="group flex items-center gap-3 flex-shrink-0">
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.03] surface-edge transition-all duration-300 group-hover:bg-white/[0.05]">
+              <Terminal
+                size={18}
+                className="relative z-10 text-white transition-colors group-hover:text-indigo-400"
+                aria-hidden
+              />
+            </span>
+            <span className="text-base font-bold tracking-[0.2em] text-white">DEX</span>
           </Link>
 
           {/* Desktop Nav */}

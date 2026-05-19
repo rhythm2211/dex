@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { motion, useInView } from "framer-motion";
@@ -221,16 +220,12 @@ const DemoNav: React.FC = () => {
         >
           <Link
             href="/"
-            className="group pointer-events-auto flex shrink-0 items-center rounded-xl py-0.5 pr-2 transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+            className="group pointer-events-auto flex shrink-0 items-center gap-2.5 rounded-xl py-0.5 pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
           >
-            <Image
-              src="/dex-logo.png"
-              alt="DEX"
-              width={1024}
-              height={440}
-              className="h-9 w-auto"
-              priority
-            />
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.07] transition-colors group-hover:bg-white/[0.1]">
+              <Terminal size={17} className="text-white transition-colors group-hover:text-slate-200" aria-hidden />
+            </span>
+            <span className="text-[15px] font-bold tracking-[0.22em] text-white">DEX</span>
           </Link>
 
           <nav
