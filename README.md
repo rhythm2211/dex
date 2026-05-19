@@ -1,6 +1,8 @@
-# DEX — Open-source codebase intelligence
+# DEX
 
-> AST + dependency graph + citations — for repos too big to read linearly.
+> Open-source codebase intelligence you can actually self-host.
+> Real AST + dependency graph + grounded answers — no enterprise 
+> sales call required.
 
 [![Status](https://img.shields.io/badge/status-open%20beta-orange)](https://github.com/rhythm2211/dex)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
@@ -8,22 +10,109 @@
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Next.js](https://img.shields.io/badge/next.js-16+-black)](https://nextjs.org/)
 
-> **Status:** DEX is in **open beta**, actively developed by a solo founder. Built with real workloads in mind. [Issues](https://github.com/rhythm2211/dex/issues) and feedback welcome — especially the brutal kind.
+> **Status:** Open beta, actively developed. [Issues](https://github.com/rhythm2211/dex/issues) and feedback welcome — especially the brutal kind.
 
-DEX is open-source codebase intelligence for teams working in large or legacy repos. Ask questions in plain English and get grounded answers with **file:line citations** — powered by hybrid RAG over AST parsing, dependency graphs, and semantic search. Self-hostable; your code stays on your infrastructure.
+<!-- Demo GIF placeholder — to be added before launch -->
+
+## What is DEX?
+
+When you ask Cursor or Copilot "how does this work?" they answer 
+using vector search over text chunks. Fast, but they can invent 
+function calls that don't exist and miss how files actually connect.
+
+DEX builds a real structural map of your codebase: AST parsing 
+via Tree-sitter, dependency graphs in Neo4j, hybrid retrieval, and 
+LLM responses grounded in real file paths and line numbers. No 
+hallucinated APIs. No invented callers.
+
+It runs as a self-hosted web app on your machine or in your VPC. 
+Your code never touches a third-party server. Open source under 
+AGPL-3.0.
+
+## Why DEX
+
+| You are... | DEX is for you because... |
+|---|---|
+| A solo dev or small team priced out of enterprise tools | Free, AGPL-3.0, self-hosted in 60 seconds with Docker Compose. No sales call. No credit card. No seat minimum. Sourcegraph is enterprise-only at $49/user/month. Greptile is closed-source with enterprise-gated self-hosting. |
+| Working on proprietary code that can't go to a SaaS | DEX runs entirely on your laptop or in your VPC. Audit every line of the codebase yourself. No code leaves your network. |
+| Onboarding to a large or legacy codebase | Map structure visually, ask "how does X flow through this?" and get cited answers. Find circular dependencies and god objects automatically. |
+
+## What you can do with DEX today
+
+### Understand unfamiliar codebases
+
+Ingest any repo via GitHub webhook. Ask questions in natural language:
+- "How does authentication flow through this codebase?"
+- "What files depend on the user model?"
+- "Show me the main entry point and trace it through the layers."
+
+Every answer cites real file paths and line numbers you can verify.
+
+### Visualize structure with dependency graphs
+
+Interactive Neo4j-backed graph viewer. Click any module, function, 
+or file to see what depends on it and what it depends on. Trace 
+features through the codebase from API endpoint to database query.
+
+### Detect code health issues automatically
+
+The health dashboard surfaces:
+- Circular dependencies
+- God objects (high coupling)
+- Orphan code (unused files)
+- Module-level coupling metrics
+
+### Run entirely on your infrastructure
+
+Self-host with Docker Compose. Your code never leaves the machine 
+DEX runs on. AGPL-3.0 means you can audit every line of DEX itself.
+
+## Roadmap
+
+DEX is actively developed. Here's what's shipping next:
+
+### Planned for Q2 2026
+- **MCP server** for Cursor, Claude Code, and Windsurf — let your AI 
+  coding assistant query DEX's dependency graph directly
+- **BYO-LLM support** — use OpenAI, Anthropic, Azure OpenAI, or local 
+  Ollama instead of (or alongside) Groq
+- **VS Code extension** — codebase Q&A and impact analysis inside 
+  your editor
+
+### Planned for later
+- Air-gapped self-host mode (works fully offline with local LLM)
+- More language support beyond Python and JavaScript/TypeScript
+- Managed cloud version (for teams that don't want to self-host)
+
+Watch the repo or follow [@rhythmsuthar](https://github.com/rhythm2211) 
+for updates.
+
+## Why open-source matters here
+
+Code intelligence requires deep access to your codebase. With DEX 
+self-hosted, that code never leaves your infrastructure.
+
+That matters when:
+- You're working on proprietary IP your company won't let leave the 
+  building
+- You have compliance requirements (SOC 2, HIPAA, data residency, 
+  air-gap)
+- You want to audit the tool yourself before trusting it
+- You don't want to depend on a startup's continued existence for a 
+  critical workflow
+
+DEX is licensed under AGPL-3.0. Free for self-host. The license 
+prevents competitors from forking DEX into closed-source SaaS 
+products. Commercial licenses are available for organizations that 
+need different terms — contact rhythmsuthar123@gmail.com.
+
+A managed cloud version of DEX is planned (see Roadmap) for teams 
+who'd rather not operate the stack themselves. Both modes will use 
+the same open-source core.
 
 ## Features
 
-- **Semantic Code Search**: Vector-based semantic search across codebases using PostgreSQL + pgvector
-- **Knowledge Graph Visualization**: Interactive D3.js graph showing code structure and dependencies
-- **AI-Powered Q&A**: Natural language queries answered using Groq (Llama 3.3 70B) with hybrid RAG
-- **Code Health Dashboard**: Automated detection of circular dependencies, god objects, and orphan code
-- **Team Collaboration Insights**: Visualize team topology and active development zones
-- **Time Travel**: Browse codebase evolution through git history
-- **Multi-Language Support**: Processes 80+ file types across major programming languages
-- **Authentication**: NextAuth.js with OAuth (GitHub, Google) and credential-based signup
-
-See [features.md](./features.md) for a complete feature list.
+See [features.md](./features.md) for current capabilities (shipped) and roadmap (planned).
 
 ## How DEX is different
 

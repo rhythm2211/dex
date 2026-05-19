@@ -2,7 +2,11 @@
 
 ## Overview
 
-DEX (Developer Experience) is a codebase intelligence platform that combines semantic search, graph-based dependency analysis, and AI-powered code understanding. The system uses a hybrid RAG (Retrieval-Augmented Generation) approach to provide context-aware answers about codebases.
+DEX is an open-source codebase intelligence platform you can self-host. 
+It combines AST parsing (Tree-sitter), dependency graphs in Neo4j, 
+vector search with pgvector, and Groq-powered generation to deliver 
+grounded answers with file:line citations — without sending your 
+source code to a third-party SaaS.
 
 See [features.md](./features.md) for a complete list of features.
 
@@ -421,7 +425,7 @@ INTERNAL_API_URL=http://dex-backend:8000  # Docker internal
 - **Backend Service**: FastAPI on port 8000/8001
 - **Network**: Services communicate via Docker service names
 
-### Production Considerations
+### Deployment considerations
 
 ### Infrastructure
 - **Neo4j**: Use Neo4j Aura (cloud) or self-hosted with proper security
@@ -429,15 +433,15 @@ INTERNAL_API_URL=http://dex-backend:8000  # Docker internal
 - **Frontend**: Vercel/Netlify deployment or containerized deployment
 - **Backend**: Container orchestration (K8s, ECS, etc.) with health checks and auto-scaling
 
-### Production Features
+### Operational features
 - **Environment-based configuration**: Automatic detection of production vs development
 - **Health check endpoints**: `/health` with database connectivity checks
-- **Error handling**: Production-safe error messages (no sensitive data exposure)
+- **Error handling**: Safe error messages (no sensitive data exposure)
 - **Logging**: Structured logging with appropriate levels (WARNING in production)
 - **Resource limits**: Docker resource constraints for stability
 - **Input validation**: Security-focused validation for all user inputs
 - **Connection retry logic**: Automatic retry for transient database failures
-- **CORS security**: Properly configured CORS for production domains
+- **CORS security**: Properly configured CORS for deployed domains
 
 ### Deployment Options
 1. **Docker Compose**: Simple deployment for single-server setups
@@ -459,7 +463,7 @@ INTERNAL_API_URL=http://dex-backend:8000  # Docker internal
 4. **API Keys**: Stored in environment variables, never committed to version control
 5. **Code Privacy**: Code processed in ephemeral containers (Docker)
 6. **Input Validation**: All user inputs validated and sanitized
-7. **Error Handling**: Production mode hides sensitive error details
+7. **Error Handling**: Deployed mode hides sensitive error details
 8. **Secrets Management**: Environment variables with validation warnings
 9. **HTTPS**: SSL/TLS required for production (via reverse proxy)
 10. **Rate Limiting**: Recommended for production API endpoints
