@@ -1,3 +1,7 @@
+<img width="1011" height="502" alt="Screenshot 2026-05-19 115720" src="https://github.com/user-attachments/assets/280b85d6-e5bb-4aed-a67a-bf9ba9bf9a31" />
+
+
+
 # DEX
 
 > Open-source codebase intelligence you can actually self-host.
