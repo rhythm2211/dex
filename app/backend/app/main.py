@@ -408,7 +408,7 @@ def init_db_wrapper():
 @app.get("/health", tags=["System"])
 async def health_probe():
     """
-    Production-grade health check endpoint.
+    Health check for load balancers and orchestrators.
     Checks database connectivity and service status.
     """
     health_status = {
@@ -433,8 +433,13 @@ async def health_probe():
     if settings.NEO4J_URI:
         try:
             import threading
-            from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection
-            
+            from backend.app.utils.connection_utils import (
+                create_neo4j_driver,
+                verify_neo4j_connection,
+                resolve_neo4j_database,
+            )
+
+            neo4j_db = resolve_neo4j_database(settings.NEO4J_URI, settings.NEO4J_DATABASE)
             connection_result = {"status": "checking", "error": None}
             
             def check_neo4j():
@@ -443,10 +448,10 @@ async def health_probe():
                         settings.NEO4J_URI,
                         settings.NEO4J_USERNAME,
                         settings.NEO4J_PASSWORD,
-                        database=getattr(settings, 'NEO4J_DATABASE', 'neo4j'),
+                        database=neo4j_db,
                         connection_timeout=5  # Short timeout for health check
                     )
-                    if driver and verify_neo4j_connection(driver, database=getattr(settings, 'NEO4J_DATABASE', 'neo4j')):
+                    if driver and verify_neo4j_connection(driver, database=neo4j_db):
                         connection_result["status"] = "connected"
                     else:
                         connection_result["status"] = "disconnected"

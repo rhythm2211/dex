@@ -2,6 +2,7 @@
 Connection utilities with retry logic and error handling for external services.
 Prevents connection reset errors by implementing proper retry strategies.
 """
+import os
 import time
 import logging
 from functools import wraps
@@ -16,6 +17,38 @@ logger = logging.getLogger("dex-core")
 def _neo4j_hostname_from_uri(uri: str) -> Optional[str]:
     parsed = urlparse(uri)
     return parsed.hostname if parsed.scheme and parsed.hostname else None
+
+
+def _strip_env_quotes(value: Optional[str]) -> str:
+    """Railway/copy-paste sometimes includes literal quote characters in values."""
+    if not value:
+        return ""
+    return value.strip().strip('"').strip("'")
+
+
+def resolve_neo4j_database(
+    uri: Optional[str] = None,
+    explicit: Optional[str] = None,
+) -> str:
+    """
+    Resolve the Neo4j database name for sessions.
+
+    Priority: explicit arg / NEO4J_DATABASE env → Aura hostname instance id → "neo4j".
+    Aura Free often uses the instance id (e.g. 43b57470) as the DB name, not "neo4j".
+    """
+    name = _strip_env_quotes(explicit) or _strip_env_quotes(os.getenv("NEO4J_DATABASE"))
+    if name:
+        return name
+
+    resolved_uri = _strip_env_quotes(uri) or _strip_env_quotes(os.getenv("NEO4J_URI"))
+    host = _neo4j_hostname_from_uri(resolved_uri) if resolved_uri else None
+    if host and host.endswith(".databases.neo4j.io"):
+        instance_id = host[: -len(".databases.neo4j.io")]
+        if instance_id:
+            logger.info("Neo4j database inferred from Aura URI hostname: %s", instance_id)
+            return instance_id
+
+    return "neo4j"
 
 
 def _preflight_neo4j_dns(uri: str) -> None:
@@ -117,7 +150,13 @@ def retry_on_connection_error(
     return decorator
 
 
-def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo4j", **kwargs) -> Optional[Any]:
+def create_neo4j_driver(
+    uri: str,
+    user: str,
+    password: str,
+    database: Optional[str] = None,
+    **kwargs,
+) -> Optional[Any]:
     """
     Create a Neo4j driver with proper connection configuration.
     Optimized for Neo4j Aura cloud instances.
@@ -132,6 +171,7 @@ def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo
     Returns:
         Neo4j driver instance or None if connection fails
     """
+    database = resolve_neo4j_database(uri, database)
     try:
         uri = _normalize_neo4j_uri(uri)
         _preflight_neo4j_dns(uri)
@@ -156,7 +196,6 @@ def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo
         # With connection pooling: ~1 connection per active session
         # Default: 30 connections (safe for 20-25 sessions, leaves 20-25 headroom)
         # For aggressive: 35-40 connections (risky, at limit)
-        import os
         default_pool_size = int(os.getenv("NEO4J_POOL_SIZE", "30"))  # Conservative for free tier
         max_pool_size = kwargs.get("max_connection_pool_size", default_pool_size)
         
@@ -257,7 +296,7 @@ def create_neo4j_driver(uri: str, user: str, password: str, database: str = "neo
         return None
 
 
-def verify_neo4j_connection(driver, database: str = "neo4j") -> bool:
+def verify_neo4j_connection(driver, database: Optional[str] = None) -> bool:
     """
     Verify that a Neo4j driver connection is still alive.
     
@@ -270,6 +309,8 @@ def verify_neo4j_connection(driver, database: str = "neo4j") -> bool:
     """
     if not driver:
         return False
+
+    database = resolve_neo4j_database(os.getenv("NEO4J_URI"), database)
     
     try:
         with driver.session(database=database) as session:
