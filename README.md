@@ -20,6 +20,38 @@
 
 <!-- Demo GIF placeholder — to be added before launch -->
 
+## 🚀 Quickstart (5 minutes)
+
+Try DEX locally with one command. Includes embedded PostgreSQL 
+and Neo4j — no external database setup needed.
+
+```bash
+# 1. Download the quickstart files
+curl -O https://raw.githubusercontent.com/rhythm2211/dex/prod/docker-compose.quickstart.yml
+curl -O https://raw.githubusercontent.com/rhythm2211/dex/prod/.env.quickstart.example
+
+# 2. Configure your API key
+cp .env.quickstart.example .env
+# Edit .env: add your Groq API key (free at console.groq.com/keys)
+
+# 3. Start everything
+docker compose -f docker-compose.quickstart.yml up
+```
+
+Open [http://localhost:3000](http://localhost:3000), sign up with 
+email and password, and ingest any public GitHub repo.
+
+**Requirements:** Docker Desktop, 4GB+ free RAM, ~5 minutes for 
+first image pull (~2GB total).
+
+> **Note:** The quickstart runs everything locally with default 
+> credentials and embedded databases — perfect for trying DEX, not 
+> for production. For production self-hosting (your own databases, 
+> secrets management, scaling), see 
+> [docker-compose.prod.yml](./docker-compose.prod.yml).
+
+For advanced setup or contributing, see [Full Setup](#full-setup) below.
+
 ## What is DEX?
 
 When you ask Cursor or Copilot "how does this work?" they answer 
@@ -72,6 +104,36 @@ The health dashboard surfaces:
 
 Self-host with Docker Compose. Your code never leaves the machine 
 DEX runs on. AGPL-3.0 means you can audit every line of DEX itself.
+
+## Full Setup
+
+Clone the repo and run the full stack (build from source or use your own databases).
+
+### Option 1: Docker Compose (from clone)
+
+1. **Clone the repository**:
+```bash
+git clone https://github.com/rhythm2211/dex.git
+cd dex
+```
+
+2. **Configure environment**:
+   - Create `app/.env` with backend environment variables
+   - Create `frontend/.env.local` with frontend environment variables
+
+3. **Start services**:
+```bash
+docker compose --env-file app/.env up -d
+```
+
+4. **Access the application**:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8001
+   - API Docs: http://localhost:8001/api/v1/docs
+
+### Option 2: Manual Setup
+
+For detailed manual setup instructions, refer to the [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) guide.
 
 ## Roadmap
 
@@ -151,34 +213,6 @@ See [architecture.md](./architecture.md) for detailed architecture documentation
 - **PostgreSQL 16+** with pgvector extension
 - **Neo4j** (Aura Cloud recommended) or self-hosted
 - **API Keys**: GROQ_API_KEY (required), Neo4j credentials (required)
-
-## Quick Start
-
-### Option 1: Docker Compose (Recommended)
-
-1. **Clone the repository**:
-```bash
-git clone https://github.com/rhythm2211/dex.git
-cd dex
-```
-
-2. **Configure environment**:
-   - Create `app/.env` with backend environment variables
-   - Create `frontend/.env.local` with frontend environment variables
-
-3. **Start services**:
-```bash
-docker compose --env-file app/.env up -d
-```
-
-4. **Access the application**:
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8001
-   - API Docs: http://localhost:8001/api/v1/docs
-
-### Option 2: Manual Setup
-
-For detailed manual setup instructions, refer to the [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) guide.
 
 ## Documentation
 

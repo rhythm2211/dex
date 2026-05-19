@@ -3,7 +3,56 @@ app/.env.local
 app/.env.backup
 *.env.backup
 *.env.local
+
+# Environment (all variants)
+.env
+.env.*
+!.env.example
+!.env.quickstart.example
+
+# Secrets
+secrets/
+credentials/
+**/secrets/
+**/credentials/
+
+# Database dumps
+*.dump
+*.sql
+*.sql.gz
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+app/backend/venv/
+app/venv/
+
+# Node / Next.js
 node_modules
+.next/
+out/
+build/
+.vercel
+
+# Docker local data
+docker-data/
+postgres-data/
+neo4j-data/
+**/pgdata/
+
+# Local app data (user ingestion artifacts)
+app/backend/data/
+
+# Logs
+*.log
+backend-output.log
+frontend/dev-output.log
 
 # CI/CD
 .github/workflows/*.local.yml
@@ -20,3 +69,14 @@ htmlcov/
 coverage.xml
 *.cover
 .hypothesis/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
