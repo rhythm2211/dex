@@ -198,8 +198,8 @@ jobs:
       - name: Build backend image
         uses: docker/build-push-action@v5
         with:
-          context: ./app
-          file: ./app/backend/Dockerfile
+          context: .
+          file: ./Dockerfile
           push: false
           tags: dex-backend:test
           cache-from: type=gha

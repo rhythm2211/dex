@@ -39,8 +39,8 @@ services:
 
   backend:
     build:
-      context: ./app
-      dockerfile: backend/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: dex-backend
     env_file:
       - ./app/.env  # Backend API paths and configuration
@@ -74,8 +74,8 @@ services:
 
   celery-worker:
     build:
-      context: ./app
-      dockerfile: backend/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: dex-celery-worker
     command: ["celery", "-A", "backend.celery_app", "worker", "--loglevel=info"]
     env_file:
@@ -94,8 +94,8 @@ services:
 
   celery-beat:
     build:
-      context: ./app
-      dockerfile: backend/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: dex-celery-beat
     command: ["celery", "-A", "backend.celery_app", "beat", "--loglevel=info"]
     env_file:
