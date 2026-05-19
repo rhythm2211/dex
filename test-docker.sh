@@ -44,11 +44,11 @@ else
 fi
 
 # Check if Dockerfiles exist
-if [ ! -f "app/backend/Dockerfile" ]; then
-    echo -e "${RED}✗ Backend Dockerfile not found${NC}"
+if [ ! -f "Dockerfile" ]; then
+    echo -e "${RED}✗ Backend Dockerfile not found at repo root${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓ Backend Dockerfile exists${NC}"
+echo -e "${GREEN}✓ Backend Dockerfile exists (repo root)${NC}"
 
 if [ ! -f "frontend/Dockerfile" ]; then
     echo -e "${RED}✗ Frontend Dockerfile not found${NC}"

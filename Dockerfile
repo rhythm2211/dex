@@ -1,11 +1,17 @@
-# Root Dockerfile for Railway deployment
+# DEX backend API — canonical production image
 # Build context: repository root
-# Multi-stage build to reduce final image size
-FROM python:3.11-slim as builder
+#
+#   docker build -t dex-backend:local -f Dockerfile .
+#
+# Railway: railway.json (buildContext: ".", dockerfilePath: Dockerfile)
 
-WORKDIR /app
+# -----------------------------------------------------------------------------
+# Stage 1: builder — compile/install Python deps (CPU-only PyTorch)
+# -----------------------------------------------------------------------------
+FROM python:3.11-slim AS builder
 
-# Install build dependencies
+WORKDIR /build
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     build-essential \
@@ -13,41 +19,49 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy production requirements (excludes test/dev dependencies, uses CPU-only PyTorch)
-COPY app/requirements-prod.txt /app/requirements.txt
+COPY app/requirements-prod.txt /build/requirements.txt
 
-# Install CPU-only PyTorch first (saves ~3GB by excluding CUDA libraries)
-# This must be done before sentence-transformers to avoid pulling CUDA dependencies
-RUN pip install --no-cache-dir --user --extra-index-url https://download.pytorch.org/whl/cpu torch==2.10.0+cpu
+# CPU-only PyTorch first (avoids ~3GB CUDA libs from default PyPI torch)
+RUN pip install --no-cache-dir --user \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.10.0+cpu
 
-# Install remaining dependencies
-RUN pip install --no-cache-dir --user -r /app/requirements.txt
+RUN pip install --no-cache-dir --user -r /build/requirements.txt
 
-# Production stage
-FROM python:3.11-slim
+# -----------------------------------------------------------------------------
+# Stage 2: runtime — minimal image, non-root
+# -----------------------------------------------------------------------------
+FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# Copy only Python packages from builder
-COPY --from=builder /root/.local /root/.local
-
-# Install only runtime dependencies (git for gitpython, but not build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/* \
-    && apt-get purge -y --auto-remove
+    && apt-get purge -y --auto-remove \
+    && groupadd --gid 1000 dex \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin dex
 
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
+COPY --from=builder --chown=dex:dex /root/.local /home/dex/.local
+COPY --chown=dex:dex app/backend/ /app/backend/
 
-# Copy only the backend application code
-COPY app/backend/ /app/backend/
+RUN mkdir -p /app/backend/data /home/dex/.cache/huggingface /home/dex/.cache/torch \
+    && chown -R dex:dex /app/backend/data /home/dex/.cache
 
-# Set Python path
-ENV PYTHONPATH=/app
+ENV PATH=/home/dex/.local/bin:$PATH \
+    PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HOME=/home/dex/.cache/huggingface \
+    TRANSFORMERS_CACHE=/home/dex/.cache/huggingface \
+    TORCH_HOME=/home/dex/.cache/torch
 
-# Expose port (Railway will set PORT env var)
+USER dex
+
 EXPOSE 8000
 
-# Run the application - Railway sets PORT env var, use it or default to 8000
-CMD sh -c "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+
+# Railway sets PORT (e.g. 8080); default 8000 for local compose
+CMD ["sh", "-c", "exec python -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
