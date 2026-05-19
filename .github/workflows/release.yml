@@ -48,7 +48,7 @@ jobs:
             
             ## Docker Images
             
-            - Backend: `ghcr.io/${{ github.repository }}/dex-backend:${{ github.ref_name }}`
-            - Frontend: `ghcr.io/${{ github.repository }}/dex-frontend:${{ github.ref_name }}`
+            - Backend: `ghcr.io/${{ github.repository_owner }}/dex-backend:${{ github.ref_name }}`
+            - Frontend: `ghcr.io/${{ github.repository_owner }}/dex-frontend:${{ github.ref_name }}`
           draft: false
           prerelease: false

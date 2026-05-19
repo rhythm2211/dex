@@ -19,15 +19,24 @@ Runs on every push and pull request to main/dev branches.
 Builds and pushes Docker images to GitHub Container Registry.
 
 **Triggers:**
-- Push to main/dev branches
+- Push to `prod` branch
 - Tag push (v*)
 - Manual workflow dispatch
 
+**Images (flat GHCR names):**
+- `ghcr.io/<owner>/dex-backend`
+- `ghcr.io/<owner>/dex-frontend`
+
+**Jobs (parallel, independent):**
+- **build-backend**: `context: .`, `file: ./Dockerfile`
+- **build-frontend**: `context: ./frontend`, `file: ./frontend/Dockerfile`
+
 **Features:**
 - Multi-platform builds (amd64, arm64)
-- Automatic tagging based on branch/version
-- Build cache optimization
-- SBOM generation
+- Tags on `prod` push: `latest`, `prod`, `sha-<short>`
+- Tags on version tags: `v*` (e.g. `v0.1.0`), plus `sha-<short>`
+- Per-image GHA build cache (`scope=backend`, `scope=frontend`)
+- Uses `GITHUB_TOKEN` only (no PAT)
 
 ### 3. Deploy (`deploy.yml`)
 Deploys application to staging/production environments.
@@ -55,7 +64,7 @@ Creates GitHub releases when tags are pushed.
 ### Repository Secrets
 
 #### For Docker Build:
-- `GITHUB_TOKEN` (automatically provided)
+- `GITHUB_TOKEN` (automatically provided; `packages: write` granted in workflow)
 
 #### For Deployment:
 - `STAGING_HOST`: Staging server hostname/IP
@@ -70,9 +79,6 @@ Creates GitHub releases when tags are pushed.
 #### Optional:
 - `SLACK_WEBHOOK_URL`: For deployment notifications
 - `KUBECONFIG_DATA`: For Kubernetes deployment
-- `NEXT_PUBLIC_API_URL`: Frontend API URL override
-- `INTERNAL_API_URL`: Internal API URL override
-- `NEXTAUTH_URL`: NextAuth URL override
 
 ### Environment Secrets
 
@@ -112,23 +118,26 @@ npm run build
 ### Creating a Release
 
 ```bash
-# Create and push a tag
+# Create and push a tag (from prod)
 git tag -a v1.0.0 -m "Release version 1.0.0"
 git push origin v1.0.0
 ```
 
 This will automatically:
-1. Build and push Docker images
-2. Create a GitHub release
-3. Deploy to production (if configured)
+1. Build and push Docker images (`ghcr.io/<owner>/dex-backend`, `ghcr.io/<owner>/dex-frontend`)
+2. Create a GitHub release (release notes list the flat image URLs)
+
+Pushing to `prod` also publishes `latest` and `prod` image tags (no GitHub Release unless you push a `v*` tag).
+
+**After first publish:** set each GHCR package to **Public** in package settings (packages default to private).
 
 ## Workflow Status Badges
 
 Add to your README.md:
 
 ```markdown
-![CI](https://github.com/your-org/dex/workflows/CI/badge.svg)
-![Docker Build](https://github.com/your-org/dex/workflows/Docker%20Build%20and%20Push/badge.svg)
+![CI](https://github.com/rhythm2211/dex/workflows/CI/badge.svg)
+![Docker Build](https://github.com/rhythm2211/dex/workflows/Docker%20Build%20and%20Push/badge.svg)
 ```
 
 ## Troubleshooting
