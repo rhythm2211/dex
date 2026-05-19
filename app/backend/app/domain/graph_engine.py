@@ -26,6 +26,7 @@ from neo4j.exceptions import ServiceUnavailable, TransientError
 from backend.app.utils.connection_utils import (
     create_neo4j_driver,
     verify_neo4j_connection,
+    resolve_neo4j_database,
     retry_on_connection_error,
 )
 
@@ -388,7 +389,7 @@ class GraphEngine:
         uri = os.getenv("NEO4J_URI")
         user = os.getenv("NEO4J_USERNAME")
         password = os.getenv("NEO4J_PASSWORD")
-        self.database = os.getenv("NEO4J_DATABASE", "neo4j")
+        self.database = resolve_neo4j_database(uri, os.getenv("NEO4J_DATABASE"))
         self.repo_root = repo_root or ""
         self.repo_full_name = ""  # e.g. owner/repo for workspace / cross-repo views
 

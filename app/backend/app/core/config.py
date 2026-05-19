@@ -287,6 +287,8 @@ class Settings(BaseSettings):
     NEO4J_URI: Optional[str] = None
     NEO4J_USERNAME: Optional[str] = None
     NEO4J_PASSWORD: Optional[str] = None
+    # Aura Free often uses instance id as DB name (not "neo4j"); see resolve_neo4j_database()
+    NEO4J_DATABASE: Optional[str] = None
     
     # --- Email Service (Resend) ---
     RESEND_API_KEY: Optional[str] = None
@@ -350,6 +352,13 @@ settings = Settings()
 
 # Log configuration after initialization for debugging
 logger.info(f"PostgreSQL Config - Host: {settings.POSTGRES_HOST}, Port: {settings.POSTGRES_PORT}, DB: {settings.POSTGRES_DB}, User: {settings.POSTGRES_USER}")
+if settings.NEO4J_URI:
+    from backend.app.utils.connection_utils import resolve_neo4j_database
+    logger.info(
+        "Neo4j Config - URI host: %s, database: %s",
+        settings.NEO4J_URI.split("@")[-1] if "@" in settings.NEO4J_URI else settings.NEO4J_URI,
+        resolve_neo4j_database(settings.NEO4J_URI, settings.NEO4J_DATABASE),
+    )
 
 # Warn if using default localhost (likely missing env var)
 if settings.POSTGRES_HOST == "localhost" and os.getenv("ENVIRONMENT") == "production":

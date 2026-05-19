@@ -8,7 +8,12 @@ from langchain_groq import ChatGroq
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, TransientError
 from backend.app.core.config import settings
-from backend.app.utils.connection_utils import create_neo4j_driver, verify_neo4j_connection, retry_on_connection_error
+from backend.app.utils.connection_utils import (
+    create_neo4j_driver,
+    verify_neo4j_connection,
+    resolve_neo4j_database,
+    retry_on_connection_error,
+)
 from backend.app.utils.embedding_utils import get_embeddings
 
 logger = logging.getLogger("dex-core")
@@ -51,7 +56,7 @@ class HybridRetriever:
         uri = settings.NEO4J_URI
         user = settings.NEO4J_USERNAME
         password = settings.NEO4J_PASSWORD
-        self.database = os.getenv("NEO4J_DATABASE", "neo4j")
+        self.database = resolve_neo4j_database(uri, os.getenv("NEO4J_DATABASE"))
         
         if uri and user and password:
             # Use connection utility with proper configuration
