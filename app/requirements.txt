@@ -4,7 +4,7 @@ uvicorn[standard]
 pydantic-settings
 python-multipart
 email-validator
-requests>=2.31.0
+requests>=2.34.2
 httpx>=0.27.0
 isodate==0.6.1  # Pinned to resolve dbt-common conflict
 
