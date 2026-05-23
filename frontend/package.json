@@ -23,7 +23,7 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@splinetool/react-spline": "^4.1.0",
-    "@splinetool/runtime": "^1.12.88",
+    "@splinetool/runtime": "^1.12.95",
     "@tailwindcss/typography": "^0.5.19",
     "@types/d3": "^7.4.3",
     "@types/dagre": "^0.7.52",
