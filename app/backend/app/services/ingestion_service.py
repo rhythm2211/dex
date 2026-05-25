@@ -1,6 +1,7 @@
 import os
 import shutil
 import logging
+import sys
 import tempfile
 import json
 import threading
@@ -10,213 +11,20 @@ from datetime import datetime, timedelta
 from collections import Counter
 from typing import Dict, Optional
 
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:11", "message": "ingestion_service.py started importing", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
+from git import Repo, RemoteProgress
+from git.exc import GitCommandError
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+import psycopg
+from psycopg.conninfo import make_conninfo
+from backend.app.core.config import settings
+from backend.app.domain.graph_engine import GraphEngine
+from backend.app.domain.contextual_chunker import build_contextual_chunks, build_manifest_chunks
+from backend.app.domain.manifest_parser import is_manifest_file
+from backend.app.utils.embedding_utils import get_embeddings
+from backend.app.utils import ingest_tuning
 
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:12", "message": "About to import git", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
-try:
-    from git import Repo, RemoteProgress
-    from git.exc import GitCommandError
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:13", "message": "git imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-except Exception as e:
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:13", "message": "git import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-    raise
-
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:14", "message": "About to import langchain", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
-try:
-    from langchain_community.document_loaders import DirectoryLoader, TextLoader
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:15", "message": "langchain imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-except Exception as e:
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:15", "message": "langchain import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-    raise
-
-# Explicitly import pgvector before PGVector to ensure it's available
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:16", "message": "About to import pgvector", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
-try:
-    import pgvector  # Required for LangChain's PGVector implementation
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:17", "message": "pgvector imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-except Exception as e:
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:17", "message": "pgvector import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-    raise
-
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:18", "message": "About to import PGVector", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
-try:
-    from langchain_community.vectorstores import PGVector
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:19", "message": "PGVector imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-except Exception as e:
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:19", "message": "PGVector import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-    raise
-
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:20", "message": "About to import psycopg", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
-try:
-    import psycopg
-    from psycopg.conninfo import make_conninfo
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:21", "message": "psycopg imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-except Exception as e:
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:21", "message": "psycopg import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-    raise
-
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:22", "message": "About to import settings", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
-try:
-    from backend.app.core.config import settings
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:23", "message": "settings imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-except Exception as e:
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:23", "message": "settings import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-    raise
-
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:24", "message": "About to import GraphEngine", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
-try:
-    from backend.app.domain.graph_engine import GraphEngine
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:25", "message": "GraphEngine imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-except Exception as e:
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:25", "message": "GraphEngine import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-    raise
-
-# #region agent log
-try:
-    with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-        f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:26", "message": "About to import get_embeddings", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-except: pass
-# #endregion
-try:
-    from backend.app.utils.embedding_utils import get_embeddings
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:27", "message": "get_embeddings imported successfully", "data": {}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-except Exception as e:
-    # #region agent log
-    try:
-        with open(r"c:\Users\RHYTHM\Desktop\dex\.cursor\debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sessionId": "debug-session", "runId": "startup-1", "hypothesisId": "B", "location": "ingestion_service.py:27", "message": "get_embeddings import failed", "data": {"error": str(e), "errorType": type(e).__name__}, "timestamp": int(time.time() * 1000)}) + "\n")
-    except: pass
-    # #endregion
-    raise
-
-# Setup Logging first
 logger = logging.getLogger("dex-core")
-
-# Try to import tree-sitter for multi-language parsing (use different name to avoid conflict)
-try:
-    import tree_sitter
-    from tree_sitter import Language as TreeSitterLanguage, Parser
-    TREE_SITTER_AVAILABLE = True
-except ImportError:
-    TREE_SITTER_AVAILABLE = False
-    TreeSitterLanguage = None
-    Parser = None
 
 class IngestionService:
     def _init_language_splitters(self):
@@ -347,8 +155,17 @@ class IngestionService:
         self.last_ingested_repo_root: Optional[str] = None
         self.last_repo_full_name: Optional[str] = None
 
-        # Internal status for polling
-        self._status = {"state": "idle", "progress": 0, "step": "Ready"}
+        # Internal status for polling (detail + eta surfaced in UI)
+        self._status = {
+            "state": "idle",
+            "progress": 0,
+            "step": "Ready",
+            "detail": "",
+            "eta_seconds": None,
+        }
+        
+        # Structure extracted during graph phase, reused for contextual embedding chunks
+        self._structure_cache: Dict[str, list] = {}
         
         # Cancellation flag
         self._cancelled = False
@@ -372,9 +189,97 @@ class IngestionService:
             self._update_status("cancelled", self._status.get("progress", 0), "Cancelled")
             raise RuntimeError("Ingestion cancelled by user")
 
-    def _update_status(self, state: str, progress: int, step: str):
-        self._status = {"state": state, "progress": progress, "step": step}
-        logger.info(f"Ingestion Status: [{progress}%] {step}")
+    def _ingest_verbose(self) -> bool:
+        flag = os.getenv("INGEST_VERBOSE", "").lower()
+        if flag in ("0", "false", "no"):
+            return False
+        if flag in ("1", "true", "yes"):
+            return True
+        return os.getenv("ENVIRONMENT", "development").lower() == "development"
+
+    def _log_ingest(self, message: str, *, level: int = logging.INFO) -> None:
+        """Always log ingestion milestones; flush so uvicorn consoles update live."""
+        logger.log(level, message)
+        if self._ingest_verbose() or level >= logging.WARNING:
+            print(f"[ingest] {message}", flush=True)
+
+    def _update_status(
+        self,
+        state: str,
+        progress: int,
+        step: str,
+        *,
+        detail: str = "",
+        eta_seconds: Optional[int] = None,
+    ):
+        self._status = {
+            "state": state,
+            "progress": progress,
+            "step": step,
+            "detail": detail or "",
+            "eta_seconds": eta_seconds,
+        }
+        self._sync_global_status()
+        eta_part = f" | ETA ~{max(0, int(eta_seconds))}s" if eta_seconds is not None else ""
+        detail_part = f" — {detail}" if detail else ""
+        self._log_ingest(f"[{progress}%] {step}{detail_part}{eta_part}")
+
+    def _sync_global_status(self) -> None:
+        """Mirror status to router cache so /ingest/status stays fast during heavy ingest."""
+        try:
+            from backend.app.api.v1.router import _ingestion_statuses
+
+            _ingestion_statuses[self.user_id] = dict(self._status)
+        except Exception:
+            pass
+
+    def _select_git_branches(self, repo: "Repo") -> list:
+        """
+        Pick a small set of refs for history analysis.
+        Scanning every origin/* branch on large repos can hang for 10+ minutes.
+        """
+        max_branches = ingest_tuning.ingest_max_git_branches()
+        scan_all = os.getenv("INGEST_ALL_BRANCHES", "").lower() in ("1", "true", "yes")
+        ref_names = {r.name for r in repo.references}
+
+        priority: list = []
+        try:
+            if not repo.head.is_detached:
+                priority.append(repo.active_branch.name)
+        except Exception:
+            pass
+
+        for candidate in (
+            "main",
+            "master",
+            "develop",
+            "origin/main",
+            "origin/master",
+            "origin/develop",
+            "HEAD",
+        ):
+            if candidate in ref_names and candidate not in priority:
+                priority.append(candidate)
+
+        if scan_all:
+            remotes = sorted(
+                r for r in ref_names if r.startswith("origin/") and r not in ("origin/HEAD",)
+            )
+            for r in remotes:
+                if r not in priority:
+                    priority.append(r)
+                if len(priority) >= max_branches:
+                    break
+        else:
+            self._log_ingest(
+                f"Git history: using {len(priority)} priority branch(es) "
+                f"(set INGEST_ALL_BRANCHES=true to scan more, max {max_branches})",
+                level=logging.DEBUG,
+            )
+
+        if not priority:
+            priority = ["HEAD"]
+        return priority[:max_branches]
     
     class _CloneProgress(RemoteProgress):
         """Progress callback for git clone operations with progress tracking"""
@@ -440,16 +345,277 @@ class IngestionService:
         except Exception as e:
             logger.error(f"Neo4j wipe failed: {e}")
 
-    def _get_file_blame(self, repo_path: str, relative_file_path: str):
+    def _resolve_vector_batch_sizes(self) -> tuple[int, int]:
+        from backend.app.utils.embedding_utils import default_ingest_embedding_batch_size
+
+        embed_bs = default_ingest_embedding_batch_size()
+        db_default = "400" if ingest_tuning.ingest_fast_mode() else "200"
+        db_bs = max(50, int(os.getenv("INGEST_VECTOR_DB_BATCH_SIZE", os.getenv("OPTIMIZED_DB_BATCH_SIZE", db_default))))
+        return embed_bs, db_bs
+
+    def _prepare_embedding_batch(self, chunks) -> tuple[list, list]:
+        texts = []
+        metadatas = []
+        for doc in chunks:
+            texts.append(doc.page_content)
+            metadata = doc.metadata.copy()
+            metadata["user_id"] = self.user_id
+            metadatas.append(metadata)
+        return texts, metadatas
+
+    def _bulk_insert_vector_batch(self, texts, embeddings, metadatas, conn=None) -> int:
+        from backend.app.models.user import engine
+        from backend.app.utils.vector_bulk_insert import bulk_insert_document_vectors
+
+        _, db_bs = self._resolve_vector_batch_sizes()
+        return bulk_insert_document_vectors(
+            engine,
+            table_name=settings.POSTGRES_VECTOR_TABLE,
+            texts=texts,
+            embeddings=embeddings,
+            metadatas=metadatas,
+            user_id=self.user_id,
+            page_size=min(500, db_bs),
+            conn=conn,
+        )
+
+    def _ingest_verbose_logging(self) -> bool:
+        return os.getenv("INGEST_VERBOSE", "").lower() in ("1", "true", "yes")
+
+    def _resolve_embed_parallel(self) -> int:
+        try:
+            default = "4" if ingest_tuning.ingest_fast_mode() else "2"
+            n = int(os.getenv("INGEST_EMBED_PARALLEL", default))
+        except ValueError:
+            n = 4 if ingest_tuning.ingest_fast_mode() else 2
+        cap = 6 if settings.EMBEDDING_PROVIDER.lower() == "voyage" else 3
+        return max(1, min(cap, n))
+
+    def _verify_pgvector_table_dimension(self) -> None:
+        conninfo_check = settings.POSTGRES_CONNECTION_STRING
+        expected_dim = getattr(settings, "EMBEDDING_DIMENSION", 1024)
+        with psycopg.connect(conninfo_check) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables
+                        WHERE table_name = %s
+                    );
+                    """,
+                    (settings.POSTGRES_VECTOR_TABLE,),
+                )
+                table_exists = cur.fetchone()[0]
+                if not table_exists:
+                    return
+                cur.execute(
+                    """
+                    SELECT pg_catalog.format_type(a.atttypid, a.atttypmod) as type
+                    FROM pg_attribute a
+                    JOIN pg_class c ON a.attrelid = c.oid
+                    WHERE c.relname = %s AND a.attname = 'embedding';
+                    """,
+                    (settings.POSTGRES_VECTOR_TABLE,),
+                )
+                type_result = cur.fetchone()
+                if not type_result:
+                    return
+                match = re.search(r"vector\((\d+)\)", type_result[0])
+                if not match:
+                    return
+                table_dim = int(match.group(1))
+                if table_dim != expected_dim:
+                    raise RuntimeError(
+                        f"Dimension mismatch: table {settings.POSTGRES_VECTOR_TABLE} has {table_dim} dims, "
+                        f"expected {expected_dim} ({settings.EMBEDDING_MODEL_NAME}). "
+                        f"Run: python migrate_embeddings_standalone.py"
+                    )
+                logger.info(f"Verified table dimension: {table_dim}")
+
+    def _embed_and_insert_batch(
+        self, chunks, batch_num: int, processed_count: int, conn=None
+    ) -> int:
+        self._check_cancelled()
+        batch_texts, batch_metadatas = self._prepare_embedding_batch(chunks)
+        n = len(batch_texts)
+        if batch_num % 5 == 0 or batch_num == 1:
+            self._update_status(
+                "running",
+                80 + min(15, int((processed_count / max(processed_count + n, 1)) * 15)),
+                f"Indexing vectors ({processed_count + n} chunks)...",
+            )
+        verbose = self._ingest_verbose_logging()
+        if verbose or batch_num % 5 == 0 or batch_num == 1:
+            logger.info(
+                f"Embedding batch {batch_num}: {n} chunks (total indexed so far: {processed_count})"
+            )
+        try:
+            batch_embeddings = self.embeddings.embed_documents(batch_texts)
+        except Exception as e:
+            logger.error(f"Embedding generation failed for batch {batch_num}: {e}")
+            raise RuntimeError(f"Failed to generate embeddings: {e}") from e
+        inserted = self._bulk_insert_vector_batch(
+            batch_texts, batch_embeddings, batch_metadatas, conn=conn
+        )
+        if verbose or batch_num % 5 == 0:
+            logger.info(f"Inserted {inserted} vectors (batch {batch_num})")
+        return processed_count + inserted
+
+    def _run_vector_indexing(self, chunk_gen) -> int:
+        """Stream chunks -> embed in large batches -> fast pgvector bulk insert."""
+        from collections import deque
+        from concurrent.futures import ThreadPoolExecutor
+        from backend.app.core.config import settings as app_settings
+        from backend.app.models.user import engine
+        from backend.app.utils.vector_index_utils import (
+            create_embedding_hnsw_index,
+            defer_vector_index_enabled,
+            drop_embedding_hnsw_index,
+        )
+
+        embed_bs, db_bs = self._resolve_vector_batch_sizes()
+        pipeline = os.getenv("INGEST_VECTOR_PIPELINE", "true").lower() not in ("0", "false", "no")
+        api_providers = {"voyage", "cohere", "openai", "hf_inference"}
+        provider = app_settings.EMBEDDING_PROVIDER.lower()
+        use_pipeline = pipeline and provider in api_providers
+        embed_parallel = self._resolve_embed_parallel() if use_pipeline else 1
+        defer_index = defer_vector_index_enabled()
+        table_name = settings.POSTGRES_VECTOR_TABLE
+
+        self._update_status("running", 80, "Generating semantic vectors...")
+        logger.info(
+            f"Vector indexing: embed_batch={embed_bs}, db_page={db_bs}, pipeline={use_pipeline}, "
+            f"embed_parallel={embed_parallel}, defer_index={defer_index}, provider={provider}"
+        )
+
+        self._verify_pgvector_table_dimension()
+
+        processed_count = 0
+        batch_num = 0
+        current_batch = []
+        executor = (
+            ThreadPoolExecutor(max_workers=embed_parallel, thread_name_prefix="dex-embed")
+            if use_pipeline
+            else None
+        )
+        pending = deque()
+
+        db_conn = engine.raw_connection()
+        index_dropped = False
+        try:
+            if defer_index:
+                drop_embedding_hnsw_index(db_conn, table_name)
+                index_dropped = True
+
+            def flush_oldest():
+                nonlocal processed_count
+                if not pending:
+                    return
+                future, batch_texts, batch_metadatas, num = pending[0]
+                try:
+                    batch_embeddings = future.result()
+                except Exception as e:
+                    logger.error(f"Embedding generation failed for batch {num}: {e}")
+                    raise RuntimeError(f"Failed to generate embeddings: {e}") from e
+                pending.popleft()
+                inserted = self._bulk_insert_vector_batch(
+                    batch_texts, batch_embeddings, batch_metadatas, conn=db_conn
+                )
+                processed_count += inserted
+                verbose = self._ingest_verbose_logging()
+                if verbose or num % 5 == 0:
+                    logger.info(f"Inserted {inserted} vectors (pipelined batch {num})")
+
+            def flush_all_pending():
+                while pending:
+                    flush_oldest()
+
+            for chunk in chunk_gen:
+                current_batch.append(chunk)
+                if len(current_batch) < embed_bs:
+                    continue
+                batch_num += 1
+                self._check_cancelled()
+                if executor:
+                    batch_texts, batch_metadatas = self._prepare_embedding_batch(current_batch)
+                    if batch_num % 5 == 0 or batch_num == 1:
+                        self._update_status(
+                            "running",
+                            80
+                            + min(
+                                15,
+                                int(
+                                    (processed_count / max(processed_count + len(current_batch), 1))
+                                    * 15
+                                ),
+                            ),
+                            f"Embedding batch {batch_num} ({len(current_batch)} chunks)...",
+                        )
+                    pending.append(
+                        (
+                            executor.submit(self.embeddings.embed_documents, batch_texts),
+                            batch_texts,
+                            batch_metadatas,
+                            batch_num,
+                        )
+                    )
+                    while len(pending) >= embed_parallel:
+                        flush_oldest()
+                else:
+                    processed_count = self._embed_and_insert_batch(
+                        current_batch, batch_num, processed_count, conn=db_conn
+                    )
+                current_batch = []
+
+            if current_batch:
+                batch_num += 1
+                if executor:
+                    batch_texts, batch_metadatas = self._prepare_embedding_batch(current_batch)
+                    pending.append(
+                        (
+                            executor.submit(self.embeddings.embed_documents, batch_texts),
+                            batch_texts,
+                            batch_metadatas,
+                            batch_num,
+                        )
+                    )
+                    flush_all_pending()
+                else:
+                    processed_count = self._embed_and_insert_batch(
+                        current_batch, batch_num, processed_count, conn=db_conn
+                    )
+            elif executor:
+                flush_all_pending()
+
+            if index_dropped:
+                self._update_status("running", 95, "Building vector search index...")
+                create_embedding_hnsw_index(db_conn, table_name)
+
+            logger.info(f"PostgreSQL vector indexing complete: {processed_count} chunks indexed")
+            return processed_count
+        except Exception as e:
+            if index_dropped:
+                logger.warning(f"Vector ingest failed after index drop; rebuilding index: {e}")
+                try:
+                    create_embedding_hnsw_index(db_conn, table_name)
+                except Exception as rebuild_err:
+                    logger.error(f"Failed to rebuild HNSW index: {rebuild_err}")
+            raise
+        finally:
+            if executor:
+                executor.shutdown(wait=True, cancel_futures=False)
+            db_conn.close()
+
+    def _get_file_blame(self, repo_path: str, relative_file_path: str, repo=None):
         """
         Runs 'git blame' to map every line number to an author and email.
         Returns: { 1: {"author": "Alice", "email": "alice@example.com"}, ... }
         Used to determine Function-Level Ownership with email.
         """
         try:
-            repo = Repo(repo_path)
+            repo = repo or Repo(repo_path)
             blame_map = {}
-            
+
             # Use porcelain for easy parsing
             # '--line-porcelain' outputs full commit info for every line
             val = repo.git.blame('--line-porcelain', relative_file_path)
@@ -530,12 +696,14 @@ class IngestionService:
         filename = os.path.basename(file_path).lower()
         dir_path = os.path.dirname(file_path).lower()
         
+        # Split dir on both / and \ so Windows paths work correctly
+        _dir_parts = set(re.split(r'[/\\]', dir_path))
         # Common test file patterns
         test_patterns = [
             # Python
             filename.startswith('test_') or filename.endswith('_test.py'),
-            # JavaScript/TypeScript
-            filename.endswith('.test.') or filename.endswith('.spec.') or 
+            # JavaScript/TypeScript — .endswith('.test.') never matches 'foo.test.ts'; use 'in'
+            '.test.' in filename or '.spec.' in filename or
             '__tests__' in dir_path or '__test__' in dir_path,
             # Java
             'test.java' in filename or 'tests.java' in filename,
@@ -543,8 +711,8 @@ class IngestionService:
             filename.endswith('_test.go'),
             # Rust
             filename.endswith('_test.rs'),
-            # General
-            'test' in dir_path and ('test' in dir_path.split(os.sep) or 'tests' in dir_path.split(os.sep)),
+            # General — match 'test' or 'tests' as a full directory component
+            'test' in _dir_parts or 'tests' in _dir_parts,
         ]
         
         return any(test_patterns)
@@ -585,20 +753,7 @@ class IngestionService:
         file_path_lower = file_path.lower()
         filename = os.path.basename(file_path_lower)
         
-        # Infrastructure files
-        infrastructure_files = [
-            "dockerfile", "docker-compose.yml", "docker-compose.yaml",
-            "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-            "requirements.txt", "requirements-dev.txt", "pyproject.toml", "setup.py",
-            "pom.xml", "build.gradle", "build.gradle.kts",
-            "go.mod", "go.sum",
-            "terraform.tf", "terraform.tfvars", ".terraform.lock.hcl",
-            "kubernetes.yaml", "k8s.yaml", "deployment.yaml",
-            "compose.yml", "compose.yaml",
-            ".env", ".env.example", ".env.local"
-        ]
-        
-        if filename in infrastructure_files or any(filename.endswith(ext) for ext in ['.tf', '.tfvars']):
+        if is_manifest_file(file_path):
             return "infrastructure"
         
         # Test files
@@ -622,7 +777,7 @@ class IngestionService:
 
     def _analyze_git_history(self, repo_path: str):
         """
-        Extracts commit history from ALL branches (main + features).
+        Extracts commit history from priority branches (main/master + optional cap).
         Calculates 'Bus Factor' risk by tracking author dominance per file.
         """
         timeline = []
@@ -631,21 +786,22 @@ class IngestionService:
 
         # Rolling window cutoff for volatility (last 6 months)
         six_months_ago = datetime.now() - timedelta(days=180)
+        phase_start = time.time()
+        max_commits_per_branch = ingest_tuning.ingest_git_commits_per_branch()
         
         try:
+            self._log_ingest(f"Opening git repo at {repo_path}...")
+            t0 = time.time()
             repo = Repo(repo_path)
-            
-            # 1. Identify all refs to scan (Local + Remote)
-            # We filter for 'origin/' to capture remote branches even if not checked out locally
-            all_refs = [r.name for r in repo.references if 'origin/' in r.name or r.name in ['main', 'master', 'HEAD']]
-            
-            # Dedup ref names and sort so 'main' is processed first (optimization)
-            branches = sorted(list(set(all_refs)), key=lambda x: 0 if 'main' in x or 'master' in x else 1)
-            
-            logger.info(f"Analyzing history across refs: {len(branches)} found")
-            logger.info(f"🔄 Starting commit analysis across {len(branches)} branches...")
+            self._log_ingest(f"Git repo opened in {time.time() - t0:.1f}s")
 
+            branches = self._select_git_branches(repo)
             total_branches = len(branches)
+            self._log_ingest(
+                f"Git history: analyzing {total_branches} branch(es): {', '.join(branches[:5])}"
+                + ("..." if total_branches > 5 else "")
+            )
+
             for branch_idx, branch in enumerate(branches):
                 # Check for cancellation every branch
                 if self._cancelled:
@@ -653,22 +809,31 @@ class IngestionService:
                     raise RuntimeError("Ingestion cancelled by user")
                 
                 try:
-                    # Log branch progress for all branches (more frequent logging)
-                    logger.info(f"Processing branch {branch_idx + 1}/{total_branches}: {branch}")
-                    
+                    elapsed = time.time() - phase_start
+                    avg_per = elapsed / max(branch_idx, 1)
+                    eta = int(avg_per * max(total_branches - branch_idx, 0))
+                    pct = 30 + int(8 * branch_idx / max(total_branches, 1))
+                    self._update_status(
+                        "running",
+                        pct,
+                        "Analyzing Git Timeline & Bus Factor...",
+                        detail=f"branch {branch_idx + 1}/{total_branches}: {branch}",
+                        eta_seconds=eta,
+                    )
+                    self._log_ingest(f"Git branch {branch_idx + 1}/{total_branches}: {branch}")
+
                     commit_count = 0
                     new_commits = 0
                     branch_start_time = time.time()
-                    # Limit per branch to prevent timeouts on massive repos
-                    # 100 commits per branch is usually enough to capture active dev
-                    for commit in repo.iter_commits(branch, max_count=100):
-                        # Check cancellation every 10 commits (more frequent)
+                    for commit in repo.iter_commits(branch, max_count=max_commits_per_branch):
                         if commit_count % 10 == 0:
                             if self._cancelled:
                                 raise RuntimeError("Ingestion cancelled by user")
-                            # Log progress every 10 commits for better visibility
-                            if commit_count > 0 and commit_count % 10 == 0:
-                                logger.debug(f"  Branch '{branch}': Processed {commit_count} commits...")
+                            if commit_count > 0 and self._ingest_verbose():
+                                self._log_ingest(
+                                    f"  {branch}: {commit_count} commits scanned",
+                                    level=logging.DEBUG,
+                                )
                         commit_count += 1
                         
                         if commit.hexsha in seen_commits:
@@ -677,13 +842,17 @@ class IngestionService:
                         seen_commits.add(commit.hexsha)
                         new_commits += 1
                         
-                        # Log progress every 20 commits (keep existing detailed logging)
                         if commit_count % 20 == 0:
-                            logger.info(f"  ⏳ Branch '{branch}': Processed {commit_count} commits ({new_commits} new, {len(seen_commits)} total unique)")
-                        
-                        # Add timeout check - if a branch takes more than 2 minutes, skip it
-                        if time.time() - branch_start_time > 120:
-                            logger.warning(f"Branch '{branch}' taking too long (>2min), skipping remaining commits")
+                            self._log_ingest(
+                                f"  {branch}: {commit_count} commits ({new_commits} new, {len(seen_commits)} unique)"
+                            )
+
+                        branch_timeout = int(os.getenv("INGEST_GIT_BRANCH_TIMEOUT_SEC", "90"))
+                        if time.time() - branch_start_time > branch_timeout:
+                            self._log_ingest(
+                                f"Branch '{branch}' exceeded {branch_timeout}s — skipping rest",
+                                level=logging.WARNING,
+                            )
                             break
                         
                         # --- Build Timeline Entry ---
@@ -726,7 +895,9 @@ class IngestionService:
                                 stats["six_month_commit_count"] += 1
                     
                     if commit_count > 0:
-                        logger.info(f"Branch '{branch}': {commit_count} commits processed ({new_commits} new)")
+                        self._log_ingest(
+                            f"Branch '{branch}' done: {commit_count} commits ({new_commits} new) in {time.time() - branch_start_time:.1f}s"
+                        )
 
                 except Exception as e:
                     # Some refs might be HEAD pointers or tags that fail iter_commits
@@ -739,21 +910,40 @@ class IngestionService:
                     logger.error(f"Unexpected error processing branch {branch}: {e}", exc_info=True)
                     continue
             
-            logger.info(f"📈 Commit analysis complete: {len(seen_commits)} unique commits, {len(timeline)} timeline entries, {len(file_stats)} files tracked")
+            self._log_ingest(
+                f"Commit scan done in {time.time() - phase_start:.1f}s: "
+                f"{len(seen_commits)} unique commits, {len(file_stats)} files"
+            )
 
-            # Sort timeline by date
-            logger.info(f"🔄 Sorting timeline by date...")
+            self._update_status(
+                "running",
+                36,
+                "Analyzing Git Timeline & Bus Factor...",
+                detail="sorting timeline",
+                eta_seconds=max(5, int((time.time() - phase_start) * 0.1)),
+            )
             timeline.sort(key=lambda x: x['date'], reverse=True)
 
-            # --- POST-PROCESSING: Calculate Bus Factor / Risk Score ---
-            logger.info(f"Calculating bus factor and volatility scores for {len(file_stats)} files...")
             processed_files = 0
+            total_files = len(file_stats)
+            bus_start = time.time()
+            self._log_ingest(f"Bus factor pass over {total_files} files...")
             for f_path, stats in file_stats.items():
                 processed_files += 1
-                
-                # Log progress every 100 files
-                if processed_files % 100 == 0:
-                    logger.info(f"  ⏳ Bus factor calculation: {processed_files}/{len(file_stats)} files processed")
+
+                if processed_files % 100 == 0 or processed_files == total_files:
+                    bus_elapsed = time.time() - bus_start
+                    rate = processed_files / max(bus_elapsed, 0.01)
+                    remaining = int((total_files - processed_files) / max(rate, 1))
+                    self._update_status(
+                        "running",
+                        36 + int(4 * processed_files / max(total_files, 1)),
+                        "Analyzing Git Timeline & Bus Factor...",
+                        detail=f"bus factor {processed_files}/{total_files} files",
+                        eta_seconds=remaining,
+                    )
+                    if self._ingest_verbose():
+                        self._log_ingest(f"  bus factor {processed_files}/{total_files}")
                 
                 total_commits = stats["commit_count"]
 
@@ -786,7 +976,9 @@ class IngestionService:
                 del stats["author_counts"]  # Remove the counter object
                 stats["active_branches"] = list(stats["active_branches"])
             
-            logger.info(f"Bus factor & volatility calculation complete for {processed_files} files")
+            self._log_ingest(
+                f"Bus factor complete for {processed_files} files in {time.time() - bus_start:.1f}s"
+            )
 
             # --- Build Feature mappings from commit messages ---
             feature_mappings: Dict[str, dict] = {}
@@ -897,7 +1089,13 @@ class IngestionService:
     def process_repository(self, repo_path: str):
         # Reset cancellation flag at start
         self._cancelled = False
+        self._structure_cache = {}
         self._update_status("running", 0, "Initializing pipeline...")
+        if ingest_tuning.ingest_fast_mode():
+            logger.info(
+                "INGEST_FAST_MODE enabled: shallow clone, skip git blame, "
+                "reduced git history, larger embed batches, skip SCIP/architecture"
+            )
         
         # Step 0: Clean Slate
         self._check_cancelled()
@@ -918,7 +1116,8 @@ class IngestionService:
             
             # 1. Clone (Full History)
             if any(repo_path.startswith(p) for p in ["http://", "https://", "git@"]):
-                self._update_status("running", 15, "Cloning with full history...")
+                clone_label = "Cloning repository..." if ingest_tuning.ingest_shallow_clone() else "Cloning with full history..."
+                self._update_status("running", 15, clone_label)
                 temp_dir = tempfile.mkdtemp(prefix="dex_repo_")
                 
                 # Clone with progress reporting and timeout handling
@@ -932,6 +1131,12 @@ class IngestionService:
                     progress_callback.progress_result = clone_result  # Link for progress tracking
                     
                     def clone_worker():
+                        heartbeat_stop = threading.Event()
+
+                        def clone_heartbeat():
+                            while not heartbeat_stop.wait(5):
+                                clone_result["last_progress"] = datetime.now()
+
                         try:
                             # Set git config for timeouts to prevent hanging
                             import subprocess
@@ -948,26 +1153,62 @@ class IngestionService:
                                 ["git", "config", "--global", "http.postBuffer", "524288000"],
                                 capture_output=True, timeout=5
                             )
+                            # Windows: enable long path support to avoid [Errno 22] on deep repo trees
+                            subprocess.run(
+                                ["git", "config", "--global", "core.longpaths", "true"],
+                                capture_output=True, timeout=5
+                            )
                             
                             logger.info(f"Starting git clone for: {repo_path}")
                             # Initialize progress timestamp
                             clone_result["last_progress"] = datetime.now()
-                            
-                            Repo.clone_from(
-                                repo_path, 
-                                temp_dir, 
-                                progress=progress_callback,
-                                env={
-                                    **os.environ,
-                                    "GIT_TERMINAL_PROMPT": "0",  # Disable prompts
-                                    "GIT_ASKPASS": "echo",  # Disable credential prompts
-                                }
-                            )
+
+                            clone_env = {
+                                **os.environ,
+                                "GIT_TERMINAL_PROMPT": "0",  # Disable prompts
+                                "GIT_ASKPASS": "echo",  # Disable credential prompts
+                            }
+                            # GitPython RemoteProgress uses stderr IPC that raises
+                            # OSError [Errno 22] on Windows during clone_from.
+                            use_progress = sys.platform != "win32"
+                            if not use_progress:
+                                logger.info(
+                                    "Skipping git clone progress callback on Windows "
+                                    "(GitPython RemoteProgress can raise Errno 22)"
+                                )
+                                heartbeat = threading.Thread(
+                                    target=clone_heartbeat, daemon=True
+                                )
+                                heartbeat.start()
+
+                            clone_kwargs = {"env": clone_env}
+                            if ingest_tuning.ingest_shallow_clone():
+                                clone_kwargs["depth"] = 1
+                                logger.info("Using shallow clone (depth=1) for faster ingest")
+                            try:
+                                if use_progress:
+                                    Repo.clone_from(
+                                        repo_path,
+                                        temp_dir,
+                                        progress=progress_callback,
+                                        **clone_kwargs,
+                                    )
+                                else:
+                                    Repo.clone_from(
+                                        repo_path,
+                                        temp_dir,
+                                        **clone_kwargs,
+                                    )
+                            finally:
+                                heartbeat_stop.set()
+
                             clone_result["success"] = True
                             logger.info(f"Git clone completed successfully for: {repo_path}")
                         except Exception as e:
                             clone_result["error"] = e
                             logger.error(f"Git clone error in worker thread: {e}", exc_info=True)
+                        finally:
+                            heartbeat_stop.set()
                     
                     clone_thread = threading.Thread(target=clone_worker, daemon=True)
                     clone_thread.start()
@@ -1058,15 +1299,15 @@ class IngestionService:
                                 f"- The repository doesn't exist\n"
                                 f"- The repository is private and requires authentication\n"
                                 f"- The URL is incorrect or incomplete\n"
-                                f"Please verify the repository URL and ensure it's publicly accessible."
+                                f"Please verify the repository URL and ensure the backend has access to it."
                             )
                         elif "authentication" in error_msg.lower() or "permission denied" in error_msg.lower():
                             logger.error(f"Authentication failed: {e}")
                             raise RuntimeError(
                                 f"Authentication failed for repository: '{repo_path}'\n"
                                 f"This repository may be private. Please ensure:\n"
-                                f"- The repository is public, or\n"
-                                f"- You have configured SSH keys or credentials for private repositories"
+                                f"- You have configured SSH keys or credentials for the repository, or\n"
+                                f"- The token/user account has permission to read the repository"
                             )
                         else:
                             logger.error(f"Git clone failed with exit code 128: {e}")
@@ -1131,11 +1372,18 @@ class IngestionService:
             
             # 2. Git History Extraction (Multi-Branch + Risk Calc)
             self._check_cancelled()
-            self._update_status("running", 30, "Analyzing Git Timeline & Bus Factor...")
-            logger.info("🔍 Starting git history analysis...")
+            self._update_status(
+                "running",
+                30,
+                "Analyzing Git Timeline & Bus Factor...",
+                detail="starting",
+            )
+            self._log_ingest("Starting git history analysis...")
             try:
                 timeline, file_stats = self._analyze_git_history(actual_path)
-                logger.info(f"✅ Git history analysis complete: {len(timeline)} commits, {len(file_stats)} files")
+                self._log_ingest(
+                    f"Git history complete: {len(timeline)} commits, {len(file_stats)} files"
+                )
             except Exception as e:
                 logger.error(f"❌ Git history analysis failed: {e}", exc_info=True)
                 raise RuntimeError(f"Git history analysis failed: {str(e)}")
@@ -1155,148 +1403,118 @@ class IngestionService:
             self._update_status("running", 40, "Scanning source files...")
             logger.info("📁 Scanning repository for code files...")
             
-            # Comprehensive list of supported file extensions for ingestion
-            # Organized by category for better maintainability
-            CODE_EXTENSIONS = [
+            # Single-pass file scan — replaces N separate DirectoryLoader passes (one per extension).
+            # Also correctly handles extensionless files (Dockerfile, Makefile) and skips
+            # generated/dependency directories that would otherwise flood the corpus.
+            _SUPPORTED_EXTS = {
                 # Python
-                ".py", ".pyw", ".pyi", ".pyx",
+                '.py', '.pyw', '.pyi', '.pyx',
                 # JavaScript/TypeScript
-                ".js", ".jsx", ".mjs", ".cjs",
-                ".ts", ".tsx", ".d.ts",
+                '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx',
                 # Java/Kotlin/Scala
-                ".java", ".kt", ".kts", ".scala",
-                # C/C++
-                ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx", ".hh",
-                # C# / .NET
-                ".cs", ".csx",
-                # Go
-                ".go",
-                # Rust
-                ".rs",
-                # Ruby
-                ".rb", ".rake", ".rbw",
-                # PHP
-                ".php", ".phtml", ".php3", ".php4", ".php5",
-                # Swift
-                ".swift",
-                # Objective-C
-                ".m", ".mm", ".h",
-                # R
-                ".r", ".R",
-                # Lua
-                ".lua",
-                # Perl
-                ".pl", ".pm", ".t",
-                # Shell scripts
-                ".sh", ".bash", ".zsh", ".fish", ".ksh",
-                # PowerShell
-                ".ps1", ".psm1", ".psd1",
+                '.java', '.kt', '.kts', '.scala',
+                # C/C++/C#
+                '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx', '.hh', '.cs', '.csx',
                 # Other languages
-                ".dart", ".elm", ".ex", ".exs", ".clj", ".cljs", ".hs", ".ml", ".mli",
-                ".vim", ".lisp", ".cl", ".scm", ".rkt", ".jl", ".nim", ".cr", ".d",
-                ".pas", ".p", ".pp", ".vb", ".vbs", ".v", ".sv", ".svh",
-            ]
-            
-            WEB_EXTENSIONS = [
-                ".html", ".htm", ".xhtml",
-                ".css", ".scss", ".sass", ".less", ".styl",
-                ".xml", ".xsl", ".xslt",
-                ".vue", ".svelte",
-            ]
-            
-            DATA_EXTENSIONS = [
-                ".json", ".json5", ".jsonc",
-                ".yaml", ".yml",
-                ".toml",
-                ".ini", ".cfg", ".conf",
-                ".csv", ".tsv",
-                ".xml",
-            ]
-            
-            DOCUMENTATION_EXTENSIONS = [
-                ".md", ".markdown", ".mdown", ".mkdn",
-                ".rst", ".txt", ".text",
-                ".adoc", ".asciidoc",
-            ]
-            
-            CONFIG_EXTENSIONS = [
-                ".dockerfile", ".dockerignore",
-                ".gitignore", ".gitattributes",
-                ".env", ".env.example",
-                ".makefile", ".mk",
-                ".cmake", ".cmake.in",
-                ".gradle", ".gradle.kts",
-                ".maven", ".pom",
-                ".package.json", ".package-lock.json",
-                ".requirements.txt", ".pip",
-                ".gemfile", ".gemfile.lock",
-                ".cargo.toml", ".cargo.lock",
-                ".composer.json", ".composer.lock",
-                ".pubspec.yaml", ".pubspec.lock",
-            ]
-            
-            # Combine all extensions
-            SUPPORTED_EXTENSIONS = (
-                CODE_EXTENSIONS + 
-                WEB_EXTENSIONS + 
-                DATA_EXTENSIONS + 
-                DOCUMENTATION_EXTENSIONS + 
-                CONFIG_EXTENSIONS
-            )
-            
+                '.go', '.rs', '.rb', '.rake', '.rbw',
+                '.php', '.phtml', '.swift', '.m', '.mm',
+                '.r', '.lua', '.pl', '.pm', '.t',
+                '.sh', '.bash', '.zsh', '.fish', '.ksh', '.ps1', '.psm1', '.psd1',
+                '.dart', '.elm', '.ex', '.exs', '.clj', '.cljs', '.hs', '.ml', '.mli',
+                '.vim', '.lisp', '.cl', '.scm', '.rkt', '.jl', '.nim', '.cr', '.d',
+                '.pas', '.p', '.pp', '.vb', '.vbs', '.v', '.sv', '.svh',
+                # Web
+                '.html', '.htm', '.xhtml', '.css', '.scss', '.sass', '.less', '.styl',
+                '.xml', '.xsl', '.xslt', '.vue', '.svelte',
+                # Data/Config
+                '.json', '.json5', '.jsonc', '.yaml', '.yml', '.toml',
+                '.ini', '.cfg', '.conf', '.mk', '.cmake', '.gradle',
+                '.tf', '.hcl', '.tfvars', '.sql', '.graphql', '.gql', '.proto',
+                # Docs
+                '.md', '.markdown', '.mdown', '.mkdn', '.rst', '.txt', '.text',
+                '.adoc', '.asciidoc', '.csv', '.tsv',
+                # Dotfile-style configs
+                '.env', '.lock',
+            }
+            # Extensionless files that are important infrastructure/config files
+            _SPECIAL_FILENAMES = {
+                'Dockerfile', 'Makefile', 'makefile', 'GNUmakefile',
+                'Jenkinsfile', 'Vagrantfile', 'Procfile',
+                '.gitignore', '.gitattributes', '.dockerignore', '.editorconfig',
+                'requirements.txt', 'requirements-dev.txt', 'requirements-test.txt',
+                'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+                'Cargo.toml', 'Cargo.lock', 'pyproject.toml', 'setup.py', 'setup.cfg',
+                'go.mod', 'go.sum', 'Gemfile', 'Gemfile.lock', 'composer.json',
+                'pubspec.yaml', 'build.gradle', 'pom.xml', 'build.sbt',
+                'schema.prisma', '.env.example', 'tsconfig.json',
+            }
+            # Directories to skip — avoids scanning thousands of generated/vendor files
+            _IGNORED_DIRS = {
+                '.git', 'node_modules', '__pycache__', '.next', 'dist', 'build',
+                'target', '.gradle', '.idea', '.vscode', '.pytest_cache', '.mypy_cache',
+                'vendor', 'venv', '.venv', 'site-packages', 'coverage', '.tox',
+                '.terraform', 'bower_components', 'jspm_packages', '.cache',
+                'out', '.output', '.nuxt', '.svelte-kit',
+            }
+
             raw_docs = []
-            file_counts = {}
-            
-            # Load files by extension type
-            for ext in SUPPORTED_EXTENSIONS:
-                try:
-                    loader = DirectoryLoader(actual_path, glob=f"**/*{ext}", loader_cls=TextLoader, silent_errors=True)
-                    docs = loader.load()
-                    if docs:
-                        raw_docs.extend(docs)
-                        file_counts[ext] = len(docs)
-                        logger.info(f"Found {len(docs)} {ext} files")
-                except Exception as e:
-                    logger.warning(f"Error loading {ext} files: {e}")
-                    continue
-            
-            # Also try to load any text files that might not have extensions
-            # Use a more targeted approach to avoid hanging on large repos
-            try:
-                logger.debug("Scanning for additional text files without extensions...")
-                # Limit the scan to avoid hanging - only check common text file patterns
-                additional_patterns = ["**/*.txt", "**/*.md", "**/*.log", "**/*.conf", "**/*.config"]
-                for pattern in additional_patterns:
-                    try:
-                        loader = DirectoryLoader(actual_path, glob=pattern, loader_cls=TextLoader, silent_errors=True)
-                        additional_docs = loader.load()
-                        if additional_docs:
-                            existing_paths = {doc.metadata.get('source', '') for doc in raw_docs}
-                            for doc in additional_docs:
-                                source_path = doc.metadata.get('source', '')
-                                if source_path and source_path not in existing_paths:
-                                    raw_docs.append(doc)
-                                    file_counts.setdefault('other', 0)
-                                    file_counts['other'] += 1
-                    except Exception as pattern_error:
-                        logger.debug(f"Skipping pattern {pattern}: {pattern_error}")
+            file_counts: Dict[str, int] = {}
+            _seen_scan_paths: set = set()
+
+            for _walk_root, _walk_dirs, _walk_files in os.walk(actual_path):
+                # Prune ignored dirs in-place so os.walk doesn't descend into them
+                _walk_dirs[:] = [
+                    d for d in _walk_dirs
+                    if d not in _IGNORED_DIRS
+                    and not (d.startswith('.') and d not in {'.github', '.circleci', '.gitlab'})
+                ]
+                for _fname in _walk_files:
+                    _fext = os.path.splitext(_fname)[1].lower()
+                    if _fext not in _SUPPORTED_EXTS and _fname not in _SPECIAL_FILENAMES:
                         continue
-            except Exception as e:
-                logger.warning(f"Error loading additional files: {e}")
-            
+                    _fpath = os.path.join(_walk_root, _fname)
+                    if _fpath in _seen_scan_paths:
+                        continue
+                    _seen_scan_paths.add(_fpath)
+                    try:
+                        try:
+                            _fdocs = TextLoader(_fpath, encoding="utf-8").load()
+                        except Exception:
+                            try:
+                                _fdocs = TextLoader(_fpath, encoding="latin-1").load()
+                            except Exception:
+                                # chardet optional; only used when utf-8/latin-1 fail
+                                _fdocs = TextLoader(_fpath, autodetect_encoding=True).load()
+                        if _fdocs:
+                            raw_docs.extend(_fdocs)
+                            _key = _fext if _fext else _fname
+                            file_counts[_key] = file_counts.get(_key, 0) + len(_fdocs)
+                    except OSError as _fe:
+                        logger.warning(f"OS error loading {_fpath} (skipping): {_fe}")
+                    except Exception as _fe:
+                        logger.debug(f"Could not load {_fpath}: {_fe}")
+
             logger.info(f"Found {len(raw_docs)} total files to process")
             if file_counts:
-                logger.info(f"File breakdown: {', '.join([f'{count} {ext}' for ext, count in file_counts.items()])}")
+                _top_exts = sorted(file_counts.items(), key=lambda x: -x[1])[:10]
+                logger.info(f"File breakdown: {', '.join(f'{cnt} {ext}' for ext, cnt in _top_exts)}")
 
             # --- PHASE 2: STREAM TO CLOUD (NEO4J) - OPTIMIZED WITH BATCHING ---
             self.last_ingested_repo_root = actual_path
             total_docs = len(raw_docs)
             logger.info(f"Starting Neo4j streaming for {total_docs} files (using batch inserts for performance)...")
+
+            # Open repo once for blame operations — avoids re-constructing Repo() for each file
+            _blame_repo = None
+            try:
+                _blame_repo = Repo(actual_path)
+            except Exception as _bre:
+                logger.debug(f"Could not open repo for blame operations: {_bre}")
             
             # Collect all nodes and edges for batch insertion
             all_nodes = []
             all_edges = []
-            batch_size = 50  # Process files in batches before inserting to Neo4j
+            batch_size = ingest_tuning.ingest_neo4j_file_batch_size()  # files per Neo4j flush
             
             for i, doc in enumerate(raw_docs):
                 # Check for cancellation periodically
@@ -1334,22 +1552,25 @@ class IngestionService:
                 file_ext = os.path.splitext(relative_path)[1].lower()
                 is_code_file = file_ext in ['.py', '.js', '.ts', '.tsx', '.jsx', '.java', '.cpp', '.c', '.h', '.hpp', '.go', '.rs', '.rb', '.php']
                 
-                # [LAYER 1] Calculate churn_score from git log
+                # Derive churn_score from pre-computed git history (avoids per-file git log calls)
                 churn_score = 0.0
-                if is_code_file:
-                    try:
-                        churn_score = self._calculate_churn_score(actual_path, relative_path)
-                        git_meta["churn_score"] = churn_score
-                    except Exception as e:
-                        logger.debug(f"Failed to calculate churn for {relative_path}: {e}")
+                _fs = file_stats.get(relative_path, {})
+                if _fs:
+                    _total_c = _fs.get("commit_count", 0)
+                    _recent_c = _fs.get("six_month_commit_count", 0)
+                    if _total_c >= 50:
+                        churn_score = round(min(1.0, 0.7 + (_recent_c / 20.0) * 0.3), 3)
+                    elif _total_c > 0:
+                        churn_score = round(min(1.0, (_recent_c / 20.0) * 0.7 + (_total_c / 50.0) * 0.3), 3)
+                git_meta["churn_score"] = churn_score
                 
                 # [NEW] Get Line-Level Blame (Ownership) - only for code files
                 blame_map = {}
                 owner_email = "unknown@unknown.com"
                 owner_confidence = 0.0
-                if is_code_file:
+                if is_code_file and not ingest_tuning.ingest_skip_git_blame():
                     try:
-                        blame_map = self._get_file_blame(actual_path, relative_path)
+                        blame_map = self._get_file_blame(actual_path, relative_path, repo=_blame_repo)
                         # Calculate owner_email and owner_confidence from blame_map
                         owner_email, owner_confidence = self._calculate_owner_confidence(blame_map)
                         git_meta["owner_email"] = owner_email
@@ -1405,6 +1626,7 @@ class IngestionService:
                     
                     all_nodes.extend(nodes)
                     all_edges.extend(edges)
+                    self._structure_cache[relative_path] = nodes
                 except Exception as e:
                     logger.debug(f"Failed to extract structure for {relative_path}: {e}")
                     # Still add file node even if parsing fails
@@ -1482,16 +1704,19 @@ class IngestionService:
                 logger.debug(f"OpenAPI attach skipped: {e}")
 
             try:
-                from backend.app.domain.architecture_engine import (
-                    apply_architecture_layers_after_ingestion,
-                    record_architecture_snapshot,
-                )
+                if not ingest_tuning.ingest_skip_architecture():
+                    from backend.app.domain.architecture_engine import (
+                        apply_architecture_layers_after_ingestion,
+                        record_architecture_snapshot,
+                    )
 
-                arch_stats = apply_architecture_layers_after_ingestion(
-                    self.graph_engine, actual_path, self.user_id
-                )
-                record_architecture_snapshot(self.user_id, int(arch_stats.get("violations_tagged", 0)))
-                logger.info(f"Architecture pass: {arch_stats}")
+                    arch_stats = apply_architecture_layers_after_ingestion(
+                        self.graph_engine, actual_path, self.user_id
+                    )
+                    record_architecture_snapshot(self.user_id, int(arch_stats.get("violations_tagged", 0)))
+                    logger.info(f"Architecture pass: {arch_stats}")
+                else:
+                    logger.info("Architecture pass skipped (INGEST_FAST_MODE / INGEST_SKIP_ARCHITECTURE)")
             except Exception as e:
                 logger.warning(f"Architecture layer pass skipped: {e}")
 
@@ -1502,15 +1727,44 @@ class IngestionService:
             except Exception as e:
                 logger.debug(f"cross-repo resolver skipped: {e}")
 
+            try:
+                if not ingest_tuning.ingest_skip_scip():
+                    from backend.app.domain.scip_indexer import index_repo_with_scip
+                    scip_summary = index_repo_with_scip(actual_path, self.user_id, self.graph_engine)
+                    logger.info(f"SCIP indexing: {scip_summary}")
+                else:
+                    logger.info("SCIP indexing skipped (INGEST_FAST_MODE / INGEST_SKIP_SCIP)")
+            except Exception as e:
+                logger.debug(f"SCIP indexing skipped: {e}")
+
+            try:
+                from backend.app.utils.fts_migration import ensure_content_tsv_index
+                from backend.app.models.user import engine as pg_engine
+                conn = pg_engine.raw_connection()
+                try:
+                    ensure_content_tsv_index(conn, settings.POSTGRES_VECTOR_TABLE)
+                finally:
+                    conn.close()
+            except Exception as e:
+                logger.debug(f"FTS migration during ingest skipped: {e}")
+
             # --- PHASE 3: VECTOR EMBEDDINGS (PostgreSQL/pgvector) ---
             self._check_cancelled()
             self._update_status("running", 80, "Generating semantic vectors...")
-            logger.info(f"🔪 Splitting {len(raw_docs)} documents into chunks using language-specific splitters...")
+            logger.info(f"🔪 Splitting {len(raw_docs)} documents into contextual + language-aware chunks...")
             
+            class _EmbeddingChunk:
+                __slots__ = ("page_content", "metadata")
+                def __init__(self, page_content, metadata):
+                    self.page_content = page_content
+                    self.metadata = metadata
+
             # [MEMORY LEAK FIX] Generator-based streaming instead of accumulating all chunks in memory
             def chunk_generator():
                 """Generator that yields chunks one at a time to prevent OOM on large repos."""
-                chunk_stats = {}
+                chunk_stats_by_ext = {}
+                contextual_count = 0
+                fallback_count = 0
                 total_chunks = 0
                 doc_count = 0
                 
@@ -1521,416 +1775,84 @@ class IngestionService:
                         logger.debug(f"Processing document {doc_count}/{len(raw_docs)} for chunking...")
                     file_path = doc.metadata.get('source', 'unknown')
                     relative_path = os.path.relpath(file_path, actual_path) if file_path != 'unknown' else 'unknown'
-                    
-                    # Get appropriate splitter for this file
-                    splitter = self._get_splitter_for_file(relative_path)
                     file_ext = os.path.splitext(relative_path)[1].lower()
-                    
+
+                    structure_nodes = self._structure_cache.get(relative_path, [])
+                    if is_manifest_file(relative_path):
+                        contextual = build_manifest_chunks(relative_path, doc.page_content)
+                    elif file_ext in (".md", ".markdown", ".mdown", ".rst"):
+                        from backend.app.domain.doc_chunker import chunk_markdown
+                        contextual = chunk_markdown(
+                            doc.page_content,
+                            relative_path,
+                            max_chars=ingest_tuning.ingest_doc_max_chars(),
+                        )
+                    else:
+                        contextual = build_contextual_chunks(relative_path, doc.page_content, structure_nodes)
+
+                    if contextual:
+                        contextual_count += 1
+                        chunk_stats_by_ext[file_ext] = chunk_stats_by_ext.get(file_ext, 0) + len(contextual)
+                        for item in contextual:
+                            meta = dict(item["metadata"])
+                            meta.setdefault("source", file_path)
+                            total_chunks += 1
+                            yield _EmbeddingChunk(item["page_content"], meta)
+                        continue
+
+                    # Fallback: character-based splitter for files without structure
+                    splitter = self._get_splitter_for_file(relative_path)
                     try:
                         chunks = splitter.split_documents([doc])
-                        
-                        # Track chunking stats
-                        if file_ext not in chunk_stats:
-                            chunk_stats[file_ext] = 0
-                        chunk_stats[file_ext] += len(chunks)
-                        
-                        # Yield chunks one at a time
+                        chunk_stats_by_ext[file_ext] = chunk_stats_by_ext.get(file_ext, 0) + len(chunks)
+                        fallback_count += 1
                         for chunk in chunks:
-                            # Enhance chunk with filename immediately
                             full_path = chunk.metadata.get('source', '')
                             chunk.metadata['file_name'] = os.path.relpath(full_path, actual_path)
+                            chunk.metadata['chunking'] = 'character'
                             chunk.page_content = f"File: {chunk.metadata['file_name']}\n{chunk.page_content}"
                             total_chunks += 1
                             yield chunk
-                            
                     except Exception as e:
                         logger.warning(f"Error splitting {relative_path}: {e}")
-                        # Fallback to default splitter
                         try:
                             chunks = self.default_splitter.split_documents([doc])
+                            fallback_count += 1
                             for chunk in chunks:
                                 full_path = chunk.metadata.get('source', '')
                                 chunk.metadata['file_name'] = os.path.relpath(full_path, actual_path)
+                                chunk.metadata['chunking'] = 'character'
                                 chunk.page_content = f"File: {chunk.metadata['file_name']}\n{chunk.page_content}"
                                 total_chunks += 1
                                 yield chunk
-                        except:
-                            # If all else fails, add the document as a single chunk
+                        except Exception:
                             full_path = doc.metadata.get('source', '')
                             doc.metadata['file_name'] = os.path.relpath(full_path, actual_path) if full_path != 'unknown' else 'unknown'
+                            doc.metadata['chunking'] = 'character'
                             doc.page_content = f"File: {doc.metadata['file_name']}\n{doc.page_content}"
+                            fallback_count += 1
                             total_chunks += 1
                             yield doc
                 
-                # Log stats after processing
-                logger.info(f"Created {total_chunks} vector chunks from {len(raw_docs)} documents")
-                if chunk_stats:
-                    top_extensions = sorted(chunk_stats.items(), key=lambda x: -x[1])[:5]
-                    logger.info(f"Top chunked file types: {', '.join([f'{count} chunks from {ext}' for ext, count in top_extensions])}")
+                logger.info(
+                    f"Created {total_chunks} vector chunks ({contextual_count} contextual files, "
+                    f"{fallback_count} character-split files)"
+                )
+                if chunk_stats_by_ext:
+                    top_extensions = sorted(chunk_stats_by_ext.items(), key=lambda x: -x[1])[:5]
+                    logger.info(
+                        f"Top chunked file types: {', '.join([f'{count} chunks from {ext}' for ext, count in top_extensions])}"
+                    )
             
             # Use generator instead of accumulating in memory
             logger.info("Creating chunk generator...")
             chunk_gen = chunk_generator()
             logger.info("Chunk generator created, starting to process chunks...")
 
-            # MEMORY-OPTIMIZED: Generate and insert embeddings in smaller batches to avoid OOM
-            # Reduced batch sizes for the larger embedding model (all-mpnet-base-v2 uses more memory)
-            embedding_batch_size = 50  # Smaller batch to reduce memory usage (was 500)
-            db_batch_size = 100  # Smaller batch for DB inserts (was 200)
-            
-            # [MEMORY LEAK FIX] Count chunks from generator without storing them all
-            logger.info("Starting memory-optimized PostgreSQL vector indexing (streaming mode)...")
-            logger.info(f"   Embedding batch size: {embedding_batch_size}, DB insert batch size: {db_batch_size}")
-            
-            # Process chunks from generator in streaming batches
-            # Initialize PGVector store and verify table dimension
-            try:
-                self._update_status("running", 80, f"Generating embeddings...")
-                logger.info(f"Initializing PGVector store...")
-                
-                # Verify table dimension before proceeding
-                conninfo_check = settings.POSTGRES_CONNECTION_STRING
-                expected_dim = getattr(settings, 'EMBEDDING_DIMENSION', 1024)  # Default to 1024 for Voyage AI
-                
-                with psycopg.connect(conninfo_check) as conn:
-                    with conn.cursor() as cur:
-                        # Check if table exists (using raw connection from pool)
-                        cur.execute(f"""
-                            SELECT EXISTS (
-                                SELECT FROM information_schema.tables 
-                                WHERE table_name = %s
-                            );
-                        """, (settings.POSTGRES_VECTOR_TABLE,))
-                        table_exists = cur.fetchone()[0]
-                        
-                        if table_exists:
-                            # Check dimension
-                            cur.execute(f"""
-                                SELECT pg_catalog.format_type(a.atttypid, a.atttypmod) as type
-                                FROM pg_attribute a
-                                JOIN pg_class c ON a.attrelid = c.oid
-                                WHERE c.relname = %s AND a.attname = 'embedding';
-                            """, (settings.POSTGRES_VECTOR_TABLE,))
-                            type_result = cur.fetchone()
-                            
-                            if type_result:
-                                import re
-                                match = re.search(r'vector\((\d+)\)', type_result[0])
-                                if match:
-                                    table_dim = int(match.group(1))
-                                    if table_dim != expected_dim:
-                                        error_msg = (
-                                                f"CRITICAL: Dimension mismatch detected!\n"
-                                            f"   Table '{settings.POSTGRES_VECTOR_TABLE}' has {table_dim} dimensions\n"
-                                            f"   But code expects {expected_dim} dimensions (model: {settings.EMBEDDING_MODEL_NAME})\n"
-                                            f"   You must run the migration script:\n"
-                                            f"   python migrate_embeddings_standalone.py"
-                                        )
-                                        logger.error(error_msg)
-                                        raise RuntimeError(error_msg)
-                                    else:
-                                        logger.info(f"Verified table dimension: {table_dim} (matches expected {expected_dim})")
-                
-                # Create a minimal store just to ensure table exists
-                dummy_store = PGVector(
-                    connection_string=settings.POSTGRES_CONNECTION_STRING,
-                    embedding_function=self.embeddings,
-                    collection_name=settings.POSTGRES_VECTOR_TABLE,
-                    use_jsonb=True
-                )
-                logger.info(f"PGVector store initialized")
-            except RuntimeError:
-                raise  # Re-raise dimension mismatch errors
-            except Exception as e:
-                logger.error(f"PGVector initialization failed: {e}")
-                raise RuntimeError(f"Failed to initialize vector store: {e}")
-            
-            # MEMORY-EFFICIENT: Generate and insert embeddings in streaming batches
-            # [MEMORY LEAK FIX] Process chunks from generator instead of pre-loaded list
-            logger.info(f"Generating and inserting embeddings in streaming batches of {embedding_batch_size}...")
-            
-            # Prepare connection for bulk inserts
-            conninfo = settings.POSTGRES_CONNECTION_STRING
-            table_name = settings.POSTGRES_VECTOR_TABLE
-            
-            # OPTIMIZED: Process in streaming batches with smaller accumulation for memory efficiency
-            # For Railway Hobby Plan (48GB RAM), we can process larger batches, but still optimize
-            # to support 100+ concurrent sessions
-            accumulated_texts = []
-            accumulated_embeddings = []
-            accumulated_metadatas = []
-            processed_count = 0
-            batch_num = 0
-            
-            # Memory optimization: Use smaller accumulation buffer for high concurrency
-            # This reduces peak memory usage per ingestion session
-            # Note: os is imported at module level, don't import locally
-            optimized_db_batch_size = min(db_batch_size, int(os.getenv("OPTIMIZED_DB_BATCH_SIZE", str(db_batch_size))))
-            
-            # Process chunks from generator in batches
-            current_batch = []
-            chunk_iter_count = 0
-            logger.info("Starting to iterate through chunk generator...")
-            try:
-                for chunk in chunk_gen:
-                    chunk_iter_count += 1
-                    if chunk_iter_count % 100 == 0:
-                        logger.info(f"Processed {chunk_iter_count} chunks from generator...")
-                    current_batch.append(chunk)
-                    
-                    # When we have enough chunks for an embedding batch, process them
-                    if len(current_batch) >= embedding_batch_size:
-                        self._check_cancelled()
-                        batch_num += 1
-                        batch_texts = [doc.page_content for doc in current_batch]
-                        # Add user_id to metadata for isolation
-                        batch_metadatas = []
-                        for doc in current_batch:
-                            metadata = doc.metadata.copy()
-                            metadata['user_id'] = self.user_id
-                            batch_metadatas.append(metadata)
-                        
-                        # Update status with actual progress
-                        self._update_status("running", 80 + int((processed_count / max(processed_count + len(current_batch), 1)) * 15), 
-                                          f"Generating embeddings ({processed_count}+/{processed_count + len(current_batch)})...")
-                        
-                        if batch_num % 5 == 0 or batch_num == 1:
-                            logger.info(f"🔄 Generating embeddings: batch {batch_num}, chunks {processed_count} to {processed_count + len(current_batch)}")
-                        
-                        # Generate embeddings for this batch
-                        try:
-                            batch_embeddings = self.embeddings.embed_documents(batch_texts)
-                            accumulated_texts.extend(batch_texts)
-                            accumulated_embeddings.extend(batch_embeddings)
-                            accumulated_metadatas.extend(batch_metadatas)
-                            processed_count += len(batch_texts)
-                        except Exception as e:
-                            logger.error(f"Embedding generation failed for batch {batch_num}: {e}")
-                            raise RuntimeError(f"Failed to generate embeddings: {e}")
-                        
-                        # Clear current batch to free memory
-                        current_batch = []
-                        
-                        # Insert accumulated embeddings when we reach optimized batch size
-                        # Use smaller batches for better memory efficiency in high concurrency
-                        if len(accumulated_embeddings) >= optimized_db_batch_size:
-                            self._check_cancelled()
-                            self._update_status("running", 80 + int((processed_count / max(processed_count + len(accumulated_embeddings), 1)) * 15), 
-                                              f"Indexing vectors ({processed_count}/{processed_count + len(accumulated_embeddings)})...")
-                            
-                            # Prepare insert data - user_id is already in metadata
-                            insert_query = f"""
-                                INSERT INTO {table_name} (content, metadata, embedding, file_name, source, user_id, created_at)
-                                VALUES (%s, %s, %s::vector, %s, %s, %s, CURRENT_TIMESTAMP)
-                            """
-                            
-                            insert_data = []
-                            for text, embedding, metadata in zip(accumulated_texts, accumulated_embeddings, accumulated_metadatas):
-                                # Ensure user_id is in metadata (should already be set above)
-                                if 'user_id' not in metadata:
-                                    metadata['user_id'] = self.user_id
-                                # Extract user_id from metadata for the column
-                                user_id = metadata.get('user_id', self.user_id)
-                                file_name = metadata.get('file_name', '')
-                                source = metadata.get('source', '')
-                                embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
-                                insert_data.append((
-                                    text,
-                                    json.dumps(metadata),
-                                    embedding_str,
-                                    file_name,
-                                    source,
-                                    user_id
-                                ))
-                            
-                            # Store count before clearing
-                            insert_count = len(accumulated_embeddings)
-                            
-                            try:
-                                # OPTIMIZED: Use SQLAlchemy connection pool instead of creating new connections
-                                # This significantly improves throughput and reduces connection overhead
-                                from backend.app.models.user import engine
-                                # Get raw connection from pool for bulk inserts (faster)
-                                conn = engine.raw_connection()
-                                try:
-                                    with conn.cursor() as cur:
-                                        cur.executemany(insert_query, insert_data)
-                                        conn.commit()
-                                    logger.info(f"Inserted {insert_count} vectors to database")
-                                finally:
-                                    # Return connection to pool
-                                    conn.close()
-                                        
-                                logger.info(f"Inserted {insert_count} vectors to database")
-                                
-                                # OPTIMIZED: Explicitly clear and force garbage collection for high concurrency
-                                accumulated_texts.clear()
-                                accumulated_embeddings.clear()
-                                accumulated_metadatas.clear()
-                                insert_data.clear()
-                                # Force garbage collection for memory-intensive operations
-                                import gc
-                                gc.collect()
-                                
-                            except (ConnectionError, OSError, psycopg.OperationalError) as e:
-                                error_msg = str(e)
-                                if "Connection reset" in error_msg or "Connection aborted" in error_msg:
-                                    logger.warning(f"PostgreSQL connection issue, retrying...")
-                                    # Retry once with connection pool
-                                    try:
-                                        from backend.app.models.user import engine
-                                        conn = engine.raw_connection()
-                                        try:
-                                            with conn.cursor() as cur:
-                                                cur.executemany(insert_query, insert_data)
-                                                conn.commit()
-                                            logger.info(f"Retry successful: Inserted {insert_count} vectors")
-                                        finally:
-                                            conn.close()
-                                        logger.info(f"Retry successful: Inserted {insert_count} vectors")
-                                        accumulated_texts.clear()
-                                        accumulated_embeddings.clear()
-                                        accumulated_metadatas.clear()
-                                        insert_data.clear()
-                                        import gc
-                                        gc.collect()
-                                    except Exception as retry_e:
-                                        logger.error(f"Retry failed: {retry_e}")
-                                        raise RuntimeError(f"Failed to insert vectors after retry: {retry_e}")
-                                else:
-                                    logger.error(f"Failed to insert {insert_count} vectors: {e}")
-                                    raise RuntimeError(f"Failed to insert vectors: {e}")
-                            except Exception as e:
-                                logger.error(f"Failed to insert {insert_count} vectors: {e}")
-                                raise RuntimeError(f"Failed to insert vectors: {e}")
-                
-                # Process any remaining chunks in current_batch
-                if current_batch:
-                    self._check_cancelled()
-                    batch_num += 1
-                    batch_texts = [doc.page_content for doc in current_batch]
-                    # Add user_id to metadata for isolation
-                    batch_metadatas = []
-                    for doc in current_batch:
-                        metadata = doc.metadata.copy()
-                        metadata['user_id'] = self.user_id
-                        batch_metadatas.append(metadata)
-                    
-                    logger.info(f"Generating embeddings: final batch {batch_num}, processing {len(current_batch)} chunks")
-                    
-                    try:
-                        batch_embeddings = self.embeddings.embed_documents(batch_texts)
-                        accumulated_texts.extend(batch_texts)
-                        accumulated_embeddings.extend(batch_embeddings)
-                        accumulated_metadatas.extend(batch_metadatas)
-                        processed_count += len(batch_texts)
-                    except Exception as e:
-                        logger.error(f"Embedding generation failed for final batch: {e}")
-                        raise RuntimeError(f"Failed to generate embeddings: {e}")
-                
-                # Insert any remaining accumulated embeddings
-                if accumulated_embeddings:
-                    self._check_cancelled()
-                    insert_count = len(accumulated_embeddings)
-                    insert_query = f"""
-                        INSERT INTO {table_name} (content, metadata, embedding, file_name, source, user_id, created_at)
-                        VALUES (%s, %s, %s::vector, %s, %s, %s, CURRENT_TIMESTAMP)
-                    """
-                    insert_data = []
-                    for text, embedding, metadata in zip(accumulated_texts, accumulated_embeddings, accumulated_metadatas):
-                        # Ensure user_id is in metadata
-                        if 'user_id' not in metadata:
-                            metadata['user_id'] = self.user_id
-                        # Extract user_id from metadata for the column
-                        user_id = metadata.get('user_id', self.user_id)
-                        file_name = metadata.get('file_name', '')
-                        source = metadata.get('source', '')
-                        embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
-                        insert_data.append((
-                            text,
-                            json.dumps(metadata),
-                            embedding_str,
-                            file_name,
-                            source,
-                            user_id
-                        ))
-                    
-                    try:
-                        # OPTIMIZED: Use connection pool for better throughput
-                        from backend.app.models.user import engine
-                        conn = engine.raw_connection()
-                        try:
-                            with conn.cursor() as cur:
-                                cur.executemany(insert_query, insert_data)
-                                conn.commit()
-                            logger.info(f"Inserted final {insert_count} vectors into PostgreSQL")
-                        finally:
-                            conn.close()
-                        # Clear memory
-                        insert_data.clear()
-                        import gc
-                        gc.collect()
-                    except Exception as e:
-                        logger.error(f"Failed to insert final {insert_count} vectors: {e}")
-                        raise RuntimeError(f"Failed to insert vectors: {e}")
-            except Exception as e:
-                logger.error(f"Error iterating through chunk generator: {e}", exc_info=True)
-                raise RuntimeError(f"Failed to process chunks: {e}")
-            
-            # Insert any remaining accumulated embeddings (outside try block in case of early exit)
-            if accumulated_embeddings:
-                self._check_cancelled()
-                insert_count = len(accumulated_embeddings)
-                insert_query = f"""
-                    INSERT INTO {table_name} (content, metadata, embedding, file_name, source, user_id, created_at)
-                    VALUES (%s, %s, %s::vector, %s, %s, %s, CURRENT_TIMESTAMP)
-                """
-                insert_data = []
-                for text, embedding, metadata in zip(accumulated_texts, accumulated_embeddings, accumulated_metadatas):
-                    # Ensure user_id is in metadata
-                    if 'user_id' not in metadata:
-                        metadata['user_id'] = self.user_id
-                    # Extract user_id from metadata for the column
-                    user_id = metadata.get('user_id', self.user_id)
-                    file_name = metadata.get('file_name', '')
-                    source = metadata.get('source', '')
-                    embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
-                    insert_data.append((
-                        text,
-                        json.dumps(metadata),
-                        embedding_str,
-                        file_name,
-                        source,
-                        user_id
-                    ))
-                
-                try:
-                    # OPTIMIZED: Use connection pool
-                    from backend.app.models.user import engine
-                    conn = engine.raw_connection()
-                    try:
-                        with conn.cursor() as cur:
-                            cur.executemany(insert_query, insert_data)
-                            conn.commit()
-                        logger.info(f"Inserted final {insert_count} vectors into PostgreSQL")
-                    finally:
-                        conn.close()
-                    # Clear memory
-                    insert_data.clear()
-                    import gc
-                    gc.collect()
-                except Exception as e:
-                    logger.error(f"Failed to insert final {insert_count} vectors: {e}")
-                    raise RuntimeError(f"Failed to insert vectors: {e}")
-            
-            logger.info(f"PostgreSQL vector indexing complete: {processed_count} chunks indexed")
-            
-            # Success - update status and return
+            processed_count = self._run_vector_indexing(chunk_gen)
+
             self._update_status("completed", 100, "Analysis Complete.")
-            return {"status": "success", "chunks_processed": processed_count if 'processed_count' in locals() else 0}
-        except Exception as e:
-            logger.error(f"Vector indexing failed: {e}")
-            raise
+            return {"status": "success", "chunks_processed": processed_count}
 
         except RuntimeError as e:
             if "cancelled" in str(e).lower():
@@ -1941,6 +1863,21 @@ class IngestionService:
                 logger.error(f"Ingestion Failed: {e}")
                 self._update_status("error", 0, f"Error: {str(e)}")
                 return {"status": "failed", "error": str(e)}
+        except OSError as e:
+            import errno as _errno_mod
+            if e.errno == 22:
+                msg = (
+                    f"Windows path error (Errno 22): {e}. "
+                    "This usually means a file in the repo has a Windows-reserved name "
+                    "(CON, NUL, AUX, COM1…) or a path exceeding 260 characters. "
+                    "Try enabling long paths: git config --global core.longpaths true"
+                )
+                logger.error(msg)
+                self._update_status("error", 0, msg[:300])
+                return {"status": "failed", "error": msg}
+            logger.error(f"Ingestion Failed (OS error {e.errno}): {e}")
+            self._update_status("error", 0, f"OS Error: {str(e)}")
+            return {"status": "failed", "error": str(e)}
         except Exception as e:
             logger.error(f"Ingestion Failed: {e}")
             self._update_status("error", 0, f"Error: {str(e)}")

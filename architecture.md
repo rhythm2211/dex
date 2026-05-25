@@ -2,7 +2,7 @@
 
 ## Overview
 
-DEX is an open-source codebase intelligence platform you can self-host. 
+DEX is a self-hosted codebase intelligence platform. 
 It combines AST parsing (Tree-sitter), dependency graphs in Neo4j, 
 vector search with pgvector, and Groq-powered generation to deliver 
 grounded answers with file:line citations — without sending your 

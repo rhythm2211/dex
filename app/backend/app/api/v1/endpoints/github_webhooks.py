@@ -126,4 +126,10 @@ async def github_webhook(
     if event == "pull_request":
         background_tasks.add_task(_process_pull_request, payload)
 
+    if event == "push":
+        from backend.app.api.v1.router import get_ingestion_service
+        from backend.app.services.incremental_ingest import handle_push_incremental
+
+        background_tasks.add_task(handle_push_incremental, payload, get_ingestion_service)
+
     return {"ok": True, "received": event}

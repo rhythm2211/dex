@@ -3,20 +3,11 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GithubProvider from "next-auth/providers/github";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
-
-const fetchWithTimeout = async (
-  input: RequestInfo | URL,
-  init: RequestInit = {},
-  timeoutMs = 8000
-) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-};
+import {
+  fetchBackend,
+  resolveServerV1Base,
+  userByEmailUrl,
+} from "@/lib/server-backend";
 
 // Build providers array conditionally based on available credentials
 const providers = [];
@@ -35,8 +26,8 @@ providers.push(
       }
 
       try {
-        const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const response = await fetchWithTimeout(`${apiUrl}/api/v1/users/verify-credentials`, {
+        const apiBase = resolveServerV1Base();
+        const response = await fetchBackend(`${apiBase}/users/verify-credentials`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -118,16 +109,25 @@ if (process.env.AZURE_AD_CLIENT_ID && process.env.AZURE_AD_CLIENT_SECRET) {
   );
 }
 
+// Ensure auth runs in Node (not edge) — avoids Turbopack/edge fetch issues on Next 15+.
+export const runtime = "nodejs";
+
 const handler = NextAuth({
   providers,
   secret: process.env.NEXTAUTH_SECRET,
-  // Note: NEXTAUTH_URL is automatically used by NextAuth from environment variables
-  // No need to set it explicitly in the config - NextAuth v4 reads it automatically
+  // NEXTAUTH_URL must match the URL in your browser (scheme + host + port).
   pages: {
     signIn: '/login', 
   },
   callbacks: {
-    async jwt({ token, user, account, profile }) {
+    async jwt({ token, user, account, profile, trigger, session }) {
+      if (trigger === "update" && session) {
+        const updated = session as { profile_completed?: boolean };
+        if (typeof updated.profile_completed === "boolean") {
+          token.profile_completed = updated.profile_completed;
+        }
+      }
+
       // Add user id to token when user signs in
       if (user) {
         // Extract email from user object or profile (for OAuth providers)
@@ -155,28 +155,28 @@ const handler = NextAuth({
           userEmail = (account as any).email;
         }
         
-        // For credentials provider, user.id is already available
+        const emailForLookup = userEmail || user.email;
         if (user.id) {
           token.id = user.id;
-        } else if (userEmail) {
-          // For OAuth providers, use email as id and fetch user id from database
-          try {
-            const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-            const response = await fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
-            if (response.ok) {
-              const userData = await response.json();
-              token.id = userData.id || userEmail; // Use database id or email as fallback
-            } else {
-              token.id = userEmail; // Fallback to email
-            }
-          } catch (error) {
-            console.error("Failed to fetch user id:", error);
-            token.id = userEmail; // Fallback to email on error
-          }
+        } else if (emailForLookup) {
+          token.id = emailForLookup;
         } else {
           // No email found - this shouldn't happen but handle gracefully
           console.error("No email found for user:", user);
           token.id = user.id || (user as any).sub || `user_${Date.now()}`;
+        }
+
+        if (emailForLookup) {
+          try {
+            const response = await fetchBackend(userByEmailUrl(emailForLookup));
+            if (response.ok) {
+              const userData = await response.json();
+              if (userData.id) token.id = userData.id;
+              token.profile_completed = Boolean(userData.profile_completed);
+            }
+          } catch (error) {
+            console.error("Failed to fetch user profile for token:", error);
+          }
         }
         
         token.email = userEmail || user.email;
@@ -228,14 +228,14 @@ const handler = NextAuth({
       // Save user to database on sign in
       if (userEmail) {
         try {
-          const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-          console.log(`[NextAuth] API URL: ${apiUrl}`);
+          const apiBase = resolveServerV1Base();
+          console.log(`[NextAuth] API base: ${apiBase}`);
           console.log(`[NextAuth] Attempting to save user: ${userEmail}`);
           console.log(`[NextAuth] User name: ${userName}`);
           console.log(`[NextAuth] Provider: ${account?.provider}`);
           
           // Check if user exists
-          const checkResponse = await fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
+          const checkResponse = await fetchBackend(userByEmailUrl(userEmail));
           console.log(`[NextAuth] Check user response status: ${checkResponse.status}`);
           
           // Use upsert endpoint to always update user info, even if profile not completed
@@ -246,7 +246,7 @@ const handler = NextAuth({
           }
           
           // Always upsert user to ensure they're updated on every login
-          const upsertResponse = await fetchWithTimeout(`${apiUrl}/api/v1/users/upsert`, {
+          const upsertResponse = await fetchBackend(`${apiBase}/users/upsert`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -265,7 +265,7 @@ const handler = NextAuth({
             console.log(`${wasNew ? '✅ Created' : '✅ Updated'} user profile for: ${userEmail}`);
             
             // Update last_login timestamp for all logins
-            fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}/update-login`, {
+            fetchBackend(`${apiBase}/users/email/${encodeURIComponent(userEmail)}/update-login`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -276,7 +276,7 @@ const handler = NextAuth({
             
             // Send welcome email only for new users
             if (wasNew) {
-              fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}/send-welcome-email`, {
+              fetchBackend(`${apiBase}/users/email/${encodeURIComponent(userEmail)}/send-welcome-email`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -295,7 +295,7 @@ const handler = NextAuth({
           console.error("❌ Failed to save user to database:", error);
           console.error("❌ Error details:", {
             message: error instanceof Error ? error.message : String(error),
-            apiUrl: process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+            apiBase: resolveServerV1Base(),
             userEmail: userEmail,
             provider: account?.provider,
           });
@@ -315,30 +315,11 @@ const handler = NextAuth({
         session.user.name = (token.name as string) || null;
       }
       
-      // Add user profile completion status to session
-      // Use email from token (which was extracted from OAuth profile)
-      const userEmail = session?.user?.email || token.email as string;
-      if (userEmail) {
-        try {
-          const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-          const response = await fetchWithTimeout(`${apiUrl}/api/v1/users/email/${encodeURIComponent(userEmail)}`);
-          
-          if (response.ok) {
-            const userData = await response.json();
-            (session.user as any).profile_completed = userData.profile_completed || false;
-            // Ensure id is set from database if not already in token
-            if (!session.user.id && userData.id) {
-              session.user.id = userData.id;
-            }
-            // Ensure email is set from database
-            if (!session.user.email && userData.email) {
-              session.user.email = userData.email;
-            }
-          }
-        } catch (error) {
-          console.error("Failed to fetch user profile:", error);
-        }
-      }
+      // Profile status is cached in JWT at sign-in (avoids backend hit every session poll).
+      (session.user as { profile_completed?: boolean }).profile_completed =
+        typeof token.profile_completed === "boolean"
+          ? token.profile_completed
+          : false;
       return session;
     },
   },

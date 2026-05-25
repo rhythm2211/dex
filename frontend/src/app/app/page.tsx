@@ -1,24 +1,29 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { dexApi, GraphData } from '@/lib/api';
 import {
-  RefreshCw, Zap, Search, Terminal, MessageSquare,
-  Info, Folder, File, Box, Code, Database, FileCode,
-  ChevronRight, ChevronDown, Move, LayoutTemplate,
-  Play, LogOut, User, X, HelpCircle, MousePointerClick, Network, Download, Settings,
-  Sparkles
+  RefreshCw, Terminal,
+  Folder, File, Box, Code, Database, FileCode,
+  ChevronRight, ChevronDown, ChevronLeft, Move, LayoutTemplate,
+  LogOut, User, X, HelpCircle, Download, Settings,
+  Sparkles, GitBranch
 } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as d3 from 'd3';
 import { jsPDF } from 'jspdf';
+import dynamic from 'next/dynamic';
 import MobileWarning from '@/components/MobileWarning';
-import { AnimatedButton, AppStatusLabel } from '@/components/ui/animated-button';
-import { AnimatedAIChat } from '@/components/ui/animated-ai-chat';
+import { PromptInputBox } from '@/components/ui/ai-prompt-box';
+
+const FocusedGraphPanel = dynamic(
+  () => import('@/components/focused-graph/FocusedGraphPanel'),
+  { ssr: false, loading: () => <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--text-muted)' }}>Loading…</div> }
+);
 
 // -----------------------------------------------------------------------------
 // Visual Config & Color Palette
@@ -200,14 +205,37 @@ export default function Dashboard() {
   const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [graphViewMode, setGraphViewMode] = useState<'full' | 'focused'>('full');
+  const graphReady = !ingesting && graphData.nodes.length > 0;
+
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'assistant' | 'details'>('assistant');
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [showFocusChat, setShowFocusChat] = useState(false);
+  // ── Theme & panel state
+  type Theme = 'graphite' | 'obsidian' | 'midnight';
+  const [theme, setTheme] = useState<Theme>('graphite');
+  const [leftOpen, setLeftOpen] = useState(true);
+  const leftExpandedW = 360;
+  const leftCollapsedW = 48;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { const s = localStorage.getItem('dex-theme') as Theme|null; if(s && ['graphite','obsidian','midnight'].includes(s)) setTheme(s); }, []);
+  useEffect(() => { localStorage.setItem('dex-theme', theme); }, [theme]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { const s = localStorage.getItem('dex-left-open'); if(s === 'false') setLeftOpen(false); }, []);
+  const toggleLeft = () => setLeftOpen(o => { const n = !o; localStorage.setItem('dex-left-open', String(n)); return n; });
+
 
   const [pathSet, setPathSet] = useState<Set<string>>(new Set());
   const [treeOrientation, setTreeOrientation] = useState<'vertical' | 'horizontal'>('horizontal');
-  
+
+  const handleGraphViewMode = useCallback((mode: 'full' | 'focused') => {
+    if (mode === 'full' && graphViewMode === 'focused') {
+      setTreeOrientation('vertical');
+    }
+    setGraphViewMode(mode);
+  }, [graphViewMode]);
+
   // Lazy loading state
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [loadedChildren, setLoadedChildren] = useState<Map<string, GraphData>>(new Map());
@@ -457,24 +485,25 @@ export default function Dashboard() {
     const i = setInterval(async () => {
         try {
             const s = await dexApi.getIngestStatus();
+            if (!s) return;
             setProgress(s.progress);
             setStep(s.step);
-            if (s.state === 'completed') { 
-                clearInterval(i); 
-                setIngesting(false); 
+            if (s.state === 'completed') {
+                clearInterval(i);
+                setIngesting(false);
                 setPollInterval(null);
                 pollIntervalRef.current = null;
-                loadGraphRef.current(); 
+                loadGraphRef.current();
             }
-            if (s.state === 'cancelled') { 
-                clearInterval(i); 
-                setIngesting(false); 
+            if (s.state === 'cancelled') {
+                clearInterval(i);
+                setIngesting(false);
                 setPollInterval(null);
                 pollIntervalRef.current = null;
             }
-            if (s.state === 'error') { 
-                clearInterval(i); 
-                setIngesting(false); 
+            if (s.state === 'error') {
+                clearInterval(i);
+                setIngesting(false);
                 setPollInterval(null);
                 pollIntervalRef.current = null;
             }
@@ -495,8 +524,7 @@ export default function Dashboard() {
     let alive = true;
 
     dexApi.getIngestStatus().then(s => {
-        if (!alive) return;
-
+        if (!alive || !s) return;
         if (s.state === 'running') {
             setIngesting(true);
             const interval = pollIngestionRef.current();
@@ -914,7 +942,14 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (graphViewMode !== 'full') return;
     if (!hierarchyData || !svgRef.current || !wrapperRef.current) return;
+
+    const isLightGraph = false;
+    const graphTextColor = isLightGraph ? '#64748b' : '#94a3b8';
+    const graphTextHighlight = isLightGraph ? '#0f172a' : '#fff';
+    const graphLinkFallback = isLightGraph ? '#cbd5e1' : '#333';
+    const graphSelectionStroke = isLightGraph ? '#18181b' : '#fff';
 
     const svg = d3.select(svgRef.current);
     const g = d3.select(wrapperRef.current);
@@ -1186,7 +1221,7 @@ export default function Dashboard() {
             .text((d: any) => d.data.name)
             .style("fill-opacity", 0)
             .style("font-size", "12px")
-            .style("fill", "#94a3b8")
+            .style("fill", graphTextColor)
             .style("font-family", FONT_UI_SANS)
             .style("letter-spacing", "-0.01em")
             .transition().duration(500)
@@ -1212,7 +1247,7 @@ export default function Dashboard() {
             );
 
         nodeGroup.merge(nodeEnter as any).select("circle")
-             .attr("stroke", (d: any) => selectedNode?.id === (d.data.attributes?.id || d.data.id) ? "#fff" : "none")
+             .attr("stroke", (d: any) => selectedNode?.id === (d.data.attributes?.id || d.data.id) ? graphSelectionStroke : "none")
              .attr("stroke-width", (d: any) => selectedNode?.id === (d.data.attributes?.id || d.data.id) ? 2 : 0)
              .style("filter", (d: any) => {
                 const nodeId = d.data.attributes?.id || d.data.id;
@@ -1226,7 +1261,7 @@ export default function Dashboard() {
         nodeGroup.merge(nodeEnter as any).select("text")
              .style("fill", (d: any) => {
                 const nodeId = d.data.attributes?.id || d.data.id;
-                return pathSet.has(nodeId) ? "#fff" : "#94a3b8";
+                return pathSet.has(nodeId) ? graphTextHighlight : graphTextColor;
              })
              .style("font-weight", (d: any) => {
                 const nodeId = d.data.attributes?.id || d.data.id;
@@ -1267,7 +1302,7 @@ export default function Dashboard() {
         const linkEnter = linkGroup.enter().insert("path", "g")
             .attr("class", "link")
             .attr("fill", "none")
-            .attr("stroke", "#333")
+            .attr("stroke", graphLinkFallback)
             .attr("stroke-width", 1.5)
             .attr("d", (d: any) => {
                 const o = { x: source.x0 || source.x, y: source.y0 || source.y };
@@ -1278,7 +1313,7 @@ export default function Dashboard() {
 
         linkUpdate.transition().duration(500)
             .attr("d", (d: any) => diagonal(d.source, d.target))
-            .attr("stroke", (d: any) => d.target.data.attributes.branchColor || "#333")
+            .attr("stroke", (d: any) => d.target.data.attributes.branchColor || graphLinkFallback)
             .attr("class", (d: any) => {
                 const targetId = d.target.data.attributes?.id || d.target.data.id;
                 return pathSet.has(targetId) ? "link link-active" : "link link-base";
@@ -1324,711 +1359,518 @@ export default function Dashboard() {
         window.removeEventListener('keydown', handleKeyDown);
         window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeClick, centerTree, loadingNodes]);
+  }, [graphViewMode, hierarchyData, treeOrientation, pathSet, selectedNode, handleNodeClick, centerTree, loadingNodes, theme]);
+
+
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center">
-        <div className="text-white">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-base)' }}>
+        <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</div>
       </div>
     );
   }
-
-  if (status === 'unauthenticated') {
-    return null;
-  }
-
+  if (status === 'unauthenticated') return null;
   if (!mounted) return null;
 
+  const leftW = leftOpen ? leftExpandedW : leftCollapsedW;
+  const FONT_SANS = 'var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif';
+  const themes: Theme[] = ['graphite', 'obsidian', 'midnight'];
+  // bottom clearance for the floating dock (approx 80px)
+  const DOCK_H = 80;
+
   return (
-    <div className="flex h-screen w-full bg-[#050505] text-slate-200 font-sans antialiased overflow-hidden relative [text-rendering:optimizeLegibility]">
-      {/* Mobile Warning */}
+    <div
+      data-theme={theme}
+      className="fixed inset-0 overflow-hidden antialiased"
+      style={{ background: 'var(--bg-base)', color: 'var(--text-primary)' }}
+    >
       <MobileWarning />
-      
-      {/* Dynamic Background Effects */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-900/10 blur-[150px] rounded-full mix-blend-screen opacity-50"></div>
-        <div className="absolute top-[40%] right-[-10%] w-[40%] h-[40%] bg-emerald-900/5 blur-[120px] rounded-full mix-blend-screen opacity-40"></div>
-        <div className="absolute bottom-[-20%] left-[20%] w-[60%] h-[40%] bg-violet-900/10 blur-[150px] rounded-full mix-blend-screen opacity-30"></div>
-        <div className="absolute inset-0 cyber-grid"></div>
+
+      {/* Ambient glow */}
+      <div className="fixed inset-0 z-0 pointer-events-none" aria-hidden="true">
+        <div className="absolute rounded-full blur-[200px]"
+          style={{ top: '20%', left: '35%', width: 700, height: 500, transform: 'translate(-50%,-50%)',
+            background: 'radial-gradient(ellipse, rgba(var(--accent-primary-rgb),0.07) 0%, rgba(var(--accent-secondary-rgb),0.04) 50%, transparent 70%)' }} />
+        <div className="absolute rounded-full blur-[140px]"
+          style={{ bottom: '25%', right: '18%', width: 380, height: 280,
+            background: 'radial-gradient(ellipse, rgba(var(--accent-secondary-rgb),0.05) 0%, transparent 70%)' }} />
       </div>
 
+      {/* D3 CSS */}
       <style dangerouslySetInnerHTML={{__html: `
-        .link-base {
-            fill: none;
-            stroke-width: 1.5px;
-            transition: stroke 0.5s ease, opacity 0.5s ease;
-            opacity: 0.4;
-        }
-        .link-active {
-            fill: none;
-            stroke-width: 2px;
-            stroke-dasharray: 8;
-            animation: flow 1s linear infinite;
-            opacity: 1;
-        }
-        @keyframes flow {
-            from { stroke-dashoffset: 16; }
-            to { stroke-dashoffset: 0; }
-        }
-        .node text,
-        .expand-indicator,
-        .child-count-text {
-            font-family: ${FONT_UI_SANS};
-            -webkit-font-smoothing: antialiased;
-        }
-        .node text {
-            text-shadow: 0 1px 2px rgba(0,0,0,0.85), 0 0 1px rgba(0,0,0,0.9);
-        }
-        
-        /* Custom Scrollbar - Matching Home Page Theme */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #050505;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #333;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #444;
-        }
-        
-        /* Firefox Scrollbar */
-        * {
-            scrollbar-width: thin;
-            scrollbar-color: #333 #050505;
-        }
-        
-        /* Glass Effects */
-        .glass-panel {
-            background: rgba(10, 10, 10, 0.6);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        
-        /* Cyber Grid Background */
-        .cyber-grid {
-            background-size: 50px 50px;
-            background-image: linear-gradient(to right, rgba(99, 102, 241, 0.03) 1px, transparent 1px),
-                            linear-gradient(to bottom, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
-            mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
-        }
-        
-        /* Help Guide Animations */
-        @keyframes fade-in {
-            0% { opacity: 0; }
-            100% { opacity: 1; }
-        }
-        @keyframes fade-in-scale {
-            0% { opacity: 0; transform: scale(0.95); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-        @keyframes pulse-glow {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 0.6; }
-        }
-        .animate-fade-in {
-            animation: fade-in 0.3s ease-out forwards;
-        }
-        .animate-fade-in-scale {
-            animation: fade-in-scale 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-        }
-        .animate-pulse-glow {
-            animation: pulse-glow 3s ease-in-out infinite;
-        }
+        .link-base  { fill:none; stroke-width:1.5px; opacity:0.38; transition:stroke .5s,opacity .5s; }
+        .link-active{ fill:none; stroke-width:2.5px; opacity:1; stroke-dasharray:8; animation:flow 1s linear infinite; }
+        @keyframes flow{ from{stroke-dashoffset:16} to{stroke-dashoffset:0} }
+        .node text,.expand-indicator,.child-count-text{ font-family:${FONT_SANS}; -webkit-font-smoothing:antialiased; }
+        .node text{ text-shadow:0 1px 4px rgba(0,0,0,.95); font-size:12px; font-weight:500; letter-spacing:.01em; }
       `}} />
 
-      {/* --- SIDEBAR --- */}
-      <aside className="w-[400px] min-w-[400px] flex flex-col border-r border-white/[0.05] bg-[#0a0a0e]/95 backdrop-blur-xl z-20 shadow-[inset_1px_0_0_rgba(255,255,255,0.03)] relative">
-        <div className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-black/20 shrink-0 backdrop-blur-md">
-            <Link href="/" className="flex items-center gap-3 group hover:opacity-80 transition-opacity" title="Go to Homepage">
-                <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.2)] group-hover:border-indigo-500/40 transition-colors"><Terminal className="text-indigo-500" size={16} /></div>
-                <h1 className="text-sm font-bold text-white tracking-widest leading-none">DEX</h1>
-            </Link>
-            <div className="flex items-center gap-2">
-                {session?.user && (
-                    <>
-                        <Link
-                            href="/profile"
-                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all cursor-pointer"
-                            title="View Profile"
-                        >
-                            <User size={12} className="text-indigo-400" />
-                            <span className="text-[10px] text-indigo-300 font-medium max-w-[100px] truncate">
-                                {session.user.name || session.user.email}
-                            </span>
-                        </Link>
-                        <Link
-                            href="/settings"
-                            className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 hover:text-indigo-400 transition-all"
-                            title="Settings"
-                        >
-                            <Settings size={12} />
-                        </Link>
-                    </>
-                )}
-                <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-emerald-500/5 border border-emerald-500/10">
-                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-600/90" />
-                    <span className="text-[10px] text-emerald-500 font-medium uppercase tracking-wider">Online</span>
-                </div>
-                {session?.user && (
-                    <button
-                        onClick={() => signOut({ callbackUrl: '/' })}
-                        className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-red-500/10 hover:border-red-500/30 text-slate-400 hover:text-red-400 transition-all"
-                        title="Log out"
-                    >
-                        <LogOut size={14} />
-                    </button>
-                )}
-            </div>
+      {/* ── TOP BAR ── */}
+      <header className="topbar absolute top-0 inset-x-0 z-50 h-12 flex items-center px-4 gap-3">
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-2 shrink-0 hover:opacity-85 transition-opacity">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+            style={{ background: 'rgba(var(--accent-primary-rgb),0.12)', border: '1px solid rgba(var(--accent-primary-rgb),0.2)' }}>
+            <Terminal size={13} style={{ color: 'var(--accent-primary)' }} />
+          </div>
+          <span className="text-[13px] font-bold tracking-[0.16em] hidden sm:block"
+            style={{ background: 'linear-gradient(90deg, var(--text-primary), var(--text-secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            DEX
+          </span>
+        </Link>
+
+        <div className="w-px h-5 shrink-0" style={{ background: 'var(--border)' }} />
+
+        {/* Repo input row */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <GitBranch size={11} className="shrink-0" style={{ color: 'var(--text-muted)' }} />
+          <input
+            value={repoUrl}
+            onChange={e => setRepoUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleIngest(); }}
+            className="flex-1 min-w-0 bg-transparent text-[12px] font-mono focus:outline-none"
+            style={{ color: 'var(--text-secondary)' }}
+            placeholder="github.com/user/repo"
+          />
+          <button onClick={handleIngest} disabled={ingesting}
+            className="shrink-0 px-3 py-1 rounded-lg text-[11px] font-semibold transition-all disabled:opacity-40"
+            style={ingesting
+              ? { background: 'var(--bg-surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' }
+              : { background: 'var(--accent-primary)', color: '#0a0a0a' }}>
+            {ingesting
+              ? <span className="flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin" /> Indexing…</span>
+              : 'Ingest'}
+          </button>
+          {ingesting && (
+            <button onClick={handleCancel}
+              className="shrink-0 px-2 py-1 rounded-lg text-[11px] transition-all"
+              style={{ background: 'rgba(248,113,113,0.1)', color: 'var(--accent-danger)', border: '1px solid rgba(248,113,113,0.2)' }}>
+              Cancel
+            </button>
+          )}
         </div>
 
-        <div className="flex border-b border-white/[0.06] bg-[#0c0c10]/80 backdrop-blur-sm">
-            <AnimatedButton variant="tab" size="tab" active={activeTab === 'assistant'} onClick={() => setActiveTab('assistant')} glow={false}>
-              <MessageSquare size={12} /> Assistant
-            </AnimatedButton>
-            <AnimatedButton variant="tab" size="tab" active={activeTab === 'details'} accent="emerald" onClick={() => setActiveTab('details')} glow={false}>
-              <Info size={12} /> Details
-            </AnimatedButton>
-        </div>
-
-        {activeTab === 'assistant' && (
-            <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-left-4 duration-300">
-                <div className="p-5 border-b border-white/5 bg-[#0a0a0a]/50 backdrop-blur-sm shrink-0 space-y-3">
-                    <div className="flex justify-between items-baseline">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Repository URL</label>
-                        {step && ingesting && (
-                            <AppStatusLabel
-                                text={step}
-                                className="text-[10px] font-mono uppercase tracking-wider"
-                            />
-                        )}
-                    </div>
-                    <div className="flex gap-2">
-                        <input 
-                            value={repoUrl} 
-                            onChange={(e) => setRepoUrl(e.target.value)} 
-                            className="w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 transition-all font-mono shadow-inner" 
-                            placeholder="Enter GitHub repository URL"
-                        />
-                        <AnimatedButton
-                            onClick={handleIngest}
-                            disabled={ingesting}
-                            variant="primary"
-                            size="icon"
-                            glow={false}
-                            title="Ingest repository"
-                        >
-                            {ingesting ? <RefreshCw className="animate-spin" size={14}/> : <RefreshCw size={14}/>}
-                        </AnimatedButton>
-                    </div>
-                    {/* Enhanced progress bar */}
-                    {ingesting && (
-                      <div className="space-y-1">
-                        <div className="flex justify-between items-center gap-2">
-                          <div className="flex-1">
-                            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                              <span>Ingesting…</span>
-                              <span>{Math.min(100, Math.max(0, progress))}%</span>
-                            </div>
-                            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden shadow-inner mt-1">
-                              <div 
-                                  className="h-full bg-gradient-to-r from-indigo-500 to-indigo-400 transition-all duration-300 shadow-[0_0_8px_rgba(99,102,241,0.5)]" 
-                                  style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} 
-                              />
-                            </div>
-                          </div>
-                          <AnimatedButton
-                            onClick={handleCancel}
-                            variant="danger"
-                            size="icon"
-                            glow={false}
-                            title="Cancel ingestion"
-                          >
-                            <X size={14} />
-                          </AnimatedButton>
-                        </div>
-                      </div>
-                    )}
-                </div>
-                {/* Enhanced Chat Space - Inspired by Home Page */}
-                <div className="flex-1 flex flex-col min-h-0 bg-[#0a0a0e] border-b border-white/[0.05]">
-                    {/* Chat Header */}
-                    <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between bg-[#0e0e14] shrink-0">
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-emerald-600/80" />
-                            <span className="text-xs font-bold text-slate-300 tracking-wide">DEX ASSISTANT</span>
-                            {chatHistory.length > 0 && (
-                                <span className="text-[9px] text-slate-500 ml-2">({chatHistory.length} messages)</span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                            {chatHistory.length > 0 && (
-                                <AnimatedButton
-                                    onClick={handleDownloadChat}
-                                    variant="ghost"
-                                    size="icon"
-                                    glow={false}
-                                    className="text-indigo-300/90"
-                                    title="Download chat history"
-                                >
-                                    <Download size={12} />
-                                </AnimatedButton>
-                            )}
-                            <Terminal size={12} className="text-slate-600" />
-                        </div>
-                    </div>
-                    
-                    {/* Messages Area */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-                        {chatHistory.length > 0 ? (
-                            <div className="space-y-4">
-                                {chatHistory.map((entry, index) => (
-                                    <div key={index} className="space-y-3">
-                                        {/* User Message */}
-                                        <div className="flex justify-end">
-                                            <div className="bg-indigo-600/20 border border-indigo-500/30 text-indigo-100 px-3 py-2 rounded-l-lg rounded-tr-lg max-w-[85%] shadow-lg">
-                                                <p className="text-xs font-medium">{entry.query}</p>
-                                                <p className="text-[9px] text-indigo-300/60 mt-1">
-                                                    {entry.timestamp.toLocaleTimeString()}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        
-                                        {/* AI Response */}
-                                        <div className="flex justify-start relative">
-                                            <div className="absolute -left-2 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500 to-transparent opacity-50"></div>
-                                            <div className="pl-3 text-slate-300 max-w-[90%] space-y-2">
-                                                <div className="prose prose-invert prose-sm max-w-none text-slate-300 leading-relaxed font-light text-xs">
-                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.answer}</ReactMarkdown>
-                                                </div>
-                                                <p className="text-[9px] text-slate-500 mt-1">
-                                                    {entry.timestamp.toLocaleTimeString()}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                                
-                                {/* Show loading indicator if currently processing */}
-                                {loading && (
-                                    <>
-                                        <div className="flex justify-end">
-                                            <div className="bg-indigo-600/20 border border-indigo-500/30 text-indigo-100 px-3 py-2 rounded-l-lg rounded-tr-lg max-w-[85%] shadow-lg">
-                                                <div className="flex items-center gap-2">
-                                                    <RefreshCw className="animate-spin" size={12} />
-                                                    <p className="text-xs font-medium">{query}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex justify-start relative">
-                                            <div className="absolute -left-2 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500 to-transparent opacity-50"></div>
-                                            <div className="pl-3 flex items-center gap-2">
-                                                <AppStatusLabel text="DEX is thinking…" className="text-xs" />
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="h-full flex flex-col items-center justify-center gap-3">
-                                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] backdrop-blur-sm">
-                                    <MessageSquare size={28} className="text-slate-600" />
-                                </div>
-                                <AppStatusLabel text="Ready to analyze" className="text-[11px] uppercase tracking-widest font-semibold" />
-                                <p className="text-[10px] text-slate-600 text-center max-w-[220px] leading-relaxed">
-                                    Ask DEX about your codebase structure, dependencies, or specific files.
-                                </p>
-                                <AnimatedButton
-                                    onClick={() => setShowFocusChat(true)}
-                                    variant="default"
-                                    size="sm"
-                                    glow
-                                    className="mt-1 text-indigo-200"
-                                >
-                                    <Sparkles size={11} />
-                                    Open Focus Chat
-                                </AnimatedButton>
-                            </div>
-                        )}
-                    </div>
-                </div>
-                
-                {/* Enhanced Input Area */}
-                <div className="p-5 border-t border-white/[0.06] bg-[#0c0c10]/90 backdrop-blur-sm shrink-0">
-                    <div className="relative group">
-                        <textarea 
-                            value={query} 
-                            onChange={(e) => setQuery(e.target.value)} 
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    if (query && !loading) handleExecute();
-                                }
-                            }}
-                            placeholder="Ask about structure, dependencies, or code..." 
-                            className="w-full bg-[#111] border border-white/10 rounded-xl p-4 pr-12 text-xs text-white focus:border-indigo-500/50 outline-none resize-none h-24 shadow-inner transition-all focus:bg-[#151515] focus:ring-1 focus:ring-indigo-500/20" 
-                        />
-                        <AnimatedButton
-                            onClick={() => handleExecute()}
-                            disabled={loading || !query}
-                            variant="primary"
-                            size="icon"
-                            glow={false}
-                            className="absolute right-3 bottom-3"
-                        >
-                            {loading ? <RefreshCw className="animate-spin" size={14}/> : <Play size={14} fill="currentColor"/>}
-                        </AnimatedButton>
-                    </div>
-                    {loading && (
-                        <div className="mt-2 flex items-center gap-2">
-                            <RefreshCw className="animate-spin text-indigo-400" size={10} />
-                            <AppStatusLabel text="Analyzing codebase…" className="text-[10px] uppercase tracking-widest" />
-                        </div>
-                    )}
-                </div>
+        {ingesting && (
+          <>
+            <div className="w-px h-5 shrink-0" style={{ background: 'var(--border)' }} />
+            <div className="hidden sm:flex items-center gap-2 shrink-0">
+              <div className="w-20 h-1.5 rounded-full overflow-hidden ingest-track">
+                <div className="ingest-fill" style={{ width: `${Math.min(100,Math.max(0,progress))}%` }} />
+              </div>
+              <span className="text-[11px] tabular-nums font-semibold" style={{ color: 'var(--accent-primary)' }}>
+                {Math.min(100,Math.max(0,progress))}%
+              </span>
             </div>
+          </>
         )}
 
-        {activeTab === 'details' && (
-            <div className="flex-1 flex flex-col min-h-0 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="flex-1 p-5 overflow-y-auto border-b border-white/5">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2"><Search size={12}/> Inspector</div>
-                    {selectedNode ? (
-                        <div className="space-y-4">
-                            <div className="p-4 rounded-xl bg-gradient-to-br from-white/5 to-white/0 border border-white/10 shadow-lg backdrop-blur-sm glass-panel">
-                                <div className="text-[9px] text-indigo-400 font-bold mb-2 uppercase tracking-wider">Active Node</div>
-                                <div className="text-sm font-mono text-white break-all">{selectedNode.name || selectedNode.id}</div>
-                            </div>
-                            <div className="p-3 rounded-lg bg-[#111] border border-white/5 backdrop-blur-sm">
-                                <div className="text-[9px] text-slate-500 mb-1 uppercase">Node Type</div>
-                                <div className="text-xs font-bold text-white capitalize flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full shadow-[0_0_4px_currentColor]" style={{backgroundColor: (NODE_CONFIG[selectedNode.type]?.color || NODE_CONFIG.default.color)}}></div>
-                                    {selectedNode.type}
-                                </div>
-                            </div>
-                            <div className="flex gap-2">
-                                <AnimatedButton
-                                  onClick={() => handleNodeChat(selectedNode)}
-                                  variant="default"
-                                  size="sm"
-                                  glow
-                                  className="flex-1 py-3"
-                                >
-                                    <Zap size={12} className="text-amber-400/90" fill="currentColor"/> Chat About Node
-                                </AnimatedButton>
-                                <AnimatedButton
-                                  onClick={() => { setSelectedNode(null); setPathSet(new Set()); }}
-                                  variant="ghost"
-                                  size="sm"
-                                  glow={false}
-                                  className="px-3 py-3"
-                                >
-                                    Clear
-                                </AnimatedButton>
-                            </div>
-                            <AnimatedButton
-                              onClick={() => {
-                                const nodeId = selectedNode.id || selectedNode.name || selectedNode.path;
-                                if (nodeId) {
-                                  router.push(`/blast-radius?node=${encodeURIComponent(nodeId)}`);
-                                }
-                              }}
-                              disabled={!selectedNode.id && !selectedNode.name && !selectedNode.path}
-                              variant="primary"
-                              size="sm"
-                              glow={false}
-                              className="w-full py-3"
-                            >
-                                <Network size={12} className="text-white/75"/> View Blast Radius
-                            </AnimatedButton>
-                        </div>
-                    ) : (
-                        <div className="py-10 flex flex-col items-center justify-center text-slate-700 gap-3 opacity-60">
-                            <Search size={28} />
-                            <p className="text-[10px] uppercase tracking-widest">Select a node</p>
-                        </div>
-                    )}
-                </div>
+        <div className="w-px h-5 shrink-0" style={{ background: 'var(--border)' }} />
 
-                <div className="h-[20%] flex flex-col bg-[#0a0a0a]/80 backdrop-blur-sm border-t border-white/5 p-4">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <LayoutTemplate size={12} />
-                        Structure Key
+        {/* View mode */}
+        <div className="flex items-center gap-0.5 p-0.5 rounded-lg shrink-0" style={{ background: 'var(--bg-surface)' }}>
+          {(['full','focused'] as const).map(m => (
+            <button key={m} onClick={() => handleGraphViewMode(m)}
+              disabled={m === 'full' && !graphReady && !ingesting}
+              className="px-2.5 py-1 rounded-md text-[11px] font-medium transition-all disabled:opacity-30"
+              style={graphViewMode === m
+                ? { background: 'var(--accent-primary)', color: '#0a0a0a' }
+                : { color: 'var(--text-muted)' }}>
+              {m === 'full' ? 'Graph' : 'Focused'}
+            </button>
+          ))}
+        </div>
+
+        {/* Orientation controls */}
+        {graphViewMode === 'full' && graphReady && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button onClick={() => setTreeOrientation('horizontal')} title="Horizontal"
+              className="p-1.5 rounded-md transition-all"
+              style={{ color: treeOrientation==='horizontal' ? 'var(--accent-primary)' : 'var(--text-muted)', background: treeOrientation==='horizontal' ? 'var(--bg-surface-active)' : 'transparent' }}>
+              <ChevronRight size={13} />
+            </button>
+            <button onClick={() => setTreeOrientation('vertical')} title="Vertical"
+              className="p-1.5 rounded-md transition-all"
+              style={{ color: treeOrientation==='vertical' ? 'var(--accent-primary)' : 'var(--text-muted)', background: treeOrientation==='vertical' ? 'var(--bg-surface-active)' : 'transparent' }}>
+              <ChevronDown size={13} />
+            </button>
+            <button onClick={centerTree} title="Center" className="p-1.5 rounded-md transition-all hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
+              <Move size={13} />
+            </button>
+          </div>
+        )}
+
+        <div className="w-px h-5 shrink-0" style={{ background: 'var(--border)' }} />
+
+        {/* Theme switcher */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          {themes.map(t => (
+            <button key={t} onClick={() => setTheme(t)}
+              className="px-2 py-0.5 rounded-md text-[10px] font-medium transition-all"
+              style={theme === t
+                ? { background: 'rgba(var(--accent-primary-rgb),0.18)', color: 'var(--accent-primary)', border: '1px solid rgba(var(--accent-primary-rgb),0.3)' }
+                : { color: 'var(--text-muted)', border: '1px solid transparent' }}>
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        <div className="w-px h-5 shrink-0" style={{ background: 'var(--border)' }} />
+
+        {/* Status + user */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+            style={{ background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.15)' }}>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-green)', boxShadow: '0 0 5px rgba(52,211,153,0.6)' }} />
+            <span className="text-[10px] font-medium" style={{ color: 'var(--accent-green)' }}>Live</span>
+          </div>
+          {session?.user && (
+            <>
+              <Link href="/profile" className="p-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: 'var(--text-muted)' }} title="Profile">
+                <User size={13} />
+              </Link>
+              <Link href="/settings" className="p-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: 'var(--text-muted)' }} title="Settings">
+                <Settings size={13} />
+              </Link>
+              <button onClick={() => signOut({ callbackUrl: '/' })} className="p-1.5 rounded-lg transition-all hover:text-red-400" style={{ color: 'var(--text-muted)' }} title="Log out">
+                <LogOut size={13} />
+              </button>
+            </>
+          )}
+          <button onClick={() => setShowHelpGuide(true)} className="p-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: 'var(--text-muted)' }} title="Help">
+            <HelpCircle size={13} />
+          </button>
+        </div>
+      </header>
+
+      {/* ── LEFT ASSISTANT SIDEBAR ── */}
+      <aside
+        className="glass-panel absolute left-0 z-40 flex flex-col overflow-hidden"
+        style={{
+          top: 48,
+          bottom: DOCK_H,
+          width: leftW,
+          transition: 'width 0.28s cubic-bezier(0.16,1,0.3,1)',
+          borderRight: '1px solid var(--border)',
+          borderTop: 'none',
+          borderBottom: 'none',
+          borderLeft: 'none',
+          borderRadius: 0,
+          boxShadow: 'none',
+          background: 'var(--bg-base)',
+        }}
+      >
+        {/* Sidebar header */}
+        <div className="flex items-center gap-2.5 px-3 shrink-0"
+          style={{ height: 44, borderBottom: '1px solid var(--border)' }}>
+          {leftOpen && (
+            <>
+              <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(var(--accent-primary-rgb),0.12)', border: '1px solid rgba(var(--accent-primary-rgb),0.2)' }}>
+                <Sparkles size={10} style={{ color: 'var(--accent-primary)' }} />
+              </div>
+              <span className="text-[12px] font-semibold flex-1 truncate" style={{ color: 'var(--text-secondary)' }}>
+                DEX Assistant
+              </span>
+              {chatHistory.length > 0 && (
+                <>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
+                    style={{ background: 'rgba(var(--accent-primary-rgb),0.1)', color: 'var(--accent-primary)' }}>
+                    {chatHistory.length}
+                  </span>
+                  <button onClick={handleDownloadChat} className="p-1 rounded-md shrink-0 hover:opacity-70 transition-opacity" style={{ color: 'var(--text-muted)' }} title="Download chat">
+                    <Download size={11} />
+                  </button>
+                </>
+              )}
+            </>
+          )}
+          <button
+            onClick={toggleLeft}
+            className="p-1 rounded-md transition-all hover:opacity-70 shrink-0 ml-auto"
+            style={{ color: 'var(--text-muted)' }}
+            title={leftOpen ? 'Collapse' : 'Expand assistant'}
+          >
+            {leftOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          </button>
+        </div>
+
+        {leftOpen && (
+          <>
+            {/* Repo input */}
+            <div className="px-3 py-3 shrink-0 space-y-2" style={{ borderBottom: '1px solid var(--border)' }}>
+              <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Repository</p>
+              <div className="flex gap-1.5">
+                <input
+                  value={repoUrl}
+                  onChange={e => setRepoUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleIngest(); }}
+                  className="input-base flex-1 min-w-0 rounded-lg px-2.5 py-1.5 text-[12px] font-mono"
+                  placeholder="github.com/user/repo"
+                />
+                <button onClick={handleIngest} disabled={ingesting}
+                  className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-all disabled:opacity-40"
+                  style={ingesting ? { background: 'var(--bg-surface)', color: 'var(--text-muted)', border: '1px solid var(--border)' } : { background: 'var(--accent-primary)', color: '#0a0a0a' }}>
+                  <RefreshCw size={11} className={ingesting ? 'animate-spin' : ''} />
+                </button>
+              </div>
+              {ingesting && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[10px]">
+                    <span className="flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                      <span className="w-1 h-1 rounded-full animate-pulse inline-block" style={{ background: 'var(--accent-primary)' }} />
+                      {step || 'Indexing…'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="tabular-nums font-semibold" style={{ color: 'var(--accent-primary)' }}>{Math.min(100,Math.max(0,progress))}%</span>
+                      <button onClick={handleCancel} className="text-[10px] px-1 rounded transition-colors hover:opacity-80" style={{ color: 'var(--accent-danger)' }}>Cancel</button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        {Object.entries(NODE_CONFIG).map(([key, config]: any) => (
-                             <div key={key} className="flex items-center gap-2 text-[11px] text-slate-400 hover:text-slate-300 transition-colors p-1.5 rounded hover:bg-white/5">
-                                 <span
-                                   className="w-2 h-2 rounded-full shadow-[0_0_4px_currentColor]"
-                                   style={{ backgroundColor: config.color }}
-                                 />
-                                 <config.icon size={10} className="text-slate-500" />
-                                 <span className="font-medium">{config.label}</span>
-                             </div>
-                        ))}
-                    </div>
+                  </div>
+                  <div className="h-1 rounded-full ingest-track">
+                    <div className="ingest-fill h-full" style={{ width: `${Math.min(100,Math.max(0,progress))}%` }} />
+                  </div>
                 </div>
+              )}
             </div>
+
+            {/* Chat messages */}
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 min-h-0">
+              {chatHistory.length === 0 && !loading ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4 py-6">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ background: 'rgba(var(--accent-primary-rgb),0.08)', border: '1px solid rgba(var(--accent-primary-rgb),0.16)' }}>
+                    <Sparkles size={18} style={{ color: 'var(--accent-primary)' }} />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className="text-[12px] font-semibold" style={{ color: 'var(--text-secondary)' }}>Ask anything</p>
+                    <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>about your repository's structure, logic, or dependencies.</p>
+                  </div>
+                  <div className="flex flex-col gap-1.5 w-full">
+                    {['What is the main entry point?', 'List all API endpoints', 'Explain the architecture'].map(s => (
+                      <button key={s} onClick={() => handleExecute(s)}
+                        className="text-left text-[11px] px-3 py-2 rounded-lg transition-all hover:opacity-80"
+                        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {chatHistory.map((entry, i) => (
+                    <div key={i} className="space-y-2">
+                      <div className="flex justify-end">
+                        <div className="px-3 py-2 rounded-xl rounded-tr-sm max-w-[90%] text-[12px] leading-relaxed"
+                          style={{ background: 'rgba(var(--accent-primary-rgb),0.1)', border: '1px solid rgba(var(--accent-primary-rgb),0.18)', color: 'var(--text-primary)' }}>
+                          {entry.query}
+                          <p className="text-[9px] mt-1 text-right opacity-40" style={{ color: 'var(--text-muted)' }}>
+                            {entry.timestamp.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                          style={{ background: 'rgba(var(--accent-primary-rgb),0.1)', border: '1px solid rgba(var(--accent-primary-rgb),0.18)' }}>
+                          <Sparkles size={9} style={{ color: 'var(--accent-primary)' }} />
+                        </div>
+                        <div className="flex-1 min-w-0 rounded-xl rounded-tl-sm px-3 py-2.5"
+                          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                          <div className="chat-prose text-[12px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.answer}</ReactMarkdown>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {loading && (
+                    <div className="flex gap-2 items-start">
+                      <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                        style={{ background: 'rgba(var(--accent-primary-rgb),0.1)', border: '1px solid rgba(var(--accent-primary-rgb),0.18)' }}>
+                        <Sparkles size={9} className="animate-pulse" style={{ color: 'var(--accent-primary)' }} />
+                      </div>
+                      <div className="px-3 py-2.5 rounded-xl rounded-tl-sm" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                        <div className="flex items-center gap-1.5">
+                          {[0,120,240].map(d => (
+                            <div key={d} className="w-1.5 h-1.5 rounded-full animate-bounce"
+                              style={{ background: 'var(--accent-primary)', opacity: 0.6, animationDelay: `${d}ms` }} />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Input */}
+            <div className="px-3 py-3 shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
+              <PromptInputBox
+                onSend={(message) => handleExecute(message)}
+                isLoading={loading}
+                placeholder="Ask about structure, dependencies…"
+              />
+            </div>
+          </>
         )}
       </aside>
 
-      <AnimatedButton
-        onClick={() => setShowFocusChat(true)}
-        variant="default"
-        size="iconLg"
-        glow
-        className="fixed bottom-6 right-24 z-50"
-        title="Open Focus Chat"
+      {/* ── GRAPH CANVAS ── */}
+      <main
+        ref={treeContainer}
+        className="absolute z-0"
+        style={{
+          top: 48,
+          left: leftW,
+          right: (selectedNode && graphViewMode === 'full') ? 272 : 0,
+          bottom: DOCK_H,
+          transition: 'left 0.28s cubic-bezier(0.16,1,0.3,1), right 0.28s cubic-bezier(0.16,1,0.3,1)',
+        }}
       >
-        <Sparkles size={20} className="text-white" />
-      </AnimatedButton>
+        {/* Dot grid */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ opacity: 0.03 }} aria-hidden="true">
+          <defs>
+            <pattern id="dex-dot" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="1" cy="1" r="1" fill="currentColor" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#dex-dot)" style={{ color: 'var(--text-primary)' }} />
+        </svg>
 
-      {/* Focus Chat Overlay */}
-      {showFocusChat && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in"
-          onClick={() => setShowFocusChat(false)}
-        >
-          <div
-            className="relative w-full max-w-3xl rounded-2xl border border-white/10 bg-[#0c0c12]/98 backdrop-blur-xl shadow-2xl overflow-hidden animate-fade-in-scale"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="relative px-6 py-3 border-b border-white/[0.08] bg-[#101018] flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-white/[0.06] flex items-center justify-center border border-white/10">
-                  <Sparkles size={16} className="text-slate-300" />
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-white tracking-wide">Focus Chat</div>
-                  {loading ? (
-                    <AppStatusLabel text="DEX is thinking…" className="text-[10px] uppercase tracking-widest" />
-                  ) : (
-                    <p className="text-[10px] text-slate-400 uppercase tracking-widest">Ask anything about this codebase</p>
-                  )}
-                </div>
-              </div>
-              <AnimatedButton
-                onClick={() => setShowFocusChat(false)}
-                variant="ghost"
-                size="icon"
-                glow={false}
-                aria-label="Close Focus Chat"
-              >
-                <X size={16} />
-              </AnimatedButton>
-            </div>
-
-            <div className="max-h-[80vh] overflow-y-auto">
-              <AnimatedAIChat
-                compact
-                heading="What would you like to explore?"
-                subheading="Type a question, or pick a command to get started"
-                placeholder="Ask DEX about modules, dependencies, or a specific symbol…"
-                processing={loading}
-                onSendMessage={(message) => {
-                  handleExecute(message);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      <AnimatedButton
-        onClick={() => setShowHelpGuide(true)}
-        variant="default"
-        size="iconLg"
-        glow
-        className="fixed bottom-6 right-6 z-50"
-        title="Show Help Guide"
-      >
-        <HelpCircle size={22} className="text-white" />
-      </AnimatedButton>
-
-      {/* Help Guide Modal */}
-      {showHelpGuide && (
-        <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
-          onClick={() => setShowHelpGuide(false)}
-        >
-          <div 
-            className="relative w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0c0c12]/98 backdrop-blur-xl shadow-2xl overflow-hidden animate-fade-in-scale"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="relative px-6 py-4 border-b border-white/[0.08] bg-[#101018]">
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/5 to-transparent"></div>
-              <div className="relative flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30">
-                    <HelpCircle size={20} className="text-indigo-400" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-white">Interactive Guide</h2>
-                    <p className="text-xs text-slate-400">Learn how to navigate the codebase</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowHelpGuide(false)}
-                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white transition-all"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-              {/* Expand/Collapse Section */}
-              <div className="p-5 rounded-xl border border-indigo-500/20 bg-gradient-to-br from-indigo-500/5 to-transparent hover:border-indigo-500/40 transition-all group">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-indigo-500/20 flex items-center justify-center border border-indigo-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
-                    <ChevronRight size={24} className="text-indigo-400" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
-                      <MousePointerClick size={16} className="text-indigo-400" />
-                      Expand & Collapse Nodes
-                    </h3>
-                    <p className="text-sm text-slate-300 leading-relaxed mb-3">
-                      Click on any node in the dependency tree to expand or collapse it. Nodes with children show a chevron indicator (▶ for collapsed, ▼ for expanded).
-                    </p>
-                    <div className="mt-3 p-3 rounded-lg bg-black/40 border border-white/5 font-mono text-xs text-slate-400">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-indigo-400">▶</span>
-                        <span>Collapsed node (click to expand)</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-indigo-400">▼</span>
-                        <span>Expanded node (click to collapse)</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Inspect Node Section */}
-              <div className="p-5 rounded-xl border border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-transparent hover:border-purple-500/40 transition-all group">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-purple-500/20 flex items-center justify-center border border-purple-500/30 group-hover:scale-110 transition-transform flex-shrink-0">
-                    <Network size={24} className="text-purple-400" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-base font-bold text-white mb-2 flex items-center gap-2">
-                      <Search size={16} className="text-purple-400" />
-                      Inspect Node & View Path
-                    </h3>
-                    <p className="text-sm text-slate-300 leading-relaxed mb-3">
-                      Click on any node to select it and view its details. The selected node will be highlighted, and its complete path from the root will be displayed in the dependency tree.
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      <div className="p-3 rounded-lg bg-black/40 border border-white/5">
-                        <div className="text-xs text-slate-400 mb-1">What happens when you click:</div>
-                        <ul className="text-xs text-slate-300 space-y-1 ml-4 list-disc">
-                          <li>Node is highlighted with a white border</li>
-                          <li>Path to root is illuminated in the tree</li>
-                          <li>Node details appear in the "Details" tab</li>
-                          <li>You can chat about the node using "Chat About Node"</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Additional Tips */}
-              <div className="p-5 rounded-xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-transparent">
-                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                  <Zap size={14} className="text-emerald-400" />
-                  Pro Tips
-                </h3>
-                <div className="space-y-2 text-xs text-slate-300">
-                  <div className="flex items-start gap-2">
-                    <span className="text-emerald-400 mt-0.5">•</span>
-                    <span>Use the <span className="text-white font-mono">Center</span> button to reset the tree view</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-emerald-400 mt-0.5">•</span>
-                    <span>Switch between <span className="text-white font-mono">Vertical</span> and <span className="text-white font-mono">Horizontal</span> tree orientations</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-emerald-400 mt-0.5">•</span>
-                    <span>Click on empty space to deselect nodes and clear the path</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <span className="text-emerald-400 mt-0.5">•</span>
-                    <span>Use the <span className="text-white font-mono">Assistant</span> tab to ask questions about your codebase</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-indigo-500/20 bg-[#0a0a0a]/50 backdrop-blur-sm">
-              <AnimatedButton
-                onClick={() => setShowHelpGuide(false)}
-                variant="primary"
-                size="md"
-                glow
-                className="w-full uppercase tracking-wider"
-              >
-                Got it!
-              </AnimatedButton>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- GRAPH AREA --- */}
-      <main className="flex-1 min-w-0 relative bg-[#050505] overflow-hidden" ref={treeContainer}>
-        {/* Graph Controls */}
-        <div className="absolute top-6 left-6 z-10 flex gap-3">
-            <div className="p-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/10 shadow-xl flex gap-1 glass-panel">
-                <AnimatedButton onClick={() => setTreeOrientation('vertical')} variant={treeOrientation === 'vertical' ? 'primary' : 'ghost'} size="sm" glow={false} className="rounded-md"><ChevronDown size={12} /> Vert</AnimatedButton>
-                <AnimatedButton onClick={() => setTreeOrientation('horizontal')} variant={treeOrientation === 'horizontal' ? 'primary' : 'ghost'} size="sm" glow={false} className="rounded-md"><ChevronRight size={12} /> Horz</AnimatedButton>
-                <div className="w-px h-full bg-white/10 mx-1" />
-                <AnimatedButton onClick={centerTree} variant="ghost" size="sm" glow={false} className="rounded-md" title="Center Tree"><Move size={12} /> Center</AnimatedButton>
-            </div>
-        </div>
-
-        {/* The D3 Tree */}
         <div className="w-full h-full relative">
-            {graphData.nodes.length > 0 ? (
-                <svg
-                    ref={svgRef}
-                    className="w-full h-full block"
-                    viewBox="0 0 1000 800"
-                >
-                    <g ref={wrapperRef} />
-                </svg>
-            ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-700 gap-4 relative">
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl"></div>
-                    </div>
-                    <div className="relative z-10 flex flex-col items-center gap-4">
-                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                            <LayoutTemplate size={48} strokeWidth={1} className="text-slate-600" />
-                        </div>
-                        <AppStatusLabel
-                            text={ingesting ? (step || 'Ingesting repository') : 'Waiting for repository'}
-                            className="text-xs uppercase tracking-widest font-semibold"
-                        />
-                        <p className="text-[10px] text-slate-600 text-center max-w-xs">
-                            {ingesting
-                                ? 'Hang tight — DEX is building your dependency graph.'
-                                : 'Enter a repository URL above to begin visualization.'}
-                        </p>
-                    </div>
+          {graphViewMode === 'focused' ? (
+            <FocusedGraphPanel repoReady={graphReady} ingesting={ingesting} />
+          ) : graphReady ? (
+            <svg ref={svgRef} className="w-full h-full block" viewBox="0 0 1000 800">
+              <g ref={wrapperRef} />
+            </svg>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-6">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                style={{ background: 'rgba(var(--accent-primary-rgb),0.07)', border: '1px solid rgba(var(--accent-primary-rgb),0.14)' }}>
+                <LayoutTemplate size={28} strokeWidth={1.25} style={{ color: 'var(--text-muted)' }} />
+              </div>
+              <div className="text-center space-y-2 max-w-sm px-8">
+                <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {ingesting ? 'Indexing repository…' : 'No repository loaded'}
+                </h2>
+                <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  {ingesting ? (step || 'Processing files and building the graph…') : 'Paste a GitHub URL in the top bar and click Ingest, or use the assistant on the left.'}
+                </p>
+              </div>
+              {ingesting && (
+                <div className="w-full max-w-xs space-y-2 px-4">
+                  <div className="flex justify-between text-[11px]">
+                    <span style={{ color: 'var(--text-muted)' }}>{step || 'Working…'}</span>
+                    <span className="tabular-nums font-semibold" style={{ color: 'var(--accent-primary)' }}>{Math.min(100,Math.max(0,progress))}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full ingest-track">
+                    <div className="ingest-fill" style={{ width: `${Math.min(100,Math.max(0,progress))}%` }} />
+                  </div>
                 </div>
-            )}
+              )}
+            </div>
+          )}
         </div>
       </main>
+
+      {/* ── RIGHT INSPECTOR ── */}
+      {selectedNode && graphViewMode === 'full' && (
+        <aside
+          className="inspector-panel absolute right-0 z-40 animate-slide-right flex flex-col"
+          style={{ top: 48, bottom: DOCK_H, width: 272 }}
+        >
+          <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+            <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Inspector</span>
+            <button onClick={() => { setSelectedNode(null); setPathSet(new Set()); }}
+              className="p-1 rounded-md transition-all hover:opacity-75" style={{ color: 'var(--text-muted)' }}>
+              <X size={13} />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+            <div className="rounded-xl p-4 space-y-2.5"
+              style={{ background: 'rgba(var(--accent-primary-rgb),0.05)', border: '1px solid rgba(var(--accent-primary-rgb),0.12)' }}>
+              <span className="tag"
+                style={{ color: NODE_CONFIG[selectedNode.type]?.color||NODE_CONFIG.default.color,
+                  background: `${NODE_CONFIG[selectedNode.type]?.color||NODE_CONFIG.default.color}18`,
+                  border: `1px solid ${NODE_CONFIG[selectedNode.type]?.color||NODE_CONFIG.default.color}30` }}>
+                {selectedNode.type}
+              </span>
+              <div className="text-[18px] font-bold font-mono leading-snug break-all" style={{ color: 'var(--text-primary)' }}>
+                {selectedNode.name || selectedNode.id}
+              </div>
+              {selectedNode.id && (
+                <div className="flex items-start gap-1.5">
+                  <FileCode size={10} className="shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
+                  <span className="text-[11px] font-mono break-all leading-tight" style={{ color: 'var(--text-muted)' }}>{selectedNode.id}</span>
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => handleNodeChat(selectedNode)}
+              className="w-full py-2.5 rounded-xl text-[12px] font-semibold transition-all hover:opacity-88"
+              style={{ background: 'var(--accent-primary)', color: '#0a0a0a' }}>
+              Ask DEX about this
+            </button>
+            <button
+              onClick={() => { const id=selectedNode.id||selectedNode.name; if(id) router.push(`/blast-radius?node=${encodeURIComponent(id)}`); }}
+              disabled={!selectedNode.id && !selectedNode.name}
+              className="w-full py-2.5 rounded-xl text-[12px] font-medium transition-all disabled:opacity-40 hover:opacity-80"
+              style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+              Blast Radius →
+            </button>
+          </div>
+
+          <div className="px-4 py-4 shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
+            <p className="text-[10px] font-semibold uppercase tracking-widest mb-2.5" style={{ color: 'var(--text-muted)' }}>Node types</p>
+            <div className="grid grid-cols-2 gap-y-1.5 gap-x-2">
+              {Object.entries(NODE_CONFIG).map(([key, cfg]: any) => (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cfg.color }} />
+                  <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{cfg.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* ── HELP MODAL ── */}
+      {showHelpGuide && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/65 backdrop-blur-xl animate-fade-in"
+          onClick={() => setShowHelpGuide(false)}>
+          <div className="relative w-full max-w-md rounded-2xl overflow-hidden animate-fade-in-scale glass-card"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
+              <span className="text-[14px] font-bold" style={{ color: 'var(--text-primary)' }}>How to use DEX</span>
+              <button onClick={() => setShowHelpGuide(false)} className="p-1.5 rounded-lg transition-all hover:opacity-75" style={{ color: 'var(--text-muted)' }}>
+                <X size={14} />
+              </button>
+            </div>
+            <div className="p-5 space-y-2.5 max-h-[60vh] overflow-y-auto">
+              {[
+                ['Expand nodes', 'Click any node in the graph to expand or collapse its children.'],
+                ['Inspect', 'Selecting a node opens the Inspector panel on the right.'],
+                ['Pan', 'Hold Space + drag, or right-click drag to pan the graph.'],
+                ['Zoom', 'Scroll wheel zooms in and out.'],
+                ['Chat', 'Use the assistant panel on the left to ask about the repository.'],
+              ].map(([title, desc]) => (
+                <div key={title} className="rounded-xl p-4" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                  <p className="text-[13px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{title}</p>
+                  <p className="text-[12px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>{desc}</p>
+                </div>
+              ))}
+            </div>
+            <div className="px-5 py-4" style={{ borderTop: '1px solid var(--border)' }}>
+              <button onClick={() => setShowHelpGuide(false)}
+                className="w-full py-2 rounded-xl text-[13px] font-semibold transition-all hover:opacity-88"
+                style={{ background: 'var(--accent-primary)', color: '#0a0a0a' }}>
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
+  // Backend proxy: src/app/api/backend/[...path]/route.ts (long timeout; avoids ECONNRESET)
   output: 'standalone',
   // Production optimizations
   compress: true,

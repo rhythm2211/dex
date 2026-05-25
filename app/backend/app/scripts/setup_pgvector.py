@@ -153,6 +153,13 @@ def setup_pgvector():
                 except Exception:
                     pass  # Index may already exist
                 
+                # 7. Full-text search column for hybrid sparse retrieval
+                try:
+                    from backend.app.utils.fts_migration import ensure_content_tsv_index
+                    ensure_content_tsv_index(conn, table_name)
+                except Exception as e:
+                    logger.warning(f"FTS migration skipped: {e}")
+                
                 logger.info("🎉 pgvector setup completed successfully!")
                 return True
                 

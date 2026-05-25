@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Terminal, ArrowRight, User, Building2, Briefcase, FileText, X, Check } from "lucide-react";
+import { messageFromApiErrorBody, publicApiUrl } from "@/lib/api";
 
 // Spotlight Card Component
 const SpotlightCard = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => {
@@ -46,7 +47,7 @@ const SpotlightCard = ({ children, className = "" }: { children: React.ReactNode
 };
 
 export default function OnboardingPage() {
-  const { data: session, status } = useSession();
+  const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,12 +106,12 @@ export default function OnboardingPage() {
     setError(null);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      
       // First, check if user exists
       let userExists = false;
       try {
-        const checkResponse = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`);
+        const checkResponse = await fetch(
+          publicApiUrl(`users/email/${encodeURIComponent(session.user.email)}`)
+        );
         if (checkResponse.ok) {
           userExists = true;
         }
@@ -119,9 +120,9 @@ export default function OnboardingPage() {
       }
 
       // Create or update user profile
-      const url = userExists 
-        ? `${apiUrl}/api/v1/users/${encodeURIComponent(session.user.email)}`
-        : `${apiUrl}/api/v1/users`;
+      const url = userExists
+        ? publicApiUrl(`users/${encodeURIComponent(session.user.email)}`)
+        : publicApiUrl("users");
       
       const method = userExists ? "PUT" : "POST";
       
@@ -144,11 +145,11 @@ export default function OnboardingPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: "Failed to save profile" }));
-        throw new Error(errorData.detail || "Failed to save profile");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(messageFromApiErrorBody(errorData, "Failed to save profile"));
       }
 
-      // Success - redirect to app
+      await updateSession({ profile_completed: true });
       router.push("/app");
     } catch (err: any) {
       setError(err.message || "Something went wrong. Please try again.");

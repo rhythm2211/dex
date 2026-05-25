@@ -96,18 +96,24 @@ class UserProfileResponse(BaseModel):
     updated_at: Optional[str]
 
 # Endpoints
-@router.get("/users/{user_id}", response_model=UserProfileResponse)
-def get_user_profile(user_id: str, db: Session = Depends(get_db)):
-    """Get user profile by ID (email or provider ID)"""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user.to_dict()
+_RESERVED_USER_PATH_IDS = frozenset(
+    {"signup", "upsert", "active", "verify-credentials", "email"}
+)
 
 @router.get("/users/email/{email}", response_model=UserProfileResponse)
 def get_user_by_email(email: str, db: Session = Depends(get_db)):
     """Get user profile by email"""
     user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user.to_dict()
+
+@router.get("/users/{user_id}", response_model=UserProfileResponse)
+def get_user_profile(user_id: str, db: Session = Depends(get_db)):
+    """Get user profile by ID (email or provider ID)"""
+    if user_id in _RESERVED_USER_PATH_IDS:
+        raise HTTPException(status_code=404, detail="Not found")
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user.to_dict()
@@ -300,6 +306,7 @@ def signup_user(signup: UserSignupRequest, db: Session = Depends(get_db)):
     import threading
     def send_email_async():
         try:
+            from backend.app.services.email_service import email_service
             email_service.send_welcome_email(signup.email, signup.name)
         except Exception as e:
             logger.error(f"Failed to send welcome email to {signup.email}: {str(e)}")

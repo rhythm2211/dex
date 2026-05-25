@@ -1,4 +1,13 @@
 {
+  "name": "dex",
+  "private": true,
+  "scripts": {
+    "claude": "npx claude"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "^2.1.150",
+    "@anthropic-ai/claude-code-win32-x64": "^2.1.150"
+  },
   "dependencies": {
     "framer-motion": "^12.29.2",
     "next-auth": "^4.24.13"

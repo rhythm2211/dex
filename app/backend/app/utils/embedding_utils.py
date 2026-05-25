@@ -13,6 +13,30 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logger = logging.getLogger("dex-core")
 
+
+def default_ingest_embedding_batch_size() -> int:
+    """Provider-tuned default; override with INGEST_EMBEDDING_BATCH_SIZE."""
+    provider = settings.EMBEDDING_PROVIDER.lower()
+    defaults = {
+        # voyage-4-large: max 1000 texts/request, 120K tokens/request — ~320 safe for ~400-token chunks
+        "voyage": 320,
+        "cohere": 96,
+        "openai": 128,
+        "hf_inference": 32,
+        "local": 48,
+    }
+    return max(8, int(os.getenv("INGEST_EMBEDDING_BATCH_SIZE", str(defaults.get(provider, 64)))))
+
+
+def default_voyage_model() -> str:
+    """Best default for code+docs RAG with standard /v1/embeddings batching."""
+    return "voyage-4-large"
+
+
+def _api_embedding_batch_size() -> int:
+    return default_ingest_embedding_batch_size()
+
+
 def get_embeddings() -> Embeddings:
     """
     Initialize embeddings based on EMBEDDING_PROVIDER setting.
@@ -64,13 +88,32 @@ def _get_voyage_embeddings() -> Embeddings:
         logger.error(error_msg)
         raise ValueError(error_msg)
     
-    model_name = settings.EMBEDDING_MODEL_NAME or "voyage-3"
+    model_name = (settings.EMBEDDING_MODEL_NAME or "").strip()
+    if not model_name or model_name == "intfloat/e5-base-v2":
+        model_name = default_voyage_model()
+    elif model_name in {
+        "voyage-3",
+        "voyage-3-lite",
+        "voyage-large-2",
+        "voyage-code-2",
+        "voyage-code-3",
+    }:
+        logger.info("Upgrading legacy Voyage model %s -> voyage-4-large", model_name)
+        model_name = default_voyage_model()
     logger.info(f"Initializing Voyage AI embeddings with model: {model_name}")
     
-    return VoyageAIEmbeddings(
-        voyage_api_key=voyage_key,
-        model=model_name
-    )
+    batch_size = _api_embedding_batch_size()
+    output_dim = getattr(settings, "EMBEDDING_DIMENSION", None)
+    kwargs = {
+        "voyage_api_key": voyage_key,
+        "model": model_name,
+        "batch_size": batch_size,
+    }
+    # voyage-4-* supports 256/512/1024/2048; only pass when explicitly configured
+    if output_dim and output_dim in (256, 512, 1024, 2048):
+        kwargs["output_dimension"] = output_dim
+    logger.info(f"Voyage AI embedding batch_size={batch_size}, output_dimension={kwargs.get('output_dimension', 'model default')}")
+    return VoyageAIEmbeddings(**kwargs)
 
 
 def _get_cohere_embeddings() -> Embeddings:
@@ -92,9 +135,11 @@ def _get_cohere_embeddings() -> Embeddings:
     model_name = settings.EMBEDDING_MODEL_NAME or "embed-english-v3.0"
     logger.info(f"Initializing Cohere embeddings with model: {model_name}")
     
+    batch_size = _api_embedding_batch_size()
+    logger.info(f"Cohere embedding batch_size={batch_size}")
     return CohereEmbeddings(
         cohere_api_key=settings.COHERE_API_KEY,
-        model=model_name
+        model=model_name,
     )
 
 
@@ -161,15 +206,41 @@ def _get_local_embeddings() -> Embeddings:
             "Install it with: pip install langchain-huggingface"
         )
     
-    model_name = settings.EMBEDDING_MODEL_NAME or "sentence-transformers/all-mpnet-base-v2"
-    logger.info(f"Initializing local HuggingFace embeddings with model: {model_name}")
-    
-    return HuggingFaceEmbeddings(
-        model_name=model_name,
-        model_kwargs={
-            'device': 'cpu'  # Use CPU for local models
-        },
-        encode_kwargs={
-            'normalize_embeddings': True  # Normalize for better cosine similarity
-        }
+    model_name = settings.EMBEDDING_MODEL_NAME or "intfloat/e5-base-v2"
+    batch_size = default_ingest_embedding_batch_size()
+    device = os.getenv("EMBEDDING_DEVICE", "").strip().lower()
+    if not device:
+        try:
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            device = "cpu"
+    logger.info(
+        f"Initializing local HuggingFace embeddings: model={model_name}, device={device}, batch_size={batch_size}"
     )
+
+    base = HuggingFaceEmbeddings(
+        model_name=model_name,
+        model_kwargs={"device": device},
+        encode_kwargs={
+            "normalize_embeddings": True,
+            "batch_size": batch_size,
+        },
+    )
+    if "e5" in model_name.lower():
+        return _E5EmbeddingsWrapper(base)
+    return base
+
+
+class _E5EmbeddingsWrapper(Embeddings):
+    """Prefix queries/passages for E5-family models."""
+
+    def __init__(self, inner: Embeddings):
+        self._inner = inner
+
+    def embed_documents(self, texts):
+        return self._inner.embed_documents([f"passage: {t}" for t in texts])
+
+    def embed_query(self, text):
+        return self._inner.embed_query(f"query: {text}")

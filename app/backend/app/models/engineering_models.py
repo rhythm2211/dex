@@ -21,6 +21,8 @@ class GitHubRepoLink(Base):
     repo = Column(String(255), nullable=False)
     installation_id = Column(String(64), nullable=True)
     merge_block_critical = Column(Boolean, default=True)
+    last_indexed_sha = Column(String(64), nullable=True)
+    last_clone_url = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

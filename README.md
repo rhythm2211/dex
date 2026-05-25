@@ -6,7 +6,7 @@
 
 # DEX
 
-> Open-source codebase intelligence you can actually self-host.
+> Self-hosted codebase intelligence for teams working on private or internal code.
 > Real AST + dependency graph + grounded answers — no enterprise 
 > sales call required.
 
@@ -16,7 +16,7 @@
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org/)
 [![Next.js](https://img.shields.io/badge/next.js-16+-black)](https://nextjs.org/)
 
-> **Status:** Open beta, actively developed. [Issues](https://github.com/rhythm2211/dex/issues) and feedback welcome — especially the brutal kind.
+> **Status:** Open beta, actively developed. Feedback, access requests, and licensing questions: rhythmsuthar123@gmail.com.
 
 <!-- Demo GIF placeholder — to be added before launch -->
 
@@ -26,9 +26,9 @@ Try DEX locally with one command. Includes embedded PostgreSQL
 and Neo4j — no external database setup needed.
 
 ```bash
-# 1. Download the quickstart files
-curl -O https://raw.githubusercontent.com/rhythm2211/dex/prod/docker-compose.quickstart.yml
-curl -O https://raw.githubusercontent.com/rhythm2211/dex/prod/.env.quickstart.example
+# 1. Clone the repository (authorized access required)
+git clone <your-private-dex-repo-url>
+cd dex
 
 # 2. Configure your API key
 cp .env.quickstart.example .env
@@ -39,7 +39,7 @@ docker compose -f docker-compose.quickstart.yml up
 ```
 
 Open [http://localhost:3000](http://localhost:3000), sign up with 
-email and password, and ingest any public GitHub repo.
+email and password, and ingest any repository your Git credentials can access.
 
 **Requirements:** Docker Desktop, 4GB+ free RAM, ~5 minutes for 
 first image pull (~2GB total).
@@ -64,14 +64,15 @@ LLM responses grounded in real file paths and line numbers. No
 hallucinated APIs. No invented callers.
 
 It runs as a self-hosted web app on your machine or in your VPC. 
-Your code never touches a third-party server. Open source under 
-AGPL-3.0.
+Your code never touches a third-party server. This repository is 
+currently maintained privately; authorized copies remain governed by 
+AGPL-3.0 unless you have separate commercial terms.
 
 ## Why DEX
 
 | You are... | DEX is for you because... |
 |---|---|
-| A solo dev or small team priced out of enterprise tools | Free, AGPL-3.0, self-hosted in 60 seconds with Docker Compose. No sales call. No credit card. No seat minimum. Sourcegraph is enterprise-only at $49/user/month. Greptile is closed-source with enterprise-gated self-hosting. |
+| A solo dev or small team priced out of enterprise tools | Self-hosted with Docker Compose and available under AGPL-3.0 or commercial terms. No sales call. No credit card. No seat minimum. Sourcegraph is enterprise-only at $49/user/month. Greptile is closed-source with enterprise-gated self-hosting. |
 | Working on proprietary code that can't go to a SaaS | DEX runs entirely on your laptop or in your VPC. Audit every line of the codebase yourself. No code leaves your network. |
 | Onboarding to a large or legacy codebase | Map structure visually, ask "how does X flow through this?" and get cited answers. Find circular dependencies and god objects automatically. |
 
@@ -103,17 +104,17 @@ The health dashboard surfaces:
 ### Run entirely on your infrastructure
 
 Self-host with Docker Compose. Your code never leaves the machine 
-DEX runs on. AGPL-3.0 means you can audit every line of DEX itself.
+DEX runs on. If you receive DEX under AGPL-3.0, you can audit every line of DEX itself.
 
 ## Full Setup
 
-Clone the repo and run the full stack (build from source or use your own databases).
+Clone the repo and run the full stack (authorized access required; build from source or use your own databases).
 
 ### Option 1: Docker Compose (from clone)
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/rhythm2211/dex.git
+git clone <your-private-dex-repo-url>
 cd dex
 ```
 
@@ -152,10 +153,10 @@ DEX is actively developed. Here's what's shipping next:
 - More language support beyond Python and JavaScript/TypeScript
 - Managed cloud version (for teams that don't want to self-host)
 
-Watch the repo or follow [@rhythmsuthar](https://github.com/rhythm2211) 
-for updates.
+Follow [@rhythmsuthar](https://github.com/rhythm2211) or contact 
+rhythmsuthar123@gmail.com for updates.
 
-## Why open-source matters here
+## Why self-hosting matters here
 
 Code intelligence requires deep access to your codebase. With DEX 
 self-hosted, that code never leaves your infrastructure.
@@ -169,14 +170,15 @@ That matters when:
 - You don't want to depend on a startup's continued existence for a 
   critical workflow
 
-DEX is licensed under AGPL-3.0. Free for self-host. The license 
-prevents competitors from forking DEX into closed-source SaaS 
-products. Commercial licenses are available for organizations that 
-need different terms — contact rhythmsuthar123@gmail.com.
+Authorized copies of DEX are licensed under AGPL-3.0. Making the 
+repository private does not, by itself, change those terms for users 
+who already have access. Commercial licenses are available for 
+organizations that need different terms — contact 
+rhythmsuthar123@gmail.com.
 
 A managed cloud version of DEX is planned (see Roadmap) for teams 
 who'd rather not operate the stack themselves. Both modes will use 
-the same open-source core.
+the same core platform.
 
 ## Features
 
@@ -190,7 +192,7 @@ See [features.md](./features.md) for current capabilities (shipped) and roadmap 
 | **Sourcegraph** | Mature enterprise code search and navigation | Powerful, but heavier setup and cost; often overkill for small teams |
 | **Greptile** | AI codebase Q&A with citations (closest to DEX's pitch) | Closed-source, cloud-hosted; not self-hostable on your infra |
 | **repoingest / gitingest / repomix** | Whole-repo text dump into a prompt | Simple, but no AST or dependency graph; context limits and weak structure on large repos |
-| **DEX** | AST + dependency graph + vector search → cited answers | **Open beta**, **open-source**, **self-hostable** — you operate the stack and keep code local |
+| **DEX** | AST + dependency graph + vector search → cited answers | **Open beta**, **privately maintained**, **self-hostable** — you operate the stack and keep code local |
 
 **In short:** DEX gives you structural understanding of how code connects, with verifiable citations — without sending source to a closed SaaS.
 
@@ -366,26 +368,27 @@ See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for detailed troubleshooting.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+Contributions are currently coordinated with authorized collaborators on this private repository. See [CONTRIBUTING.md](./CONTRIBUTING.md) for access, workflow, and licensing terms.
 
 ## License
 
-DEX is licensed under **GNU AGPL-3.0** (see [LICENSE](LICENSE) for 
+DEX is currently maintained in a private repository, but authorized 
+copies are licensed under **GNU AGPL-3.0** (see [LICENSE](LICENSE) for 
 full terms).
 
 ### What this means in practice
 
 - ✅ **Free for self-hosted use.** Run DEX on your own infrastructure, 
   for your own team's internal use, no cost.
-- ✅ **Free for contributing back.** Fork, modify, submit PRs, build 
-  on top — as long as derivative work stays AGPL-licensed.
+- ✅ **Free for authorized collaboration.** Modify, contribute patches, 
+  and build on top — as long as derivative work stays AGPL-licensed.
 - ✅ **Free for educational and research use.** No restrictions.
 - ⚠️ **AGPL is "viral" for SaaS.** If you modify DEX and offer it as 
   a hosted service to others, you must release your modifications 
   under AGPL too.
+- ℹ️ **Private visibility does not revoke prior AGPL grants.** If you 
+  already received an authorized copy under AGPL-3.0, those license 
+  terms still govern that copy.
 - 💼 **Commercial licensing available.** If you want to embed DEX in 
   a closed-source product, offer DEX as a managed service to 
   customers, or otherwise cannot comply with AGPL-3.0, a commercial 

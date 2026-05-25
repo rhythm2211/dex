@@ -2,9 +2,11 @@
 
 Thank you for your interest in contributing to DEX. This document explains how to get started and the terms under which contributions are accepted.
 
+This repository is currently private. Contributions are coordinated with authorized collaborators rather than public forks.
+
 ## How to contribute
 
-1. **Fork** the repository on GitHub.
+1. **Request or confirm repository access** with the maintainer.
 2. **Create a branch** for your change (`git checkout -b feature/your-change`).
 3. **Make your changes** with clear commits and a focused scope.
 4. **Run tests** (see below) and fix any failures.
@@ -43,6 +45,6 @@ By submitting a pull request to this repository, you agree that:
 
 2. You **grant Rhythm Suthar** (project maintainer) the **right to relicense your contribution under different terms in the future, including commercial licenses, without additional consent or compensation**.
 
-This inline agreement preserves the project's ability to offer commercial licensing while keeping contributions under AGPL-3.0 for the open-source distribution. If you do not agree to these terms, do not submit a pull request.
+This inline agreement preserves the project's ability to offer commercial licensing while keeping contributions under AGPL-3.0 for authorized distributions. If you do not agree to these terms, do not submit a pull request.
 
 For questions about contributing or licensing, contact **rhythmsuthar123@gmail.com**.

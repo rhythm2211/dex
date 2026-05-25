@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react"; 
 import { Terminal, ArrowRight, Github, Lock, Mail, X } from "lucide-react";
+import { publicApiUrl } from "@/lib/api";
 
 // Force dynamic rendering to prevent prerendering errors with useSession
 export const dynamic = 'force-dynamic';
@@ -97,8 +98,9 @@ function LoginContent() {
     const checkProfileAndRedirect = async () => {
       if (status === "authenticated" && session?.user?.email) {
         try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-          const response = await fetch(`${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`);
+          const response = await fetch(
+            publicApiUrl(`users/email/${encodeURIComponent(session.user.email)}`)
+          );
           
           if (response.ok) {
             const userData = await response.json();

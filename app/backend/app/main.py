@@ -32,6 +32,21 @@ if sys.platform == "win32":
         # Already set, ignore
         pass
 
+
+def _ensure_utf8_stdio() -> None:
+    """Windows consoles default to cp1252; emoji log lines raise UnicodeEncodeError without this."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError, AttributeError):
+                pass
+
+
+_ensure_utf8_stdio()
+
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -123,13 +138,21 @@ except Exception as e:
 
 # Proprietary Structured Logging
 # Set log level based on environment
-log_level = logging.WARNING if settings.ENVIRONMENT == "production" else logging.INFO
-logging.basicConfig(
-    level=log_level,
-    format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "service": "dex-engine", "trace_id": "%(process)d", "message": "%(message)s"}',
-    datefmt='%Y-%m-%dT%H:%M:%SZ'
+ingest_verbose = os.getenv("INGEST_VERBOSE", "").lower() in ("1", "true", "yes") or settings.DEBUG
+log_level = (
+    logging.DEBUG
+    if ingest_verbose and settings.ENVIRONMENT != "production"
+    else (logging.WARNING if settings.ENVIRONMENT == "production" else logging.INFO)
 )
+_ensure_utf8_stdio()
+_log_fmt = '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "service": "dex-engine", "trace_id": "%(process)d", "message": "%(message)s"}'
+_log_formatter = logging.Formatter(_log_fmt, datefmt="%Y-%m-%dT%H:%M:%SZ")
+_console = logging.StreamHandler(sys.stdout)
+_console.setFormatter(_log_formatter)
+logging.basicConfig(level=log_level, handlers=[_console], force=True)
 logger = logging.getLogger("dex-core")
+logger.setLevel(log_level)
+logger.propagate = True
 
 # #region agent log
 try:
@@ -170,7 +193,9 @@ origins = [
     "http://127.0.0.1:3000",      # Next.js Local IP
     "http://127.0.0.1:3001",      # Next.js Docker IP
     "http://localhost:8000",      # Self (Swagger UI)
+    "http://127.0.0.1:8000",      # Self (Swagger UI - IPv4)
     "http://localhost:8001",      # Self (Swagger UI - Docker port)
+    "http://127.0.0.1:8001",      # Self (Docker port - IPv4)
     "http://frontend:3000",       # Docker service name
     "https://dex.net.in",         # Production frontend
     "https://www.dex.net.in",     # Production frontend (www)
@@ -193,21 +218,44 @@ app.add_middleware(
     expose_headers=["*"],  # Expose all headers in response
 )
 
+def _rate_limit_key(request: Request) -> str:
+    """Per-user bucket when authenticated; avoids one proxy IP starving the dashboard."""
+    user = (request.headers.get("x-user-id") or "").strip()
+    if user:
+        return f"user:{user}"
+    host = request.client.host if request.client else "unknown"
+    return f"ip:{host}"
+
+
+def _is_rate_limit_exempt(request: Request) -> bool:
+    path = request.url.path
+    api_prefix = settings.API_V1_STR.rstrip("/")
+    static_exempt = {
+        "/health",
+        "/robots.txt",
+        f"{api_prefix}/integrations/webhooks/github",
+    }
+    if path in static_exempt:
+        return True
+    # Read-heavy graph + status polling (cached server-side)
+    if request.method == "GET" and (
+        path.startswith(f"{api_prefix}/graph/")
+        or path == f"{api_prefix}/ingest/status"
+    ):
+        return True
+    return False
+
+
 # --- Request Interceptor (Performance & Auditing) ---
 @app.middleware("http")
 async def request_interceptor(request: Request, call_next):
     request_id = str(uuid.uuid4())
     start_time = time.perf_counter()
 
-    _rate_exempt = {
-        "/health",
-        "/robots.txt",
-        f"{settings.API_V1_STR.rstrip('/')}/integrations/webhooks/github",
-    }
     if (
         request.method != "OPTIONS"
-        and request.url.path not in _rate_exempt
-        and not general_limiter.allow(request.client.host if request.client else "unknown")
+        and not _is_rate_limit_exempt(request)
+        and not general_limiter.allow(_rate_limit_key(request))
     ):
         return JSONResponse(
             status_code=429,

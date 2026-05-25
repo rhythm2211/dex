@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { Terminal, ArrowRight, Github, Lock, Mail, User, X, CheckCircle } from "lucide-react";
+import { messageFromApiErrorBody, publicApiUrl } from "@/lib/api";
 
 // --- ICONS ---
 const GoogleIcon = () => (
@@ -97,14 +98,12 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      
       // Create AbortController for timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
       try {
-        const response = await fetch(`${apiUrl}/api/v1/users/signup`, {
+        const response = await fetch(publicApiUrl("users/signup"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -120,8 +119,8 @@ export default function SignupPage() {
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ detail: "Signup failed" }));
-          const errorMessage = errorData.detail || "Signup failed";
+          const errorData = await response.json().catch(() => ({}));
+          const errorMessage = messageFromApiErrorBody(errorData, "Signup failed");
           
           // Check if user already exists
           if (errorMessage.toLowerCase().includes("already exists") || response.status === 400) {

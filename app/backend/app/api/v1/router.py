@@ -7,7 +7,7 @@ import threading
 from datetime import datetime, timedelta
 from collections import Counter
 from typing import Dict, Any, Optional, List
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends, Request
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends, Request, Header
 from pydantic import BaseModel, field_validator
 from backend.app.core.dependencies import get_user_id, get_user_id_optional
 from backend.app.utils.cache import graph_cache, health_cache, team_cache
@@ -207,6 +207,12 @@ except Exception as e:
     logger.warning(f"team_whatif router import failed (non-fatal): {e}")
     team_whatif_router = None
 
+try:
+    from backend.app.api.v1.endpoints.graph_bridge import router as graph_bridge_router
+except Exception as e:
+    logger.warning(f"graph_bridge router import failed (non-fatal): {e}")
+    graph_bridge_router = None
+
 if github_webhooks_router is not None:
     api_router.include_router(github_webhooks_router, prefix="/integrations", tags=["integrations"])
 if github_integrations_router is not None:
@@ -223,6 +229,17 @@ if digest_router is not None:
     api_router.include_router(digest_router, prefix="/digest", tags=["digest"])
 if team_whatif_router is not None:
     api_router.include_router(team_whatif_router, prefix="/insights", tags=["insights"])
+if graph_bridge_router is not None:
+    api_router.include_router(graph_bridge_router, prefix="/graph/bridge", tags=["graph-bridge"])
+
+try:
+    from backend.app.api.v1.endpoints.symbol_navigation import router as symbol_nav_router
+except Exception as e:
+    logger.warning(f"symbol_navigation router import failed (non-fatal): {e}")
+    symbol_nav_router = None
+
+if symbol_nav_router is not None:
+    api_router.include_router(symbol_nav_router, prefix="/graph", tags=["graph"])
 
 # --- Per-User Services (Multi-User Support with Isolation) ---
 # Store services per user_id for complete isolation
@@ -261,18 +278,16 @@ def get_ingestion_service(user_id: str):
     return _ingestion_services[user_id]
 
 def get_ingestion_status_lightweight(user_id: Optional[str] = None):
-    """Get ingestion status without initializing the full service."""
+    """Get ingestion status from in-memory cache (never blocks on ingest work)."""
     global _ingestion_services, _ingestion_statuses
     uid = (user_id or "").strip() or None
-    if uid and uid in _ingestion_services:
-        # Service is initialized, use it
-        return _ingestion_services[uid].get_current_status()
-    elif uid and uid in _ingestion_statuses:
-        # Service not initialized, return cached status
+    if uid and uid in _ingestion_statuses:
         return _ingestion_statuses[uid]
-    else:
-        # Default status
-        return {"state": "idle", "progress": 0, "step": "Ready"}
+    if uid and uid in _ingestion_services:
+        status = _ingestion_services[uid].get_current_status()
+        _ingestion_statuses[uid] = status
+        return status
+    return {"state": "idle", "progress": 0, "step": "Ready", "detail": "", "eta_seconds": None}
 
 def get_rag_service(user_id: str):
     """Get or create RAGService for a specific user."""
@@ -825,8 +840,7 @@ async def get_active_zones(days: int = 30, user_id: Optional[str] = Depends(get_
 
 @api_router.post("/ingest")
 async def trigger_ingestion(
-    request: IngestRequest, 
-    background_tasks: BackgroundTasks,
+    request: IngestRequest,
     raw_request: Request,
     user_id: str = Depends(get_user_id)
 ):
@@ -875,10 +889,21 @@ async def trigger_ingestion(
 
         # Mark this user's ingestion as active
         _active_ingestions[user_id] = repo_path
-        
-        # Start background task - this should return immediately
-        # Service initialization will happen in the background task, not here
-        background_tasks.add_task(run_ingestion_sequence, repo_path, user_id)
+        _ingestion_statuses[user_id] = {
+            "state": "running",
+            "progress": 0,
+            "step": "Queued…",
+            "detail": "",
+            "eta_seconds": None,
+        }
+
+        # Dedicated thread — BackgroundTasks blocks the single uvicorn worker during sync ingest
+        threading.Thread(
+            target=run_ingestion_sequence,
+            args=(repo_path, user_id),
+            daemon=True,
+            name=f"dex-ingest-{user_id[:24]}",
+        ).start()
         
         logger.info(f"Ingestion request accepted for user {user_id}: {repo_path}")
         return {
@@ -900,13 +925,16 @@ async def trigger_ingestion(
         raise HTTPException(status_code=500, detail=f"Failed to start ingestion: {error_detail}")
 
 @api_router.get("/ingest/status")
-def get_ingestion_status(user_id: str = Depends(get_user_id)):
+def get_ingestion_status(
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    user_id: str = Depends(get_user_id),
+):
     """
     Get ingestion status for the authenticated user.
-    Returns user-specific status (completely isolated per user).
+    Reads from in-memory cache only — safe to poll during heavy ingest.
     """
-    # Use lightweight status check to avoid blocking on service initialization
-    return get_ingestion_status_lightweight(user_id)
+    uid = (x_user_id or user_id or "").strip()
+    return get_ingestion_status_lightweight(uid)
 
 @api_router.post("/ingest/cancel")
 def cancel_ingestion(user_id: str = Depends(get_user_id)):
@@ -961,7 +989,7 @@ def reset_ingestion_status(user_id: str = Depends(get_user_id)):
         raise HTTPException(status_code=500, detail=f"Failed to reset ingestion status: {str(e)}")
 
 @api_router.post("/query/hybrid")
-def execute_hybrid_query(
+async def execute_hybrid_query(
     request: HybridRAGRequest,
     user_id: str = Depends(get_user_id)
 ):
@@ -973,7 +1001,7 @@ def execute_hybrid_query(
         )
     try:
         rag_service = get_rag_service(user_id)
-        response = rag_service.answer_query(request.query)
+        response = await asyncio.to_thread(rag_service.answer_query, request.query)
         ans = response.get("answer", "") if isinstance(response, dict) else str(response)
         threading.Thread(
             target=_save_query_history,
@@ -983,6 +1011,17 @@ def execute_hybrid_query(
         return response
     except Exception as e:
         logger.error(f"Query failed for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/benchmarks/retrieval")
+def run_retrieval_benchmark_endpoint(user_id: str = Depends(get_user_id)):
+    """Run internal retrieval benchmark (Recall@K, MRR, latency). Requires indexed repo."""
+    from tests.benchmarks.retrieval_benchmark import run_retrieval_benchmark
+    try:
+        return run_retrieval_benchmark(user_id)
+    except Exception as e:
+        logger.error(f"Benchmark failed for {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

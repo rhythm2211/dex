@@ -70,6 +70,10 @@ coverage.xml
 *.cover
 .hypothesis/
 
+# Claude Code (local only)
+CLAUDE.local.md
+.claude/settings.local.json
+
 # IDE / editor
 .vscode/
 .idea/

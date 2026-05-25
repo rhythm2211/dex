@@ -32,9 +32,15 @@ sentence-transformers
 tokenizers==0.20.3
 
 # --- Data Ingestion & Parsing ---
+chardet  # encoding detection for TextLoader autodetect_encoding
 gitpython
-tree-sitter
-tree-sitter-languages
+tree-sitter>=0.25.0
+tree-sitter-javascript
+tree-sitter-typescript
+tree-sitter-java
+tree-sitter-go
+tree-sitter-rust
+tree-sitter-ruby
 
 # --- Utilities ---
 python-dotenv

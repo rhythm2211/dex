@@ -13,6 +13,22 @@ export interface SQLResponse {
 export interface RAGResponse {
   answer: string;
   context_used: string;
+  intent?: string;
+  citation_verified?: boolean;
+}
+
+export interface SymbolLocation {
+  node_id: string;
+  name: string;
+  file_path: string;
+  line?: number | null;
+  scip_symbol_id?: string | null;
+}
+
+export interface SymbolReferencesResponse {
+  symbol: string;
+  definition?: SymbolLocation | null;
+  references: SymbolLocation[];
 }
 
 // Strict typing for the visualization engine
@@ -48,6 +64,88 @@ export interface GraphData {
   links: GraphLink[];
 }
 
+/** Teaching-graph payloads from POST /graph/bridge/subgraph (Focused View). */
+export interface BridgeGraphNode {
+  id: string;
+  name: string;
+  type: string;
+  layer?: string;
+  layerName?: string;
+  color?: string;
+  summary?: string;
+  complexity?: 'simple' | 'moderate' | 'complex' | string;
+  tags?: string[];
+  filePath?: string;
+  lineRange?: [number, number];
+  val?: number;
+  dex?: {
+    top_owner?: string | null;
+    bus_risk_score?: number | null;
+    last_author?: string | null;
+    api_route?: string | null;
+  };
+}
+
+export interface BridgeGraphEdge {
+  source: string;
+  target: string;
+  type?: string;
+  direction?: string;
+  weight?: number;
+  description?: string;
+}
+
+export interface SubgraphRequest {
+  query: string;
+  depth?: number;
+  max_nodes?: number;
+  seed_k?: number;
+  layer?: string | null;
+  include_functions?: boolean;
+}
+
+export interface SubgraphMatchedSeed {
+  nodeId: string;
+  score: number;
+}
+
+export interface SubgraphLayerRef {
+  id: string;
+  name: string;
+  description?: string;
+  color: string;
+  nodeIds: string[];
+}
+
+export interface SubgraphResponse {
+  version: string;
+  view: string;
+  query: string;
+  layer?: string | null;
+  project: {
+    name: string;
+    description: string;
+    languages?: string[];
+    frameworks?: string[];
+    analyzedAt?: string;
+    gitCommitHash?: string;
+  };
+  nodes: BridgeGraphNode[];
+  edges: BridgeGraphEdge[];
+  layers: SubgraphLayerRef[];
+  matched: SubgraphMatchedSeed[];
+  meta: {
+    depth: number;
+    maxNodes: number;
+    truncated?: boolean;
+    nodeCount?: number;
+    edgeCount?: number;
+    elapsedMs?: number;
+    seedSource?: string;
+    reason?: string;
+  };
+}
+
 export interface IngestResponse {
   status: string;
   message: string;
@@ -56,7 +154,9 @@ export interface IngestResponse {
 export interface IngestStatusResponse {
   state: 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
   progress: number; // 0 to 100
-  step: string;     // Description of current step
+  step: string;
+  detail?: string;
+  eta_seconds?: number | null;
 }
 
 export interface CommitNode {
@@ -167,8 +267,11 @@ export interface LeadershipInsights {
 }
 
 /** Backend HTTPException handler uses `{ error: detail }` (not FastAPI's `detail` key). */
-function messageFromAxiosErrorData(data: unknown): string | undefined {
-  if (data == null || typeof data !== "object") return undefined;
+export function messageFromApiErrorBody(
+  data: unknown,
+  fallback = "Request failed"
+): string {
+  if (data == null || typeof data !== "object") return fallback;
   const rec = data as Record<string, unknown>;
   const err = rec.error;
   if (typeof err === "string" && err.trim()) return err.trim();
@@ -176,29 +279,72 @@ function messageFromAxiosErrorData(data: unknown): string | undefined {
   const det = rec.detail;
   if (typeof det === "string" && det.trim()) return det.trim();
   if (Array.isArray(det)) return JSON.stringify(det);
-  return undefined;
+  return fallback;
+}
+
+function messageFromAxiosErrorData(data: unknown): string | undefined {
+  const msg = messageFromApiErrorBody(data, "");
+  return msg || undefined;
+}
+
+/** Base URL for raw `fetch()` in the browser (matches DexApi axios base). */
+export function getPublicApiV1Base(): string {
+  return resolveDexApiTargets(true).clientBaseURL;
+}
+
+/** Build a full API path, e.g. `publicApiUrl("users/signup")`. */
+export function publicApiUrl(path: string): string {
+  const base = getPublicApiV1Base();
+  const normalized = path.replace(/^\//, "");
+  return `${base}/${normalized}`;
+}
+
+function resolveDexApiTargets(isBrowser: boolean): {
+  clientBaseURL: string;
+  healthURL: string;
+  displayOrigin: string;
+} {
+  const defaultDirect = "http://127.0.0.1:8000";
+  const raw = (
+    isBrowser
+      ? process.env.NEXT_PUBLIC_API_URL
+      : process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL
+  )?.replace(/\/$/, "") || defaultDirect;
+
+  // Same-origin proxy: /api/backend/* → FastAPI /api/v1/* (see app/api/backend/[...path]/route.ts)
+  if (raw.startsWith("/")) {
+    return {
+      clientBaseURL: raw,
+      healthURL: `${raw}/health`,
+      displayOrigin: raw,
+    };
+  }
+
+  return {
+    clientBaseURL: `${raw}/api/v1`,
+    healthURL: `${raw}/health`,
+    displayOrigin: raw,
+  };
 }
 
 // --- The Singleton Client ---
 class DexClient {
   private client: AxiosInstance;
   private baseURL: string;
+  private healthURL: string;
   private getUserId: (() => Promise<string | null>) | null = null;
 
   constructor() {
-    // --- DOCKER / LOCAL NETWORKING ---
-    const defaultLocal = 'http://localhost:8000';
-    if (typeof window === 'undefined') {
-      this.baseURL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || defaultLocal;
-    } else {
-      this.baseURL = process.env.NEXT_PUBLIC_API_URL || defaultLocal;
-    }
+    const { clientBaseURL, healthURL, displayOrigin } = resolveDexApiTargets(
+      typeof window !== "undefined"
+    );
+    this.baseURL = displayOrigin;
+    this.healthURL = healthURL;
 
-    // Set up Axios with the determined URL
     this.client = axios.create({
-      baseURL: `${this.baseURL}/api/v1`, // Ensure your Python backend uses this prefix
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 60000, 
+      baseURL: clientBaseURL,
+      headers: { "Content-Type": "application/json" },
+      timeout: 60000,
     });
 
     // Add request interceptor to include X-User-ID header from NextAuth session
@@ -258,11 +404,12 @@ class DexClient {
   // 1. Health Check (Note: Hits root /health, not /api/v1/health)
   public async checkHealth(): Promise<boolean> {
     try {
-      const res = await axios.get(`${this.baseURL}/health`, {
-        timeout: 5000,
-        headers: { 'Content-Type': 'application/json' }
+      const res = await axios.get(this.healthURL, {
+        timeout: 8000,
+        headers: { "Content-Type": "application/json" },
+        validateStatus: (s) => s < 600,
       });
-      return res.status === 200;
+      return res.status === 200 || res.status === 503;
     } catch (error) {
       console.warn("Health check failed:", error);
       return false;
@@ -272,11 +419,22 @@ class DexClient {
   // 2. Code Architect (Hybrid RAG) Mode
   public async queryRAG(query: string): Promise<RAGResponse> {
     try {
-      const res: AxiosResponse<RAGResponse> = await this.client.post('/query/hybrid', { query });
+      const res: AxiosResponse<RAGResponse> = await this.client.post(
+        '/query/hybrid',
+        { query },
+        { timeout: 180000 }, // retrieval + LLM can exceed 60s on large repos
+      );
       return res.data;
     } catch (error: any) {
       console.error("RAG Engine Failure:", error?.message);
-      throw new Error(error.response?.data?.detail || "AI Analysis Failed");
+      if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
+        throw new Error(
+          'Analysis timed out. The backend may still be ingesting — wait for indexing to finish, then retry.',
+        );
+      }
+      const detail = error.response?.data?.detail;
+      const msg = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d: any) => d.msg || d).join(', ') : null;
+      throw new Error(msg || error?.message || 'AI Analysis Failed');
     }
   }
 
@@ -331,13 +489,17 @@ class DexClient {
   }
 
   // 4. Get Ingestion Progress
-  public async getIngestStatus(): Promise<IngestStatusResponse> {
+  public async getIngestStatus(): Promise<IngestStatusResponse | null> {
     try {
-      const res: AxiosResponse<IngestStatusResponse> = await this.client.get('/ingest/status');
+      const res: AxiosResponse<IngestStatusResponse> = await this.client.get('/ingest/status', {
+        timeout: 15000,
+      });
       return res.data;
     } catch (error: any) {
-      // Don't spam console if just polling
-      return { state: 'error', progress: 0, step: "Failed to fetch status" };
+      if (this.isAbortError(error)) return null;
+      // During heavy ingest the backend may be slow — don't treat as fatal error
+      console.debug('Ingest status poll skipped:', error?.message);
+      return null;
     }
   }
 
@@ -366,7 +528,7 @@ class DexClient {
     try {
       // Log the base URL being used for debugging
       console.log(`[Graph] Using API URL: ${this.baseURL}`);
-      console.log(`[Graph] Full endpoint: ${this.baseURL}/api/v1/graph/structure`);
+      console.log(`[Graph] Full endpoint: ${this.client.defaults.baseURL}/graph/structure`);
       
       // Graph queries can take longer, especially for large codebases
       const res: AxiosResponse<GraphData> = await this.client.get('/graph/structure', {
@@ -387,7 +549,7 @@ class DexClient {
         status: error?.response?.status,
         statusText: error?.response?.statusText,
         baseURL: this.baseURL,
-        endpoint: `${this.baseURL}/api/v1/graph/structure`,
+        endpoint: `${this.client.defaults.baseURL}/graph/structure`,
         isNetworkError: error?.code === 'ERR_NETWORK' || error?.code === 'ECONNREFUSED',
         isTimeout: error?.code === 'ECONNABORTED' || error?.message?.includes('timeout'),
       });
@@ -444,6 +606,42 @@ class DexClient {
     } catch (error: any) {
       console.error("Graph Expansion Failure:", error?.message);
       return { nodes: [], links: [] };
+    }
+  }
+
+  /** Go-to-definition for a symbol (SCIP/graph-backed). */
+  public async getSymbolDefinition(symbolId: string): Promise<SymbolLocation> {
+    const res = await this.client.get<SymbolLocation>(`/graph/symbol/${encodeURIComponent(symbolId)}/definition`);
+    return res.data;
+  }
+
+  /** Find references to a symbol. */
+  public async getSymbolReferences(symbolId: string, limit = 50): Promise<SymbolReferencesResponse> {
+    const res = await this.client.get<SymbolReferencesResponse>(
+      `/graph/symbol/${encodeURIComponent(symbolId)}/references`,
+      { params: { limit } }
+    );
+    return res.data;
+  }
+
+  /** Focused View — NL query → teaching subgraph (vector seeds + Neo4j expansion). */
+  public async postSubgraph(body: SubgraphRequest): Promise<SubgraphResponse> {
+    try {
+      const res = await this.client.post<SubgraphResponse>('/graph/bridge/subgraph', {
+        query: body.query,
+        depth: body.depth ?? 2,
+        max_nodes: body.max_nodes ?? 120,
+        seed_k: body.seed_k ?? 15,
+        layer: body.layer ?? null,
+        include_functions: body.include_functions ?? true,
+      }, { timeout: 60000 });
+      return res.data;
+    } catch (error: any) {
+      const detail = messageFromAxiosErrorData(error?.response?.data);
+      if (error?.response?.status === 429) {
+        throw new Error(detail || 'Too many subgraph searches. Wait a moment and try again.');
+      }
+      throw new Error(detail || 'Failed to build focused subgraph');
     }
   }
 

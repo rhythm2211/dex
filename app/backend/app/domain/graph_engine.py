@@ -32,13 +32,8 @@ from backend.app.utils.connection_utils import (
 
 logger = logging.getLogger("dex-core")
 
-# Try to import tree-sitter for multi-language parsing
-try:
-    from tree_sitter import Language as TreeSitterLanguage, Parser
-    TREE_SITTER_AVAILABLE = True
-except ImportError:
-    TREE_SITTER_AVAILABLE = False
-    logger.debug("tree-sitter not available, using Python AST and regex fallbacks")
+from backend.app.domain.tree_sitter_extractor import extract_structure as ts_extract_structure
+from backend.app.domain.manifest_parser import is_manifest_file, parse_manifest
 
 
 class PathResolver:
@@ -186,6 +181,8 @@ class CodeStructureVisitor(ast.NodeVisitor):
         self.edges = []
         self.scope_stack = [filename]
         self.path_resolver = path_resolver  # PathResolver instance
+        self.defined_functions: set = set()   # flat name set for CALLS lookup (pass 1)
+        self.defined_function_ids: set = set()  # full IDs added incrementally (pass 2)
 
     def _resolve_import_path(self, module_name, level=0):
         try:
@@ -249,6 +246,15 @@ class CodeStructureVisitor(ast.NodeVisitor):
             return self._get_attr_name(node.value) + [node.attr]
         return []
 
+    @staticmethod
+    def _str_literal(node) -> Optional[str]:
+        """Extract string from ast.Str (3.7) or ast.Constant (3.8+)."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Str):
+            return node.s
+        return None
+
     def visit_ClassDef(self, node):
         full_name = f"{self.filename}::{node.name}"
         # [NEW] Capture Line Numbers for Blame Analysis
@@ -276,27 +282,33 @@ class CodeStructureVisitor(ast.NodeVisitor):
         full_name = f"{self.scope_stack[-1]}::{node.name}"
         # [NEW] Capture Line Numbers
         node_data = {
-            "id": full_name, 
-            "type": "function", 
+            "id": full_name,
+            "type": "function",
             "name": node.name,
             "start_line": node.lineno,
             "end_line": getattr(node, 'end_lineno', node.lineno)
         }
-        
+
         # [NEW] Scan for sensitive data
         sensitivity_tags = self._scan_for_sensitivity(node, full_name)
         if sensitivity_tags:
             node_data["sensitivity"] = sensitivity_tags
             node_data["risk_multiplier"] = 3.0  # Hard multiplier for sensitive code
-        
+
         # [NEW] Detect API routes (common patterns)
         func_name_lower = node.name.lower()
         if any(keyword in func_name_lower for keyword in ["route", "endpoint", "api", "handler", "controller"]):
             node_data["api_route"] = True
-        
+
         self.nodes.append(node_data)
         self.edges.append({"source": self.scope_stack[-1], "target": full_name, "relation": "CONTAINS"})
+        self.defined_function_ids.add(full_name)
+        # Push scope so nested calls and functions are attributed to this function
+        self.scope_stack.append(full_name)
         self.generic_visit(node)
+        self.scope_stack.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
 
     def visit_Import(self, node):
         for alias in node.names:
@@ -332,40 +344,83 @@ class CodeStructureVisitor(ast.NodeVisitor):
         )
     
     def visit_Call(self, node):
-        """Detect dynamic imports: importlib.import_module(), __import__(), require(variable)"""
-        # Check for importlib.import_module() or importlib.__import__()
+        """Detect dynamic imports and emit intra-file CALLS edges."""
+        # Dynamic imports: importlib.import_module() / importlib.__import__()
         if isinstance(node.func, ast.Attribute):
             if isinstance(node.func.value, ast.Name) and node.func.value.id == "importlib":
                 if node.func.attr in ["import_module", "__import__"]:
-                    # This is a dynamic import - create MAYBE_DEPENDS edge
-                    if node.args and isinstance(node.args[0], ast.Str):
-                        target_module = node.args[0].s
-                        target_file = self._resolve_import_path(target_module)
-                        if target_file:
-                            self.edges.append({
-                                "source": self.filename,
-                                "target": target_file,
-                                "relation": "MAYBE_DEPENDS"
-                            })
-        
-        # Check for __import__() builtin
+                    if node.args:
+                        target_module = self._str_literal(node.args[0])
+                        if target_module:
+                            target_file = self._resolve_import_path(target_module)
+                            if target_file:
+                                self.edges.append({
+                                    "source": self.filename,
+                                    "target": target_file,
+                                    "relation": "MAYBE_DEPENDS"
+                                })
+
+        # __import__() builtin
         if isinstance(node.func, ast.Name) and node.func.id == "__import__":
-            if node.args and isinstance(node.args[0], ast.Str):
-                target_module = node.args[0].s
-                target_file = self._resolve_import_path(target_module)
-                if target_file:
+            if node.args:
+                target_module = self._str_literal(node.args[0])
+                if target_module:
+                    target_file = self._resolve_import_path(target_module)
+                    if target_file:
+                        self.edges.append({
+                            "source": self.filename,
+                            "target": target_file,
+                            "relation": "MAYBE_DEPENDS"
+                        })
+
+        # CALLS graph: emit edges for intra-file function calls when inside a function body
+        caller = self.scope_stack[-1]
+        if caller in self.defined_function_ids:
+            callee_name: Optional[str] = None
+            is_self_call = False
+
+            if isinstance(node.func, ast.Name):
+                callee_name = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                if isinstance(node.func.value, ast.Name) and node.func.value.id == "self":
+                    callee_name = node.func.attr
+                    is_self_call = True
+
+            if callee_name and callee_name in self.defined_functions:
+                callee_full: Optional[str] = None
+                caller_parts = caller.split("::")
+
+                # self.method() → look in same class scope
+                if is_self_call and len(caller_parts) >= 3:
+                    class_scope = "::".join(caller_parts[:-1])
+                    candidate = f"{class_scope}::{callee_name}"
+                    if candidate in self.defined_function_ids:
+                        callee_full = candidate
+
+                # fallback: file-level function
+                if callee_full is None:
+                    candidate = f"{self.filename}::{callee_name}"
+                    if candidate in self.defined_function_ids:
+                        callee_full = candidate
+
+                if callee_full and callee_full != caller:
                     self.edges.append({
-                        "source": self.filename,
-                        "target": target_file,
-                        "relation": "MAYBE_DEPENDS"
+                        "source": caller,
+                        "target": callee_full,
+                        "relation": "CALLS",
                     })
-        
+
         self.generic_visit(node)
 
     def process(self, source_code):
-        """Process source code - currently only supports Python AST parsing."""
+        """Two-pass Python AST extraction: collect function names, then full traversal."""
         try:
             tree = ast.parse(source_code)
+            # Pass 1: collect all defined function names for CALLS resolution
+            for n in ast.walk(tree):
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    self.defined_functions.add(n.name)
+            # Pass 2: structural traversal (emits nodes, edges, and CALLS)
             self.visit(tree)
         except SyntaxError:
             pass
@@ -903,7 +958,7 @@ class GraphEngine:
         """Detect programming language from file extension."""
         ext = os.path.splitext(file_path)[1].lower()
         language_map = {
-            '.py': 'python', '.js': 'javascript', '.jsx': 'javascript', '.ts': 'typescript', '.tsx': 'typescript',
+            '.py': 'python', '.js': 'javascript', '.jsx': 'jsx', '.ts': 'typescript', '.tsx': 'tsx',
             '.java': 'java', '.kt': 'kotlin', '.scala': 'scala',
             '.c': 'c', '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.h': 'c', '.hpp': 'cpp',
             '.cs': 'csharp', '.go': 'go', '.rs': 'rust', '.rb': 'ruby', '.php': 'php',
@@ -921,7 +976,13 @@ class GraphEngine:
         nodes = []
         edges = []
         lines = file_content.split('\n')
-        
+
+        # jsx/tsx share patterns with javascript/typescript when tree-sitter unavailable
+        if language == "jsx":
+            language = "javascript"
+        elif language == "tsx":
+            language = "typescript"
+
         # Common patterns for different languages
         patterns = {
             'javascript': {
@@ -1043,7 +1104,7 @@ class GraphEngine:
         # Fallback to simple resolution
         if language == 'python':
             return import_path.replace('.', '/') + '.py'
-        elif language in ['javascript', 'typescript']:
+        elif language in ('javascript', 'jsx', 'typescript', 'tsx'):
             # Handle relative imports
             if import_path.startswith('.'):
                 base_dir = os.path.dirname(current_file)
@@ -1056,19 +1117,7 @@ class GraphEngine:
 
     def _is_infrastructure_file(self, file_path: str) -> bool:
         """Check if file is an infrastructure/config file."""
-        filename = os.path.basename(file_path).lower()
-        infrastructure_files = [
-            "dockerfile", "docker-compose.yml", "docker-compose.yaml",
-            "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-            "requirements.txt", "requirements-dev.txt", "pyproject.toml", "setup.py",
-            "pom.xml", "build.gradle", "build.gradle.kts",
-            "go.mod", "go.sum",
-            "terraform.tf", "terraform.tfvars", ".terraform.lock.hcl",
-            "kubernetes.yaml", "k8s.yaml", "deployment.yaml",
-            "compose.yml", "compose.yaml",
-            ".env", ".env.example", ".env.local"
-        ]
-        return filename in infrastructure_files or any(filename.endswith(ext) for ext in ['.tf', '.tfvars'])
+        return is_manifest_file(file_path)
 
     def extract_and_build(self, file_content: str, file_path: str, repo_root: str = "", git_metadata: dict = None, blame_map: dict = None, return_data: bool = False):
         """
@@ -1100,25 +1149,39 @@ class GraphEngine:
             file_node["val"] = 50  # Massive visual weight
             file_node["infrastructure"] = True
 
-        # 2. Parse structure based on language
+        # 2. Parse structure based on language (skip code parsers for pure manifests)
         language = self._detect_language(file_path)
         nodes = []
         edges = []
-        
-        if language == 'python':
-            # Use Python AST parser with PathResolver
-            visitor = CodeStructureVisitor(file_path, repo_root, self.path_resolver)
-            nodes, edges = visitor.process(file_content)
-        elif language != 'unknown':
-            # Use regex-based extraction for other languages
-            try:
-                nodes, edges = self._extract_structure_regex(file_content, file_path, language)
-                logger.debug(f"Regex extraction for {language}: {len(nodes)} nodes, {len(edges)} edges")
-            except Exception as e:
-                logger.debug(f"Regex extraction failed for {file_path}: {e}")
-        else:
-            # Unknown language - just create file node
-            logger.debug(f"Unknown language for {file_path}, skipping structure extraction")
+
+        if not is_manifest_file(file_path):
+            if language == 'python':
+                # Use Python AST parser with PathResolver
+                visitor = CodeStructureVisitor(file_path, repo_root, self.path_resolver)
+                nodes, edges = visitor.process(file_content)
+            elif language != 'unknown':
+                # Tree-sitter AST (precise) -> regex fallback (shallow)
+                def _resolve(import_path: str) -> Optional[str]:
+                    return self._resolve_import_path(import_path, file_path, language)
+
+                ts_nodes, ts_edges, used_ts = ts_extract_structure(
+                    file_content, file_path, language, resolve_import=_resolve
+                )
+                if used_ts and (ts_nodes or ts_edges):
+                    nodes, edges = ts_nodes, ts_edges
+                else:
+                    try:
+                        nodes, edges = self._extract_structure_regex(file_content, file_path, language)
+                        logger.debug(
+                            "Regex fallback for %s: %d nodes, %d edges",
+                            language,
+                            len(nodes),
+                            len(edges),
+                        )
+                    except Exception as e:
+                        logger.debug(f"Regex extraction failed for {file_path}: {e}")
+            else:
+                logger.debug(f"Unknown language for {file_path}, skipping structure extraction")
         
         if len(nodes) > 0 or len(edges) > 0:
             logger.debug(f"Neo4j: Extracted {len(nodes)} nodes, {len(edges)} edges from {os.path.basename(file_path)}")
@@ -1162,9 +1225,14 @@ class GraphEngine:
             
             processed_nodes.append(node_data)
 
+        # Parse manifest/config files for infrastructure graph nodes/edges
+        manifest_nodes, manifest_edges = parse_manifest(
+            file_path, file_content, self.repo_root or repo_root
+        )
+
         # If return_data is True, return without inserting
         if return_data:
-            return processed_nodes, edges
+            return processed_nodes + manifest_nodes, edges + manifest_edges
 
         # 4. Insert to Neo4j (original behavior)
         self.upsert_node(file_node)
@@ -1172,6 +1240,10 @@ class GraphEngine:
             self.upsert_node(node)
         for edge in edges:
             self.upsert_edge(edge['source'], edge['target'], edge['relation'])
+        if manifest_nodes:
+            self.batch_upsert_nodes(manifest_nodes)
+        if manifest_edges:
+            self.batch_upsert_edges(manifest_edges)
 
     def _verify_connection(self):
         """Verify Neo4j connection is working."""
@@ -1302,6 +1374,234 @@ class GraphEngine:
                     "target": c["id"],
                     "relation": record["r"].type
                 })
+
+        return {"nodes": list(nodes_map.values()), "links": links}
+
+    _EXPAND_REL_TYPES = ("DEPENDS_ON", "IMPORTS", "CALLS", "CONTAINS", "DEFINES")
+
+    @staticmethod
+    def path_id_variants(node_id: str) -> List[str]:
+        """Path separator variants for matching Neo4j CodeNode ids across platforms."""
+        if not node_id:
+            return []
+        normalized = node_id.replace("\\", "/")
+        windows = node_id.replace("/", "\\")
+        return list(dict.fromkeys([node_id, normalized, windows]))
+
+    def resolve_node_ids(self, candidate_ids: List[str]) -> List[str]:
+        """
+        Map seed candidates to canonical Neo4j CodeNode.id values.
+        Vector metadata often uses forward slashes while Windows ingestion stores backslashes.
+        """
+        if not self.driver or not candidate_ids:
+            return []
+
+        variants: List[str] = []
+        for cid in candidate_ids:
+            if cid:
+                variants.extend(self.path_id_variants(str(cid)))
+        variants = list(dict.fromkeys(variants))[:90]
+        if not variants:
+            return []
+
+        resolved: List[str] = []
+        seen: set = set()
+        query = """
+        UNWIND $variants AS vid
+        MATCH (n:CodeNode {user_id: $user_id})
+        WHERE n.id = vid
+        RETURN DISTINCT n.id AS id
+        """
+        try:
+            with self.driver.session(database=self.database) as session:
+                for record in session.run(query, user_id=self.user_id, variants=variants):
+                    nid = record.get("id")
+                    if nid and nid not in seen:
+                        seen.add(nid)
+                        resolved.append(nid)
+        except Exception as e:
+            logger.error(f"resolve_node_ids failed: {e}")
+        return resolved
+
+    def search_nodes_by_tokens(
+        self,
+        tokens: List[str],
+        *,
+        limit: int = 30,
+        layer_hint: Optional[str] = None,
+    ) -> List[Dict]:
+        """Keyword search over CodeNode id/name for subgraph seed fallback."""
+        if not self.driver:
+            return []
+
+        from backend.app.domain.graph_bridge import infer_layer
+
+        if not tokens and layer_hint:
+            query = """
+            MATCH (n:CodeNode {user_id: $user_id})
+            WHERE toLower(n.type) IN ['file', 'module', 'folder']
+            RETURN n
+            LIMIT $limit
+            """
+            params = {"user_id": self.user_id, "limit": limit * 3}
+        elif tokens:
+            query = """
+            MATCH (n:CodeNode {user_id: $user_id})
+            WHERE ANY(tok IN $tokens WHERE
+                toLower(n.id) CONTAINS tok OR toLower(coalesce(n.name, '')) CONTAINS tok)
+            RETURN n
+            LIMIT $limit
+            """
+            params = {"user_id": self.user_id, "tokens": tokens, "limit": limit * 3}
+        else:
+            return []
+
+        out: List[Dict] = []
+        try:
+            with self.driver.session(database=self.database) as session:
+                for record in session.run(query, **params):
+                    n = dict(record["n"])
+                    if layer_hint and infer_layer(n) != layer_hint:
+                        continue
+                    out.append(n)
+                    if len(out) >= limit:
+                        break
+        except Exception as e:
+            logger.error(f"search_nodes_by_tokens failed: {e}")
+        return out
+
+    def expand_subgraph(
+        self,
+        seed_ids: List[str],
+        *,
+        depth: int = 2,
+        max_nodes: int = 120,
+        include_functions: bool = False,
+    ) -> Dict:
+        """
+        BFS expansion from seed node ids within Neo4j (user-scoped).
+        Returns raw node dicts and link dicts compatible with graph_bridge formatters.
+        """
+        if not self.driver or not seed_ids:
+            return {"nodes": [], "links": []}
+
+        depth = max(1, min(4, int(depth)))
+        max_nodes = max(10, min(300, int(max_nodes)))
+        seeds = self.resolve_node_ids(list(dict.fromkeys(s for s in seed_ids if s)))[:30]
+        if not seeds:
+            return {"nodes": [], "links": []}
+
+        rel_types_upper = list(self._EXPAND_REL_TYPES)
+        allowed_types = {"file", "folder", "module", "class"}
+        if include_functions:
+            allowed_types.add("function")
+
+        visited: set = set()
+        frontier = list(seeds)
+        nodes_map: Dict[str, Dict] = {}
+        links: List[Dict] = []
+        edge_seen: set = set()
+
+        try:
+            for _ in range(depth + 1):
+                if not frontier or len(visited) >= max_nodes:
+                    break
+                batch = []
+                for nid in frontier:
+                    if nid not in visited and len(visited) < max_nodes:
+                        visited.add(nid)
+                        batch.append(nid)
+                if not batch:
+                    break
+
+                next_frontier: List[str] = []
+                query = """
+                UNWIND $ids AS sid
+                MATCH (n:CodeNode {user_id: $user_id, id: sid})
+                OPTIONAL MATCH (n)-[r]-(m:CodeNode {user_id: $user_id})
+                WHERE r IS NULL OR type(r) IN $rel_types
+                RETURN n, r, m
+                LIMIT 8000
+                """
+                with self.driver.session(database=self.database) as session:
+                    result = session.run(
+                        query,
+                        user_id=self.user_id,
+                        ids=batch,
+                        rel_types=rel_types_upper,
+                    )
+                    for record in result:
+                        n = record["n"]
+                        if n:
+                            nd = dict(n)
+                            ntype = (nd.get("type") or "file").lower()
+                            if ntype in allowed_types or nd.get("id") in seeds:
+                                nodes_map[nd["id"]] = nd
+                        m = record["m"]
+                        r = record["r"]
+                        if not m or not r:
+                            continue
+                        md = dict(m)
+                        mtype = (md.get("type") or "file").lower()
+                        if mtype not in allowed_types and md.get("id") not in seeds:
+                            continue
+                        mid = md.get("id")
+                        if not mid:
+                            continue
+                        nodes_map[mid] = md
+                        src = dict(record["n"])["id"] if record["n"] else None
+                        if not src:
+                            continue
+                        tgt = mid
+                        rel = r.type
+                        key = (src, tgt, rel)
+                        rev = (tgt, src, rel)
+                        if key not in edge_seen and rev not in edge_seen:
+                            edge_seen.add(key)
+                            links.append({"source": src, "target": tgt, "relation": rel})
+                        if mid not in visited and len(visited) < max_nodes:
+                            next_frontier.append(mid)
+                frontier = next_frontier
+
+            if nodes_map:
+                ids = list(nodes_map.keys())
+                fill_query = """
+                MATCH (n:CodeNode {user_id: $user_id})
+                WHERE n.id IN $ids
+                RETURN n
+                """
+                with self.driver.session(database=self.database) as session:
+                    for record in session.run(fill_query, user_id=self.user_id, ids=ids):
+                        nd = dict(record["n"])
+                        nodes_map[nd["id"]] = nd
+
+                link_query = """
+                MATCH (a:CodeNode {user_id: $user_id})-[r]-(b:CodeNode {user_id: $user_id})
+                WHERE a.id IN $ids AND b.id IN $ids AND type(r) IN $rel_types
+                RETURN a.id AS source, b.id AS target, type(r) AS relation
+                LIMIT 15000
+                """
+                links = []
+                edge_seen = set()
+                with self.driver.session(database=self.database) as session:
+                    for record in session.run(
+                        link_query,
+                        user_id=self.user_id,
+                        ids=ids,
+                        rel_types=rel_types_upper,
+                    ):
+                        src = record["source"]
+                        tgt = record["target"]
+                        rel = record["relation"]
+                        key = (src, tgt, rel)
+                        if key not in edge_seen:
+                            edge_seen.add(key)
+                            links.append({"source": src, "target": tgt, "relation": rel})
+
+        except Exception as e:
+            logger.error(f"expand_subgraph failed: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
 
         return {"nodes": list(nodes_map.values()), "links": links}
 

@@ -1,13 +1,16 @@
 import logging
 import json
+import time
 # Explicitly import pgvector before PGVector to ensure it's available
 import pgvector  # Required for LangChain's PGVector implementation
 from langchain_community.vectorstores import PGVector
-from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from backend.app.core.config import settings
 from backend.app.domain.hybrid_retriever import HybridRetriever
 from backend.app.utils.embedding_utils import get_embeddings
+from backend.app.utils.llm_utils import get_llm
+from backend.app.utils.citation_verifier import verify_citations, check_symbols_in_context
+from backend.app.utils.query_telemetry import QueryTelemetry, QueryTimer, log_query_event
 
 logger = logging.getLogger("dex-core")
 
@@ -48,21 +51,25 @@ class RAGService:
             # Initialize Retriever (loads graph into memory) with user_id
             self.retriever = HybridRetriever(self.vector_store, user_id=self.user_id)
             
-            # Use GroqKeyManager for round-robin API key rotation
-            from backend.app.utils.groq_key_manager import get_groq_manager
+            # Pluggable LLM (groq, openai, anthropic, ollama)
             try:
-                self.groq_manager = get_groq_manager()
-                # Get LLM instance (will use round-robin key selection)
-                self.llm = self.groq_manager.get_llm()
-            except RuntimeError:
-                # Manager not initialized, fall back to direct initialization
-                logger.warning("⚠️ GroqKeyManager not initialized, using single key fallback")
-                self.groq_manager = None
+                self.llm = get_llm()
+            except Exception as e:
+                logger.warning(f"LLM provider fallback to groq: {e}")
+                from langchain_groq import ChatGroq
+                api_keys = settings.get_groq_api_keys()
                 self.llm = ChatGroq(
-                    model_name="llama-3.3-70b-versatile",
+                    model_name=settings.LLM_MODEL_NAME,
                     temperature=0,
-                    groq_api_key=api_keys[0] if api_keys else settings.GROQ_API_KEY
+                    groq_api_key=api_keys[0] if api_keys else settings.GROQ_API_KEY,
                 )
+            self.groq_manager = None
+            try:
+                from backend.app.utils.groq_key_manager import get_groq_manager
+                if (settings.LLM_PROVIDER or "groq").lower() == "groq":
+                    self.groq_manager = get_groq_manager()
+            except RuntimeError:
+                pass
         except Exception as e:
             logger.error(f"Failed to initialize RAGService components: {e}")
             raise RuntimeError(f"RAGService initialization failed: {str(e)}") from e
@@ -76,8 +83,10 @@ class RAGService:
         logger.info("✅ Knowledge base refreshed.")
     
     def answer_query(self, query_text: str) -> dict:
-        # 1. Hybrid Retrieval
-        # Returns a JSON string with separated contexts
+        timer = QueryTimer()
+        intent = "semantic"
+        chunk_count = 0
+
         try:
             retrieval_result = self.retriever.retrieve(query_text)
         except Exception as e:
@@ -86,14 +95,15 @@ class RAGService:
                 "answer": f"I encountered an error while searching the codebase: {str(e)}. Please check the logs for more details.",
                 "context_used": ""
             }
-        
-        # 2. Parse Contexts
+        timer.mark_retrieval_done()
+
         try:
             data = json.loads(retrieval_result)
             code_context = data.get("code_context", "")
             graph_context = data.get("graph_context", "")
+            intent = data.get("intent", "semantic")
+            chunk_count = data.get("chunk_count", 0)
         except json.JSONDecodeError:
-            # Fallback if something goes wrong
             code_context = retrieval_result
             graph_context = "Graph context unavailable."
         
@@ -248,9 +258,68 @@ class RAGService:
                     "question": query_text
                 })
             
+            answer_text = response.content
+            timer.mark_llm_done()
+
+            cite_result = verify_citations(answer_text, code_context, graph_context)
+            ungrounded = check_symbols_in_context(answer_text, code_context, graph_context)
+
+            if not cite_result.passed and cite_result.citations_failed:
+                retry_prompt = ChatPromptTemplate.from_template(
+                    """You previously answered without verifiable citations. Re-answer using ONLY the context below.
+                    Every file reference MUST appear in the context. If unsure, say you don't know.
+
+                    CODE CONTEXT:
+                    {code_context}
+
+                    GRAPH CONTEXT:
+                    {graph_context}
+
+                    QUESTION: {question}
+
+                    Answer with markdown and cite files using `path:line` format."""
+                )
+                try:
+                    if self.groq_manager:
+                        def invoke_retry(llm):
+                            return (retry_prompt | llm).invoke({
+                                "code_context": code_context[:8000],
+                                "graph_context": graph_context[:8000],
+                                "question": query_text,
+                            })
+                        retry_resp = self.groq_manager.call_with_retry(invoke_retry)
+                    else:
+                        retry_resp = (retry_prompt | self.llm).invoke({
+                            "code_context": code_context[:8000],
+                            "graph_context": graph_context[:8000],
+                            "question": query_text,
+                        })
+                    answer_text = retry_resp.content
+                    cite_result = verify_citations(answer_text, code_context, graph_context)
+                except Exception as e:
+                    logger.debug(f"Citation retry skipped: {e}")
+
+            log_query_event(QueryTelemetry(
+                user_id=self.user_id,
+                query=query_text[:500],
+                intent=intent,
+                final_chunk_count=chunk_count,
+                citation_passed=cite_result.passed,
+                latency_ms=timer.total_ms,
+                retrieval_ms=timer.retrieval_ms,
+                llm_ms=timer.llm_ms,
+                extra={
+                    "citations_verified": len(cite_result.citations_verified),
+                    "citations_failed": len(cite_result.citations_failed),
+                    "ungrounded_symbols": ungrounded[:5],
+                },
+            ))
+
             return {
-                "answer": response.content,
-                "context_used": f"**Code Sources:**\n{code_context[:500]}...\n\n**Graph Connections:**\n{graph_context[:500]}..."
+                "answer": answer_text,
+                "context_used": f"**Code Sources:**\n{code_context[:500]}...\n\n**Graph Connections:**\n{graph_context[:500]}...",
+                "intent": intent,
+                "citation_verified": cite_result.passed,
             }
         except Exception as e:
             error_str = str(e)

@@ -296,6 +296,20 @@ def init_db():
                         conn.commit()
                     except Exception:
                         pass
+
+                    try:
+                        conn.execute(text(f"""
+                            ALTER TABLE {table_name}
+                            ADD COLUMN IF NOT EXISTS content_tsv tsvector
+                            GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED;
+                        """))
+                        conn.execute(text(f"""
+                            CREATE INDEX IF NOT EXISTS {table_name}_content_tsv_idx
+                            ON {table_name} USING GIN (content_tsv);
+                        """))
+                        conn.commit()
+                    except Exception:
+                        pass
                     
                     logger.info(f"✅ pgvector extension and {table_name} table initialized")
                 except Exception as e:

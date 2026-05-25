@@ -787,7 +787,7 @@ const Hero: React.FC = () => {
               }}
             >
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              free for public repos · self-host on docker
+              private repo ready · self-host on docker
             </motion.div>
           </div>
 
@@ -1685,7 +1685,7 @@ const FinalCTA: React.FC = () => {
           className="text-slate-400 mt-7 mb-9 max-w-xl mx-auto"
           style={{ fontSize: 17 }}
         >
-          Free for public repos · 14-day unlimited trial · Self-host with Docker · No credit card.
+          Private repo ready · 14-day unlimited trial · Self-host with Docker · No credit card.
         </motion.p>
         <motion.div
           initial={{ opacity: 0 }}

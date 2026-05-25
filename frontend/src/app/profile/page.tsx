@@ -25,6 +25,7 @@ const GlobalStyles = () => (
     }
   `}</style>
 );
+import { messageFromApiErrorBody, publicApiUrl } from "@/lib/api";
 import {
   Github, Edit2, Save, X, User, Mail, Building2, Briefcase,
   Calendar, FileText, GitBranch, GitCommit, Code, TreePine,
@@ -265,9 +266,8 @@ export default function ProfilePage() {
       try {
         setLoading(true);
         setError(null);
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
         const response = await fetch(
-          `${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`
+          publicApiUrl(`users/email/${encodeURIComponent(session.user.email)}`)
         );
 
         if (response.ok) {
@@ -311,14 +311,12 @@ export default function ProfilePage() {
       
       try {
         setLoadingGithub(true);
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        
         // Fetch all GitHub data in parallel
         const [contributionsRes, statsRes, treeRes, activityRes] = await Promise.allSettled([
-          fetch(`${apiUrl}/api/v1/users/${encodeURIComponent(profile.id)}/github/contributions`),
-          fetch(`${apiUrl}/api/v1/users/${encodeURIComponent(profile.id)}/github/stats`),
-          fetch(`${apiUrl}/api/v1/users/${encodeURIComponent(profile.id)}/github/contribution-tree`),
-          fetch(`${apiUrl}/api/v1/users/${encodeURIComponent(profile.id)}/github/activity?limit=10`),
+          fetch(publicApiUrl(`users/${encodeURIComponent(profile.id)}/github/contributions`)),
+          fetch(publicApiUrl(`users/${encodeURIComponent(profile.id)}/github/stats`)),
+          fetch(publicApiUrl(`users/${encodeURIComponent(profile.id)}/github/contribution-tree`)),
+          fetch(publicApiUrl(`users/${encodeURIComponent(profile.id)}/github/activity?limit=10`)),
         ]);
         
         if (contributionsRes.status === "fulfilled" && contributionsRes.value.ok) {
@@ -361,9 +359,8 @@ export default function ProfilePage() {
       setError(null);
       setSuccess(false);
       
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const response = await fetch(
-        `${apiUrl}/api/v1/users/${encodeURIComponent(profile.id)}`,
+        publicApiUrl(`users/${encodeURIComponent(profile.id)}`),
         {
           method: "PUT",
           headers: {
@@ -387,8 +384,8 @@ export default function ProfilePage() {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
       } else {
-        const errorData = await response.json().catch(() => ({ detail: "Failed to save" }));
-        throw new Error(errorData.detail || "Failed to save profile");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(messageFromApiErrorBody(errorData, "Failed to save profile"));
       }
     } catch (err: any) {
       setError(err.message || "Failed to save profile");
@@ -442,9 +439,8 @@ export default function ProfilePage() {
                 void (async () => {
                   if (!session.user?.email) return;
                   try {
-                    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
                     const response = await fetch(
-                      `${apiUrl}/api/v1/users/email/${encodeURIComponent(session.user.email)}`
+                      publicApiUrl(`users/email/${encodeURIComponent(session.user.email)}`)
                     );
                     if (response.ok) {
                       const data = await response.json();

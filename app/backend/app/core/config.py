@@ -81,12 +81,25 @@ class Settings(BaseSettings):
     EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "local")
     
     # Embedding Model Configuration
-    # For local/HF: "sentence-transformers/all-mpnet-base-v2" (768 dims), "BAAI/bge-large-en-v1.5" (1024 dims)
-    # For Voyage AI: "voyage-3", "voyage-3-lite", "voyage-large-2", "voyage-code-2" (1024 dims)
+    # For local/HF: "intfloat/e5-base-v2" (768 dims), "BAAI/bge-large-en-v1.5" (1024 dims)
+    # For Voyage AI: "voyage-4-large" (recommended, 1024 dims), "voyage-4", "voyage-4-lite"
+    #   Do NOT use voyage-context-4 for this pipeline — it uses a separate contextualized API.
     # For Cohere: "embed-english-v3.0" (1024 dims)
     # For OpenAI: "text-embedding-3-large" (3072 dims), "text-embedding-3-small" (1536 dims)
-    EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/all-mpnet-base-v2")
-    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "1024"))  # Default 1024 for Voyage AI
+    EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "intfloat/e5-base-v2")
+    EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "768"))  # e5-base-v2 default
+
+    # Ingest speed (see app/utils/ingest_tuning.py). INGEST_FAST_MODE=1 is on by default.
+    INGEST_FAST_MODE: bool = os.getenv("INGEST_FAST_MODE", "1").lower() in ("1", "true", "yes", "on")
+    
+    # LLM provider: groq, openai, anthropic, ollama
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "groq")
+    LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "llama-3.3-70b-versatile")
+    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    
+    # Reranking: none, cohere, local
+    RERANK_PROVIDER: str = os.getenv("RERANK_PROVIDER", "none")
     
     @field_validator("POSTGRES_PASSWORD", mode="before")
     def validate_postgres_password(cls, v):

@@ -367,7 +367,7 @@ function Hero() {
           color: 'rgba(255,255,255,0.45)',
         }}>
           <span className="dot-pulse" />
-          <span>free for public repos · self-host on docker</span>
+          <span>private repo ready · self-host on docker</span>
         </div>
       </div>
 
@@ -772,8 +772,7 @@ function CTA() {
           maxWidth: 520, margin: '28px auto 36px',
           fontSize: 17, color: 'rgba(255,255,255,0.55)',
         }}>
-          Open source. Self-host on docker-compose. Free for any public repo.
-          No credit card.
+          Private repo ready. Self-host on docker-compose. No credit card.
         </p>
         <div className="reveal reveal-d2" style={{ display: 'inline-flex', gap: 12 }}>
           <button className="btn btn-primary">Connect GitHub →</button>

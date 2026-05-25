@@ -119,9 +119,9 @@ Look for errors during ingestion:
 
 #### 4. Verify Repository URL
 Ensure the GitHub URL is:
-- Publicly accessible
+- Reachable from the machine running DEX
 - Valid format: `https://github.com/username/repo`
-- Not a private repo (unless you have credentials configured)
+- Accessible with your configured credentials (public repos work without auth; private repos need token/SSH access)
 
 ## Ingestion Fails
 
@@ -139,7 +139,7 @@ pip install gitpython
 
 #### 2. Check Repository Access
 - Verify the repository URL is correct
-- Ensure it's a public repository
+- Ensure the backend has credentials for that repository if it is private
 - Check your internet connection
 
 #### 3. Check Disk Space
@@ -157,6 +157,25 @@ python -c "import psycopg; from backend.app.core.config import settings; conn = 
 # Run pgvector setup script
 python -m backend.app.scripts.setup_pgvector
 ```
+
+## Slow "Indexing vectors" during ingest
+
+Phase 3 (semantic vectors) is tuned for API providers such as Voyage. Optional variables in `app/.env`:
+
+```env
+EMBEDDING_PROVIDER=voyage
+INGEST_EMBEDDING_BATCH_SIZE=256
+INGEST_EMBED_PARALLEL=2
+INGEST_VECTOR_PIPELINE=true
+INGEST_DEFER_VECTOR_INDEX=true
+INGEST_VECTOR_DB_BATCH_SIZE=200
+```
+
+- **INGEST_DEFER_VECTOR_INDEX** (default `true`): Drops the HNSW index before bulk insert and rebuilds it after ingest (much faster on large tables).
+- **INGEST_EMBED_PARALLEL** (default `2`, max `3`): Overlaps Voyage embedding calls with PostgreSQL inserts.
+- **INGEST_EMBEDDING_BATCH_SIZE**: Lower to `128` if Voyage returns token-limit errors.
+
+Set **INGEST_VERBOSE=true** for per-batch logs. After changing env vars, restart the backend.
 
 ## Graph Data Format Issues
 

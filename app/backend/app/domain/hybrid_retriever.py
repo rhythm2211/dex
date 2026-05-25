@@ -1,8 +1,16 @@
 import os
 import json
 import logging
-from typing import List, Union
+from typing import List, Union, Optional, Dict, Any
 from langchain_community.vectorstores import PGVector
+from backend.app.domain.query_router import route_query, QueryIntent
+from backend.app.domain.retrieval_fusion import (
+    RetrievedChunk,
+    reciprocal_rank_fusion,
+    chunks_to_context_string,
+)
+from backend.app.domain.sparse_retriever import sparse_search
+from backend.app.utils.reranker import rerank_chunks
 from langchain_core.vectorstores import VectorStore
 from langchain_groq import ChatGroq
 from neo4j import GraphDatabase
@@ -80,245 +88,271 @@ class HybridRetriever:
 
     def retrieve(self, query: str, k_vectors: int = 20) -> str:
         """
-        Enhanced Hybrid Retrieval with Person Query Detection, Node Name Detection, and Adaptive Retrieval:
-        1. Detect if query is about a person/author
-        2. Detect if query mentions a specific node/function name (search Neo4j directly first)
-        3. Detect if query is about architecture (increase k for better coverage)
-        4. Find the code (Vector Search)
-        5. Find the context (Graph Lookup via Neo4j)
-        6. If person query, also search Neo4j directly for author/owner info
+        GraphRAG hybrid retrieval: intent routing → dense + sparse + graph → RRF → rerank.
         """
-        # Step 0: Detect Person Query
-        person_name = self._extract_person_name(query)
-        
-        # Step 0.25: Detect and extract specific node/function names from query
-        node_names = self._extract_node_names(query)
-        
-        # Step 0.5: Detect Architecture Query - increase k for better coverage
-        query_lower = query.lower()
-        architecture_keywords = ['architecture', 'architect', 'structure', 'design', 'system', 'component', 
-                                'module', 'dependency', 'relationship', 'overview', 'explain the', 'how does',
-                                'path to', 'selected node']
-        is_architecture_query = any(keyword in query_lower for keyword in architecture_keywords)
-        
-        # Step 0.6: Detect General/Repository-level queries (so we use graph overview when vectors are empty)
-        general_keywords = ['what is', 'what does', 'about this', 'repo about', 'repository about',
-                           'what is this', 'explain this', 'describe this', 'overview',
-                           'this project', 'project about', 'codebase about', 'about the project']
-        is_general_query = any(keyword in query_lower for keyword in general_keywords)
-        
-        # Increase k for architecture queries to get more comprehensive context
-        if is_architecture_query:
-            k_vectors = max(k_vectors, 30)  # Get more context for architecture questions
-            logger.info(f"Architecture query detected, increasing k to {k_vectors}")
-        
-        # Increase k for general queries to find README, docs, etc.
-        if is_general_query:
-            k_vectors = max(k_vectors, 40)  # Get even more context for general questions
-            logger.info(f"General/repository query detected, increasing k to {k_vectors}")
-        
-        # Step 0.75: If we found specific node names, search Neo4j directly first
+        routed = route_query(query, k_vectors)
+        logger.info(f"Query intent: {routed.intent.value}, k={routed.k_vectors}")
+
+        person_name = routed.person_name or self._extract_person_name(query)
+        node_names = routed.node_names or self._extract_node_names(query)
+
         node_context = ""
-        node_file_paths = set()
+        node_file_paths: set = set()
         if node_names and self.driver:
-            logger.info(f"Detected node/function names in query: {node_names}")
             node_context, node_file_paths = self._query_nodes_by_name(node_names)
-            if node_file_paths:
-                logger.info(f"Found {len(node_file_paths)} files containing these nodes: {list(node_file_paths)[:5]}")
-        
-        # Step 1: Semantic Search (PGVector) - adaptive k based on query type
-        # If we found specific files from node search, prioritize those in vector search
-        code_context = []
-        anchors = set()
-        
-        # Add file paths from node search to anchors
-        anchors.update(node_file_paths)
-        
-        try:
-            # Log the query and parameters for debugging
-            logger.debug(f"Starting vector search with k={k_vectors}, query='{query[:100]}'")
-            
-            # Filter by user_id for multi-tenant isolation (vectors are stored with metadata user_id)
-            search_filter = {"user_id": self.user_id}
 
-            # If we have specific file paths, try to search within those files first
-            if node_file_paths:
-                # Search with higher k to get more context from the specific files
-                logger.debug(f"Node file paths found, searching with k={k_vectors * 2}")
-                docs = self.vector_store.similarity_search(query, k=k_vectors * 2, filter=search_filter)
-                # Prioritize docs from the files we found
-                prioritized_docs = []
-                other_docs = []
-                for doc in docs:
-                    filename = doc.metadata.get('file_name', '')
-                    if any(file_path in filename or filename in file_path for file_path in node_file_paths):
-                        prioritized_docs.append(doc)
-                        anchors.add(filename)
-                    else:
-                        other_docs.append(doc)
-                        if filename:
-                            anchors.add(filename)
-                # Combine: prioritized first, then others
-                docs = prioritized_docs + other_docs[:k_vectors]
-            else:
-                logger.debug(f"No node file paths, using standard search with k={k_vectors}")
-                docs = self.vector_store.similarity_search(query, k=k_vectors, filter=search_filter)
-                for doc in docs:
-                    filename = doc.metadata.get('file_name')
-                    if filename:
-                        anchors.add(filename)
-            
-            for doc in docs:
-                filename = doc.metadata.get('file_name', 'unknown')
-                code_context.append(f"--- SNIPPET ({filename}) ---\n{doc.page_content}")
-            
-            # Log results for debugging
-            if not docs:
-                logger.warning(f"Vector search returned 0 results for query: '{query[:100]}' (k={k_vectors})")
-                logger.warning("This might indicate: 1) Database is empty, 2) Dimension mismatch, 3) Query too specific")
-                logger.warning("Attempting fallback: direct SQL query to document_vectors table...")
-                
-                # Fallback: Try direct SQL query if PGVector returns nothing
-                # This handles cases where PGVector's collection system doesn't match our direct inserts
-                try:
-                    import psycopg
-                    from psycopg.conninfo import make_conninfo
-                    from backend.app.core.config import settings
-                    
-                    # Generate query embedding
-                    query_embedding = self.embeddings.embed_query(query)
-                    embedding_str = '[' + ','.join(str(float(x)) for x in query_embedding) + ']'
-                    
-                    # Direct SQL similarity search using cosine distance
-                    conninfo = make_conninfo(
-                        host=settings.POSTGRES_HOST,
-                        port=settings.POSTGRES_PORT,
-                        user=settings.POSTGRES_USER,
-                        password=settings.POSTGRES_PASSWORD,
-                        dbname=settings.POSTGRES_DB
-                    )
-                    
-                    # OPTIMIZED: Use connection pool for vector search
-                    from backend.app.models.user import engine
-                    from sqlalchemy import text
-                    with engine.connect() as conn:
-                        # Use cosine distance for similarity search - filtered by user_id.
-                        # Use CAST(... AS vector) so SQLAlchemy only sees :embedding (not :embedding::vector which parses as two params).
-                        sql_query = text(f"""
-                            SELECT content, metadata, file_name, source,
-                                   1 - (embedding <=> CAST(:embedding AS vector)) as similarity
-                            FROM {settings.POSTGRES_VECTOR_TABLE}
-                            WHERE metadata->>'user_id' = :user_id
-                            ORDER BY embedding <=> CAST(:embedding AS vector)
-                            LIMIT :limit
-                        """)
-                        result = conn.execute(
-                            sql_query,
-                            {
-                                "embedding": embedding_str,
-                                "user_id": self.user_id,
-                                "limit": k_vectors
-                            }
-                        )
-                        results = result.fetchall()
-                        
-                        if results:
-                            logger.info(f"Fallback SQL query returned {len(results)} results")
-                            for content, metadata, file_name, source, similarity in results:
-                                filename = file_name or source or 'unknown'
-                                anchors.add(filename)
-                                # Parse metadata if it's a string (json module is imported at top of file)
-                                if isinstance(metadata, str):
-                                    try:
-                                        metadata = json.loads(metadata)
-                                    except:
-                                        metadata = {}
-                                code_context.append(f"--- SNIPPET ({filename}) ---\n{content}")
-                        else:
-                            logger.error("Fallback SQL query also returned 0 results - database might be empty or dimension mismatch")
-                except Exception as fallback_e:
-                    logger.error(f"Fallback SQL query failed: {fallback_e}", exc_info=True)
-            else:
-                logger.info(f"Vector search returned {len(docs)} results for query: '{query[:100]}'")
-                logger.debug(f"First result filename: {docs[0].metadata.get('file_name', 'unknown') if docs else 'N/A'}")
-                
-        except Exception as e:
-            error_msg = str(e).lower()
-            logger.error(f"Vector search exception: {e}", exc_info=True)
-            
-            # Check for dimension mismatch errors
-            if "dimension" in error_msg or "vector" in error_msg or "cannot cast" in error_msg:
-                logger.error(f"❌ Vector search failed due to dimension/type mismatch: {e}")
-                logger.error("❌ This usually means the database has embeddings with different dimensions than the current model.")
-                logger.error("❌ Solution: Run the migration script to update the database schema, then re-ingest the repository.")
-                # Return a helpful error message in the context
-                code_context.append(
-                    "⚠️ ERROR: Dimension mismatch detected. The database embeddings have a different dimension "
-                    "than the current embedding model. Please run the migration script and re-ingest the repository."
-                )
-            elif "connection" in error_msg or "timeout" in error_msg or "network" in error_msg:
-                logger.error(f"❌ Vector search failed due to connection issue: {e}")
-                code_context.append(
-                    "⚠️ ERROR: Database connection failed. Please check your PostgreSQL connection settings."
-                )
-            else:
-                logger.error(f"Vector search failed with unexpected exception: {e}", exc_info=True)
-                # Continue even if vector search fails, we might have person query or node query
-                # But log the full exception for debugging
+        dense_chunks = self._dense_search(query, routed.k_vectors, node_file_paths)
+        sparse_chunks = sparse_search(
+            query, self.user_id, k=routed.k_vectors, file_filter=list(node_file_paths) or None
+        )
+        graph_chunks = self._graph_to_chunks(
+            routed, person_name, node_names, node_context, node_file_paths, dense_chunks
+        )
 
-        # Step 2: Graph Context - Multiple paths:
-        #   a) If person query: Direct Neo4j search for person's work
-        #   b) If node names found: Use node context from direct search
-        #   c) Otherwise: Expand file anchors
-        graph_context = ""
-        
-        if person_name and self.driver:
-            # Person query: Search Neo4j directly for this person's contributions
-            logger.info(f"Detected person query for: {person_name}")
-            graph_context = self._query_person_work(person_name)
-            
-            # Also expand any file anchors we found
-            if anchors:
-                anchor_context = self._expand_anchors_neo4j(list(anchors))
-                if anchor_context and "No graph context" not in anchor_context:
-                    graph_context += "\n\n--- Related Files ---\n" + anchor_context
-        elif node_context:
-            # Node query: Use the direct node search results
-            graph_context = node_context
-            # Also expand file anchors for additional context
-            if anchors:
-                anchor_context = self._expand_anchors_neo4j(list(anchors), limit=50)
-                if anchor_context and "No graph context" not in anchor_context:
-                    graph_context += "\n\n--- Related Files ---\n" + anchor_context
-        elif anchors:
-            # Standard query: Expand file anchors
-            # For architecture queries, get more comprehensive graph context
-            if is_architecture_query:
-                graph_context = self._expand_anchors_neo4j(list(anchors), limit=50)
-            else:
-                graph_context = self._expand_anchors_neo4j(list(anchors))
-        else:
-            # No anchors (e.g. empty vector DB): for general/architecture queries, get project overview from graph
-            if (is_general_query or is_architecture_query) and self.driver:
-                graph_context = self._get_project_overview_neo4j()
-            else:
-                graph_context = "No graph context available."
+        fused = reciprocal_rank_fusion(
+            {
+                "dense": dense_chunks,
+                "sparse": sparse_chunks,
+                "graph": graph_chunks,
+            },
+            weights={
+                "dense": routed.dense_weight,
+                "sparse": routed.sparse_weight,
+                "graph": routed.graph_weight,
+            },
+        )
+        final_chunks = rerank_chunks(query, fused)
+        code_context_str = chunks_to_context_string(final_chunks)
 
-        # Step 3: Fuse Contexts
-        # Format code context - if empty, return a message that won't trigger false negatives
-        if code_context:
-            code_context_str = "\n\n".join(code_context)
-        else:
-            code_context_str = "No relevant code snippets found in vector database."
-            logger.warning(f"No code context found. Code context list was empty. Graph context: {bool(graph_context)}")
-        
-        # Log final context summary
-        logger.info(f"Final context summary - Code: {len(code_context)} snippets, Graph: {bool(graph_context)}")
-        
+        graph_context = self._build_graph_context(
+            routed, person_name, node_context, final_chunks, node_file_paths
+        )
+
+        logger.info(
+            f"Retrieval fused: dense={len(dense_chunks)} sparse={len(sparse_chunks)} "
+            f"graph={len(graph_chunks)} → final={len(final_chunks)}"
+        )
+
         return json.dumps({
             "code_context": code_context_str,
-            "graph_context": graph_context
+            "graph_context": graph_context,
+            "intent": routed.intent.value,
+            "chunk_count": len(final_chunks),
         }, indent=2)
+
+    def _dense_search(
+        self, query: str, k: int, node_file_paths: set
+    ) -> List[RetrievedChunk]:
+        """Dense vector search → RetrievedChunk list."""
+        chunks: List[RetrievedChunk] = []
+        search_filter = {"user_id": self.user_id}
+        try:
+            if hasattr(self.vector_store, "similarity_search_with_score"):
+                results = self.vector_store.similarity_search_with_score(
+                    query, k=k * 2 if node_file_paths else k, filter=search_filter
+                )
+            else:
+                docs = self.vector_store.similarity_search(
+                    query, k=k * 2 if node_file_paths else k, filter=search_filter
+                )
+                results = [(doc, 0.5) for doc in docs]
+
+            for doc, distance in results:
+                meta = doc.metadata or {}
+                fn = meta.get("file_name", meta.get("source", "unknown"))
+                if node_file_paths and not any(
+                    fp in fn or fn in fp for fp in node_file_paths
+                ):
+                    continue
+                chunks.append(
+                    RetrievedChunk(
+                        chunk_id=self._metadata_to_node_id(meta) or fn,
+                        content=doc.page_content,
+                        metadata=meta,
+                        file_name=fn,
+                        source="dense",
+                        raw_score=1.0 - float(distance) if distance else 0.5,
+                    )
+                )
+                if len(chunks) >= k:
+                    break
+
+            if not chunks:
+                chunks = self._dense_search_sql_fallback(query, k)
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "dimension" in error_msg or "vector" in error_msg:
+                chunks.append(
+                    RetrievedChunk(
+                        chunk_id="error",
+                        content=(
+                            "⚠️ ERROR: Dimension mismatch detected. Run migrate_embeddings and re-ingest."
+                        ),
+                        source="dense",
+                    )
+                )
+            else:
+                logger.error(f"Dense search failed: {e}", exc_info=True)
+                chunks = self._dense_search_sql_fallback(query, k)
+        return chunks
+
+    def _dense_search_sql_fallback(self, query: str, k: int) -> List[RetrievedChunk]:
+        chunks: List[RetrievedChunk] = []
+        try:
+            from sqlalchemy import text
+            from backend.app.models.user import engine
+
+            query_embedding = self.embeddings.embed_query(query)
+            embedding_str = "[" + ",".join(str(float(x)) for x in query_embedding) + "]"
+            with engine.connect() as conn:
+                sql_query = text(f"""
+                    SELECT id, content, metadata, file_name, source,
+                           1 - (embedding <=> CAST(:embedding AS vector)) as similarity
+                    FROM {settings.POSTGRES_VECTOR_TABLE}
+                    WHERE metadata->>'user_id' = :user_id
+                    ORDER BY embedding <=> CAST(:embedding AS vector)
+                    LIMIT :limit
+                """)
+                rows = conn.execute(
+                    sql_query,
+                    {"embedding": embedding_str, "user_id": self.user_id, "limit": k},
+                ).fetchall()
+                for row in rows:
+                    rid, content, metadata, file_name, source, sim = row
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except Exception:
+                            metadata = {}
+                    fn = file_name or source or "unknown"
+                    chunks.append(
+                        RetrievedChunk(
+                            chunk_id=str(rid),
+                            content=content or "",
+                            metadata=metadata or {},
+                            file_name=fn,
+                            source="dense",
+                            raw_score=float(sim or 0),
+                        )
+                    )
+        except Exception as e:
+            logger.error(f"Dense SQL fallback failed: {e}")
+        return chunks
+
+    def _graph_to_chunks(
+        self,
+        routed,
+        person_name: Optional[str],
+        node_names: List[str],
+        node_context: str,
+        node_file_paths: set,
+        dense_chunks: List[RetrievedChunk],
+    ) -> List[RetrievedChunk]:
+        """Convert graph lookup results into rankable chunks."""
+        chunks: List[RetrievedChunk] = []
+        if node_context:
+            for fp in node_file_paths:
+                chunks.append(
+                    RetrievedChunk(
+                        chunk_id=fp,
+                        content=node_context[:8000],
+                        file_name=fp,
+                        source="graph",
+                        metadata={"graph_type": "symbol_match"},
+                    )
+                )
+            if not node_file_paths:
+                chunks.append(
+                    RetrievedChunk(
+                        chunk_id="graph_symbol",
+                        content=node_context[:8000],
+                        source="graph",
+                        metadata={"graph_type": "symbol_match"},
+                    )
+                )
+
+        anchors = {c.file_name for c in dense_chunks if c.file_name}
+        anchors.update(node_file_paths)
+
+        if person_name and self.driver:
+            pw = self._query_person_work(person_name)
+            if pw and "No work found" not in pw:
+                chunks.append(
+                    RetrievedChunk(
+                        chunk_id=f"person:{person_name}",
+                        content=pw[:8000],
+                        source="graph",
+                        metadata={"graph_type": "person"},
+                    )
+                )
+
+        limit = 50 if routed.intent in (QueryIntent.ARCHITECTURE, QueryIntent.CALL_FLOW) else 20
+        if anchors and self.driver:
+            expanded = self._expand_anchors_neo4j(list(anchors), limit=limit)
+            if expanded and "No graph context" not in expanded:
+                for fp in list(anchors)[:10]:
+                    chunks.append(
+                        RetrievedChunk(
+                            chunk_id=f"graph:{fp}",
+                            content=expanded[:6000],
+                            file_name=fp,
+                            source="graph",
+                            metadata={"graph_type": "expansion"},
+                        )
+                    )
+        elif routed.intent in (QueryIntent.ARCHITECTURE, QueryIntent.SEMANTIC) and self.driver:
+            overview = self._get_project_overview_neo4j()
+            if overview and "No structural" not in overview:
+                chunks.append(
+                    RetrievedChunk(
+                        chunk_id="graph:overview",
+                        content=overview[:8000],
+                        source="graph",
+                        metadata={"graph_type": "overview"},
+                    )
+                )
+        return chunks[:15]
+
+    def _build_graph_context(
+        self,
+        routed,
+        person_name: Optional[str],
+        node_context: str,
+        final_chunks: List[RetrievedChunk],
+        node_file_paths: set,
+    ) -> str:
+        """Dedicated graph narrative for LLM PART 2."""
+        graph_parts = [c.content for c in final_chunks if c.source == "graph"]
+        if graph_parts:
+            return "\n\n".join(graph_parts[:5])
+
+        anchors = {c.file_name for c in final_chunks if c.file_name}
+        anchors.update(node_file_paths)
+
+        if person_name and self.driver:
+            ctx = self._query_person_work(person_name)
+            if anchors:
+                extra = self._expand_anchors_neo4j(list(anchors))
+                if extra and "No graph context" not in extra:
+                    ctx += "\n\n--- Related Files ---\n" + extra
+            return ctx or "No graph context available."
+
+        if node_context:
+            ctx = node_context
+            if anchors:
+                extra = self._expand_anchors_neo4j(list(anchors), limit=50)
+                if extra and "No graph context" not in extra:
+                    ctx += "\n\n--- Related Files ---\n" + extra
+            return ctx
+
+        if anchors and self.driver:
+            limit = 50 if routed.intent == QueryIntent.ARCHITECTURE else 20
+            return self._expand_anchors_neo4j(list(anchors), limit=limit)
+
+        if routed.intent in (QueryIntent.ARCHITECTURE, QueryIntent.SEMANTIC) and self.driver:
+            return self._get_project_overview_neo4j()
+
+        return "No graph context available."
     
     def _extract_node_names(self, query: str) -> List[str]:
         """
@@ -810,3 +844,114 @@ Person name:"""
             return "No structural relationships found in graph."
             
         return "\n".join(list(relevant_info))
+
+    @staticmethod
+    def _metadata_to_node_id(metadata: dict) -> Optional[str]:
+        """Map pgvector chunk metadata to Neo4j CodeNode.id."""
+        symbol_id = (metadata.get("symbol_id") or "").strip()
+        if symbol_id:
+            return symbol_id.replace("\\", "/")
+
+        file_name = (metadata.get("file_name") or metadata.get("source") or "").strip()
+        file_name = file_name.replace("\\", "/")
+        if not file_name:
+            return None
+
+        symbol = (metadata.get("symbol_name") or "").strip()
+        chunk_type = (metadata.get("chunk_type") or "").lower()
+        if symbol and chunk_type in ("function", "class"):
+            return f"{file_name}::{symbol}"
+        return file_name
+
+    @staticmethod
+    def _distance_to_score(distance: float) -> float:
+        """Map vector distance to UA-style score (0 = best match, 1 = worst)."""
+        try:
+            d = float(distance)
+        except (TypeError, ValueError):
+            return 0.5
+        return round(min(1.0, max(0.0, d / 1.5)), 4)
+
+    def find_seed_nodes(
+        self,
+        query: str,
+        k: int = 15,
+        layer_hint: Optional[str] = None,
+    ) -> List["MatchedSeed"]:
+        """
+        Semantic seed selection for focused subgraph extraction.
+        Uses pgvector similarity; returns ranked node ids with UA-compatible scores.
+        """
+        from backend.app.schemas.graph_subgraph import MatchedSeed
+
+        q = (query or "").strip()
+        if not q:
+            return []
+
+        search_filter = {"user_id": self.user_id}
+        results: List[tuple] = []
+
+        try:
+            if hasattr(self.vector_store, "similarity_search_with_score"):
+                results = self.vector_store.similarity_search_with_score(
+                    q, k=k * 3, filter=search_filter
+                )
+            else:
+                docs = self.vector_store.similarity_search(q, k=k * 3, filter=search_filter)
+                results = [(doc, 0.5) for doc in docs]
+        except Exception as e:
+            logger.warning(f"find_seed_nodes vector search failed: {e}")
+            return []
+
+        best_by_node: dict[str, float] = {}
+        for doc, distance in results:
+            meta = doc.metadata or {}
+            if layer_hint:
+                from backend.app.domain.graph_bridge import infer_layer
+
+                pseudo = {"id": meta.get("file_name") or meta.get("source") or "", "type": "file"}
+                if infer_layer(pseudo) != layer_hint:
+                    continue
+            nid = self._metadata_to_node_id(meta)
+            if not nid:
+                continue
+            score = self._distance_to_score(distance)
+            if nid not in best_by_node or score < best_by_node[nid]:
+                best_by_node[nid] = score
+
+        ranked = sorted(best_by_node.items(), key=lambda x: x[1])[:k]
+        return [MatchedSeed(nodeId=nid, score=sc) for nid, sc in ranked]
+
+    def find_fused_seed_nodes(
+        self,
+        query: str,
+        k: int = 15,
+        layer_hint: Optional[str] = None,
+    ) -> List["MatchedSeed"]:
+        """RRF fusion of dense + sparse channels for subgraph seed selection."""
+        from backend.app.schemas.graph_subgraph import MatchedSeed
+        from backend.app.domain.graph_bridge import infer_layer
+
+        routed = route_query(query, k)
+        dense = self._dense_search(query, k * 2, set())
+        sparse = sparse_search(query, self.user_id, k=k * 2)
+
+        if layer_hint:
+            def _layer_ok(ch: RetrievedChunk) -> bool:
+                pseudo = {"id": ch.file_name or ch.metadata.get("file_name", ""), "type": "file"}
+                return infer_layer(pseudo) == layer_hint
+            dense = [c for c in dense if _layer_ok(c)]
+            sparse = [c for c in sparse if _layer_ok(c)]
+
+        fused = reciprocal_rank_fusion(
+            {"dense": dense, "sparse": sparse, "graph": []},
+            weights={"dense": routed.dense_weight, "sparse": routed.sparse_weight, "graph": 0},
+        )
+        fused = rerank_chunks(query, fused, final_k=k)
+
+        out: List[MatchedSeed] = []
+        for ch in fused:
+            nid = self._metadata_to_node_id(ch.metadata) or ch.file_name
+            if nid:
+                out.append(MatchedSeed(nodeId=nid, score=ch.rrf_score or ch.raw_score))
+        return out[:k]
