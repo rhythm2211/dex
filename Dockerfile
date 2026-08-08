@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: builder — compile/install Python deps (CPU-only PyTorch)
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS builder
+FROM python:3.13-slim AS builder
 
 WORKDIR /build
 
@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir --user -r /build/requirements.txt
 # -----------------------------------------------------------------------------
 # Stage 2: runtime — minimal image, non-root
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS runtime
+FROM python:3.13-slim AS runtime
 
 WORKDIR /app
 
